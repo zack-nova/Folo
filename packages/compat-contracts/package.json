@@ -1,0 +1,29 @@
+{
+  "name": "@follow/compat-contracts",
+  "type": "module",
+  "private": true,
+  "author": "Folo Team",
+  "license": "AGPL-3.0-only",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "contracts:check": "tsx scripts/freeze-api-usage.ts --check",
+    "contracts:update": "tsx scripts/freeze-api-usage.ts --write",
+    "test": "pnpm run contracts:check && vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@follow/configs": "workspace:*",
+    "fast-glob": "3.3.3",
+    "pathe": "2.0.3",
+    "prettier": "3.9.4",
+    "tsx": "4.23.0",
+    "typescript": "catalog:",
+    "vitest": "4.1.10"
+  }
+}

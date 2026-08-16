@@ -1,0 +1,445 @@
+{
+  "schemaVersion": 1,
+  "compatibilityVersion": "folo-client-sdk-0.3.95",
+  "extensionContractVersion": "feeds-agent-extensions-v1",
+  "manifestEndpoint": "/api/extensions/capabilities",
+  "capabilities": [
+    {
+      "id": "auth.credentials",
+      "title": "Credential authentication and sessions",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": ["auth.getSession"],
+      "nonSdkRequests": [
+        "GET /better-auth/get-session",
+        "POST /better-auth{expression}",
+        "POST /better-auth/request-password-reset",
+        "POST /better-auth/reset-password",
+        "POST /better-auth/sign-in/email",
+        "POST /better-auth/sign-out",
+        "POST /better-auth/sign-up/email"
+      ],
+      "protocolRoutes": [
+        "GET /better-auth/get-session",
+        "POST /better-auth/sign-in/email",
+        "POST /better-auth/sign-up/email",
+        "POST /better-auth/sign-out",
+        "POST /better-auth/request-password-reset",
+        "POST /better-auth/reset-password"
+      ]
+    },
+    {
+      "id": "auth.account_management",
+      "title": "Local account and credential management",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [
+        "POST /better-auth/change-email",
+        "POST /better-auth/change-password",
+        "POST /better-auth/send-verification-email",
+        "POST /better-auth/update-user"
+      ],
+      "protocolRoutes": [
+        "POST /better-auth/change-email",
+        "POST /better-auth/change-password",
+        "POST /better-auth/send-verification-email",
+        "POST /better-auth/update-user"
+      ]
+    },
+    {
+      "id": "auth.social",
+      "title": "Social accounts and magic-link authentication",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": [],
+      "nonSdkRequests": [
+        "GET /better-auth/get-account-info",
+        "GET /better-auth/get-providers",
+        "POST /better-auth/link-social",
+        "POST /better-auth/sign-in/magic-link",
+        "POST /better-auth/sign-in/social",
+        "POST /better-auth/unlink-account"
+      ],
+      "protocolRoutes": [
+        "GET /better-auth/get-account-info",
+        "GET /better-auth/get-providers",
+        "POST /better-auth/link-social",
+        "POST /better-auth/sign-in/magic-link",
+        "POST /better-auth/sign-in/social",
+        "POST /better-auth/unlink-account"
+      ]
+    },
+    {
+      "id": "auth.account_deletion",
+      "title": "Account deletion",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": [],
+      "nonSdkRequests": ["POST /better-auth/delete-user-custom"],
+      "protocolRoutes": ["POST /better-auth/delete-user-custom"]
+    },
+    {
+      "id": "auth.cli_session_bridge",
+      "title": "Desktop to CLI session bridge",
+      "targetStage": 4,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [
+        "GET /better-auth/one-time-token/generate",
+        "POST /better-auth/one-time-token/apply"
+      ],
+      "protocolRoutes": [
+        "GET /better-auth/one-time-token/generate",
+        "POST /better-auth/one-time-token/apply",
+        "POST /better-auth/one-time-token/verify"
+      ]
+    },
+    {
+      "id": "auth.two_factor",
+      "title": "Two-factor authentication",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": [],
+      "nonSdkRequests": [
+        "POST /better-auth/two-factor/disable",
+        "POST /better-auth/two-factor/enable",
+        "POST /better-auth/two-factor/verify-totp"
+      ],
+      "protocolRoutes": [
+        "POST /better-auth/two-factor/disable",
+        "POST /better-auth/two-factor/enable",
+        "POST /better-auth/two-factor/verify-totp"
+      ]
+    },
+    {
+      "id": "feeds.core",
+      "title": "Feed metadata and refresh",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": ["feeds.analytics", "feeds.get", "feeds.refresh", "feeds.reset"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "subscriptions.core",
+      "title": "Subscriptions and OPML",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [
+        "subscriptions.batchUpdate",
+        "subscriptions.create",
+        "subscriptions.delete",
+        "subscriptions.export",
+        "subscriptions.get",
+        "subscriptions.import",
+        "subscriptions.parseOpml",
+        "subscriptions.update"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "entries.core",
+      "title": "Entry timelines, details, content, and readability",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [
+        "entries.get",
+        "entries.list",
+        "entries.preview",
+        "entries.readability",
+        "entries.stream"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "entries.social_and_media",
+      "title": "Read history and transcription",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": ["entries.readHistories", "entries.transcription"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "reads.core",
+      "title": "Read and unread state",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [
+        "reads.get",
+        "reads.getTotalCount",
+        "reads.markAllAsRead",
+        "reads.markAsRead",
+        "reads.markAsUnread"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "collections.core",
+      "title": "Entry collections",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": ["collections.delete", "collections.post"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "organization.core",
+      "title": "Categories and lists",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [
+        "categories.delete",
+        "categories.update",
+        "lists.addFeeds",
+        "lists.create",
+        "lists.delete",
+        "lists.get",
+        "lists.list",
+        "lists.removeFeed",
+        "lists.update"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "discovery.standard_feed",
+      "title": "Standard RSS and Atom discovery",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": ["discover.discover"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "profiles.core",
+      "title": "User profiles and avatars",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": ["profiles.getBatch", "profiles.getProfile", "upload.uploadAvatar"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "settings_and_status.core",
+      "title": "Settings and server configuration",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": ["settings.get", "settings.update", "status.getConfigs"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "inboxes.core",
+      "title": "Email inbox feeds",
+      "targetStage": 4,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [
+        "entries.inbox.delete",
+        "entries.inbox.get",
+        "entries.inbox.list",
+        "inboxes.delete",
+        "inboxes.post",
+        "inboxes.put"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "actions.entry_processing",
+      "title": "Actions and entry processing rules",
+      "targetStage": 2,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": ["actions.get", "actions.put"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "ai.entry_processing",
+      "title": "Backend-owned summaries and translations",
+      "targetStage": 2,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": ["ai.summary", "ai.translationBatch"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "ai.chat",
+      "title": "Official-style AI chat and attachments",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": [
+        "ai.config",
+        "ai.summaryTitle",
+        "aiAnalytics.get",
+        "aiChatSessions.delete",
+        "aiChatSessions.get",
+        "aiChatSessions.list",
+        "aiChatSessions.markSeen",
+        "aiChatSessions.messages.get",
+        "aiChatSessions.unread",
+        "aiChatSessions.update",
+        "upload.uploadChatAttachment"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "ai.scheduled_tasks",
+      "title": "Scheduled AI reports",
+      "targetStage": 4,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [
+        "aiTask.create",
+        "aiTask.delete",
+        "aiTask.get",
+        "aiTask.list",
+        "aiTask.testRun",
+        "aiTask.update"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "rsshub.hosted",
+      "title": "Hosted RSSHub discovery and routes",
+      "targetStage": 5,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": [
+        "discover.rsshub",
+        "discover.rsshubAnalytics",
+        "discover.rsshubRoute",
+        "rsshub.create",
+        "rsshub.delete",
+        "rsshub.get",
+        "rsshub.list",
+        "rsshub.status",
+        "rsshub.use"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "feeds.ownership",
+      "title": "Public feed ownership claims",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": ["feeds.claim.challenge", "feeds.claim.list", "feeds.claim.message"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "messaging.push",
+      "title": "Push notification tokens",
+      "targetStage": 4,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [
+        "messaging.createToken",
+        "messaging.deleteToken",
+        "messaging.getTokens",
+        "messaging.testNotification"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "integrations.mcp",
+      "title": "MCP connections",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": [
+        "mcp.createConnection",
+        "mcp.deleteConnection",
+        "mcp.getConnections",
+        "mcp.getTools",
+        "mcp.refreshTools",
+        "mcp.updateConnection"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "discovery.trending",
+      "title": "Public trending feeds",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": ["trending.getFeeds"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "billing_and_wallet",
+      "title": "Official billing, power, and wallet features",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": [
+        "wallets.get",
+        "wallets.post",
+        "wallets.transactions.get",
+        "wallets.transactions.withdraw"
+      ],
+      "nonSdkRequests": [
+        "GET /billing/subscription",
+        "POST /better-auth/subscription/upgrade",
+        "POST /billing/apple/verify",
+        "POST /billing/portal"
+      ],
+      "protocolRoutes": []
+    },
+    {
+      "id": "telemetry.server_analytics",
+      "title": "Folo server analytics",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": ["data.sendAnalytics"],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    }
+  ],
+  "extensionRoutes": [
+    "GET /api/extensions/capabilities",
+    "GET /api/extensions/entries/{entryId}/evaluation",
+    "GET /api/extensions/entries/{entryId}/processing-status",
+    "POST /api/extensions/entries/projections",
+    "POST /api/extensions/processing/jobs",
+    "POST /api/extensions/processing/jobs/{jobId}/retry",
+    "GET /api/extensions/subscriptions/{subscriptionId}/acquisition",
+    "GET /api/extensions/subscriptions/{subscriptionId}/acquisition/diagnostics",
+    "GET /api/extensions/profiles",
+    "GET /api/extensions/taxonomies",
+    "POST /api/extensions/processing/re-evaluation-preview",
+    "POST /api/extensions/processing/re-evaluation-jobs"
+  ]
+}

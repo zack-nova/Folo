@@ -1800,6 +1800,30 @@ importers:
         specifier: 4.107.1
         version: 4.107.1(@cloudflare/workers-types@4.20260702.1)(bufferutil@4.1.0)
 
+  packages/compat-contracts:
+    devDependencies:
+      '@follow/configs':
+        specifier: workspace:*
+        version: link:../configs
+      fast-glob:
+        specifier: 3.3.3
+        version: 3.3.3
+      pathe:
+        specifier: 2.0.3
+        version: 2.0.3
+      prettier:
+        specifier: 3.9.4
+        version: 3.9.4
+      tsx:
+        specifier: 4.23.0
+        version: 4.23.0
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@26.1.1)(happy-dom@20.10.6(bufferutil@4.1.0))(jsdom@29.1.1(@noble/hashes@2.0.1))(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
+
   packages/configs:
     dependencies:
       '@egoist/tailwindcss-icons':

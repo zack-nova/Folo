@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "frozenAt": "2026-08-16",
+  "upstream": {
+    "remote": "RSSNext/Folo",
+    "branch": "dev",
+    "commit": "7c220c69a841defbfeeb00a86ed75ad482b22a57"
+  },
+  "client": {
+    "integrationBaseCommit": "005a78bc5d5d1325abb618303ac1c3dd489575d8",
+    "desktopVersion": "1.12.0",
+    "clientSdkVersion": "0.3.95",
+    "clientSdkCodeHash": "1369189a7ee94768acfc99d1fd8c7a5476e82e94078975a0877f35913ba97911",
+    "betterAuthVersion": "1.6.23",
+    "betterAuthStripeVersion": "1.6.23",
+    "typescriptVersion": "6.0.3",
+    "nodeVersion": "22.22.2",
+    "pnpmVersion": "10.17.0"
+  },
+  "apiUsage": {
+    "sdkRoutes": 98,
+    "nonSdkRequests": 27
+  },
+  "localProjection": {
+    "role": "rebuildable_cache",
+    "schemaFile": "packages/internal/database/src/schemas/index.ts",
+    "sha256": "0a67f65b26e7d16466e63db56d3647bd8f984eafeada1c11aa9288f8954ec45d",
+    "criticalTables": ["feeds", "subscriptions", "entries", "collections", "lists", "unread"]
+  },
+  "verifiedCommands": [
+    "pnpm install --offline --frozen-lockfile",
+    "pnpm run typecheck",
+    "npm exec turbo run format:check typecheck lint",
+    "npm exec turbo run test",
+    "pnpm run build:web"
+  ],
+  "firstReleaseTargets": ["web", "desktop"],
+  "nonGoals": [
+    "entity_aggregation",
+    "synthetic_aggregate_feeds",
+    "entry_annotations",
+    "configuration_archive_restore",
+    "official_capability_adapters"
+  ]
+}

@@ -14,6 +14,8 @@
   "scripts": {
     "build:packages": "turbo run build --filter=\"./packages/**/*\"",
     "build:web": "turbo run Folo#build:web",
+    "contracts:check": "pnpm --filter @follow/compat-contracts test",
+    "contracts:update": "pnpm --filter @follow/compat-contracts contracts:update",
     "dedupe:locales": "eslint --fix locales/**",
     "depcheck": "npx depcheck --quiet",
     "dev:web": "turbo run @follow/web#dev @follow/ssr#dev",

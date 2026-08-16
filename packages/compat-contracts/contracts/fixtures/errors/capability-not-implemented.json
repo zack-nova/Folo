@@ -1,0 +1,7 @@
+{
+  "code": "capability_not_implemented",
+  "message": "Capability is not implemented: billing_and_wallet",
+  "data": {
+    "capability": "billing_and_wallet"
+  }
+}

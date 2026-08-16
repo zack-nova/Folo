@@ -1,0 +1,2516 @@
+{
+  "schemaVersion": 1,
+  "sdkVersion": "0.3.95",
+  "sdkCodeHash": "1369189a7ee94768acfc99d1fd8c7a5476e82e94078975a0877f35913ba97911",
+  "routes": [
+    {
+      "api": "actions.get",
+      "method": "GET",
+      "path": "/actions",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/push-notification.ts",
+          "line": 21,
+          "target": "desktop"
+        },
+        {
+          "file": "packages/internal/store/src/modules/action/store.ts",
+          "line": 34,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "actions.put",
+      "method": "PUT",
+      "path": "/actions",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/action/store.ts",
+          "line": 62,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "ai.config",
+      "method": "GET",
+      "path": "/ai/chat/config",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat/hooks/useAIConfiguration.ts",
+          "line": 9,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "ai.summary",
+      "method": "GET",
+      "path": "/ai/summary",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/summary/store.ts",
+          "line": 173,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "ai.summaryTitle",
+      "method": "POST",
+      "path": "/ai/summary-title",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat/utils/titleGeneration.ts",
+          "line": 30,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "ai.translationBatch",
+      "method": "POST",
+      "path": "/ai/translation/batch",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "raw",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/translation/store.ts",
+          "line": 179,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "aiAnalytics.get",
+      "method": "GET",
+      "path": "/ai/analytics",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/tabs/ai/usage/components/DetailedUsageModal.tsx",
+          "line": 25,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiChatSessions.delete",
+      "method": "DELETE",
+      "path": "/ai/chat-sessions/{chatId}",
+      "params": ["chatId"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat-session/query.ts",
+          "line": 97,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat/services/index.ts",
+          "line": 477,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat/services/index.ts",
+          "line": 524,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiChatSessions.get",
+      "method": "GET",
+      "path": "/ai/chat-sessions/{chatId}",
+      "params": ["chatId"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat-session/query.ts",
+          "line": 45,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat-session/service.ts",
+          "line": 136,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiChatSessions.list",
+      "method": "GET",
+      "path": "/ai/chat-sessions",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat-session/query.ts",
+          "line": 34,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat-session/service.ts",
+          "line": 42,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiChatSessions.markSeen",
+      "method": "POST",
+      "path": "/ai/chat-sessions/{chatId}/mark-seen",
+      "params": ["chatId"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat-session/query.ts",
+          "line": 111,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiChatSessions.messages.get",
+      "method": "GET",
+      "path": "/ai/chat-sessions/{chatId}/messages",
+      "params": ["chatId"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat-session/query.ts",
+          "line": 60,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat-session/service.ts",
+          "line": 166,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiChatSessions.unread",
+      "method": "GET",
+      "path": "/ai/chat-sessions/unread",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat-session/query.ts",
+          "line": 71,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiChatSessions.update",
+      "method": "PATCH",
+      "path": "/ai/chat-sessions/{chatId}",
+      "params": ["chatId"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat-session/query.ts",
+          "line": 81,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiTask.create",
+      "method": "POST",
+      "path": "/ai/task",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-task/query.ts",
+          "line": 56,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiTask.delete",
+      "method": "DELETE",
+      "path": "/ai/task/{id}",
+      "params": ["id"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-task/query.ts",
+          "line": 95,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiTask.get",
+      "method": "GET",
+      "path": "/ai/task/{id}",
+      "params": ["id"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-task/query.ts",
+          "line": 45,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiTask.list",
+      "method": "GET",
+      "path": "/ai/task",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-task/query.ts",
+          "line": 31,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiTask.testRun",
+      "method": "POST",
+      "path": "/ai/task/{id}/test-run",
+      "params": ["id"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-task/query.ts",
+          "line": 109,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "aiTask.update",
+      "method": "PUT",
+      "path": "/ai/task/{id}",
+      "params": ["id"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-task/query.ts",
+          "line": 83,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "auth.getSession",
+      "method": "GET",
+      "path": "/better-auth/get-session",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/auth.ts",
+          "line": 93,
+          "target": "desktop"
+        },
+        {
+          "file": "packages/internal/store/src/modules/user/store.ts",
+          "line": 69,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "categories.delete",
+      "method": "DELETE",
+      "path": "/categories",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/pages/(main)/(layer)/(subview)/discover/category/[category].tsx",
+          "line": 208,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/discover/RecommendationListItem.tsx",
+          "line": 28,
+          "target": "mobile"
+        },
+        {
+          "file": "packages/internal/store/src/modules/subscription/store.ts",
+          "line": 561,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "categories.update",
+      "method": "PATCH",
+      "path": "/categories",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/subscription/store.ts",
+          "line": 641,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "collections.delete",
+      "method": "DELETE",
+      "path": "/collections",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/collection.ts", "line": 65, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/collection/store.ts",
+          "line": 76,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "collections.post",
+      "method": "POST",
+      "path": "/collections",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/collection.ts", "line": 51, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/collection/store.ts",
+          "line": 52,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "data.sendAnalytics",
+      "method": "POST",
+      "path": "/data/g",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/desktop/layer/renderer/src/lib/ga4.ts", "line": 53, "target": "desktop" },
+        { "file": "apps/mobile/src/lib/ga4.ts", "line": 52, "target": "mobile" }
+      ]
+    },
+    {
+      "api": "discover.discover",
+      "method": "POST",
+      "path": "/discover",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/search.ts", "line": 57, "target": "cli" },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/discover/DiscoverForm.tsx",
+          "line": 138,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/discover/UnifiedDiscoverForm.tsx",
+          "line": 171,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/subscription-column/SimpleDiscoverModal.tsx",
+          "line": 93,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/discover/search-tabs/SearchFeed.tsx",
+          "line": 23,
+          "target": "mobile"
+        },
+        {
+          "file": "apps/mobile/src/modules/discover/search-tabs/SearchList.tsx",
+          "line": 36,
+          "target": "mobile"
+        }
+      ]
+    },
+    {
+      "api": "discover.rsshub",
+      "method": "GET",
+      "path": "/discover/rsshub",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/search.ts", "line": 72, "target": "cli" },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/discover.ts",
+          "line": 17,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/discover.ts",
+          "line": 30,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/modules/discover/api.ts", "line": 15, "target": "mobile" }
+      ]
+    },
+    {
+      "api": "discover.rsshubAnalytics",
+      "method": "GET",
+      "path": "/discover/rsshub-analytics",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/pages/(main)/(layer)/(subview)/discover/category/[category].tsx",
+          "line": 54,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/discover.ts",
+          "line": 44,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/modules/discover/api.ts", "line": 22, "target": "mobile" }
+      ]
+    },
+    {
+      "api": "discover.rsshubRoute",
+      "method": "GET",
+      "path": "/discover/rsshub/route",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/hooks/biz/useDiscoverRSSHubRoute.tsx",
+          "line": 14,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/discover.ts",
+          "line": 37,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "entries.get",
+      "method": "GET",
+      "path": "/entries",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/entry.ts", "line": 23, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/entry/store.ts",
+          "line": 628,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "entries.inbox.delete",
+      "method": "DELETE",
+      "path": "/entries/inbox",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/entry/store.ts",
+          "line": 744,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "entries.inbox.get",
+      "method": "GET",
+      "path": "/entries/inbox",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/entry/store.ts",
+          "line": 627,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "entries.inbox.list",
+      "method": "POST",
+      "path": "/entries/inbox",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/entry/store.ts",
+          "line": 548,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "entries.list",
+      "method": "POST",
+      "path": "/entries",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/collection.ts", "line": 32, "target": "cli" },
+        { "file": "apps/cli/src/commands/timeline.ts", "line": 79, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/entry/store.ts",
+          "line": 557,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "entries.preview",
+      "method": "POST",
+      "path": "/entries/preview",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/entries.ts",
+          "line": 9,
+          "target": "desktop"
+        },
+        { "file": "apps/ssr/client/query/entries.ts", "line": 8, "target": "ssr" }
+      ]
+    },
+    {
+      "api": "entries.readability",
+      "method": "GET",
+      "path": "/entries/readability",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/entry.ts", "line": 34, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/entry/store.ts",
+          "line": 666,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "entries.readHistories",
+      "method": "GET",
+      "path": "/entries/read-histories/{id}",
+      "params": ["id"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/entry/store.ts",
+          "line": 724,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "entries.stream",
+      "method": "POST",
+      "path": "/entries/stream",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "raw",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/entry/store.ts",
+          "line": 706,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "entries.transcription",
+      "method": "GET",
+      "path": "/entries/transcription",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/entry-content/components/layouts/shared/useTranscription.ts",
+          "line": 22,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "feeds.analytics",
+      "method": "POST",
+      "path": "/feeds/analytics",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/feed.ts", "line": 40, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/feed/store.ts",
+          "line": 195,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "feeds.claim.challenge",
+      "method": "POST",
+      "path": "/feeds/claim/challenge",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/feed/store.ts",
+          "line": 173,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "feeds.claim.list",
+      "method": "GET",
+      "path": "/feeds/claim/list",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/feed.ts",
+          "line": 41,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "feeds.claim.message",
+      "method": "GET",
+      "path": "/feeds/claim/message",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/feed.ts",
+          "line": 32,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "feeds.get",
+      "method": "GET",
+      "path": "/feeds",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/feed.ts", "line": 16, "target": "cli" },
+        {
+          "file": "apps/ssr/client/pages/(main)/share/feeds/[id]/metadata.ts",
+          "line": 10,
+          "target": "ssr"
+        },
+        { "file": "apps/ssr/client/query/feed.ts", "line": 7, "target": "ssr" },
+        { "file": "apps/ssr/src/router/og/feed.tsx", "line": 10, "target": "ssr" },
+        {
+          "file": "packages/internal/store/src/modules/feed/store.ts",
+          "line": 111,
+          "target": "shared"
+        },
+        {
+          "file": "packages/internal/store/src/modules/feed/store.ts",
+          "line": 137,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "feeds.refresh",
+      "method": "GET",
+      "path": "/feeds/refresh",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/feed.ts", "line": 29, "target": "cli" },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/feed.ts",
+          "line": 76,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "feeds.reset",
+      "method": "GET",
+      "path": "/feeds/reset",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/feed.ts",
+          "line": 89,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "inboxes.delete",
+      "method": "DELETE",
+      "path": "/inboxes",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/inbox/store.ts",
+          "line": 129,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "inboxes.post",
+      "method": "POST",
+      "path": "/inboxes",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/inbox/store.ts",
+          "line": 87,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "inboxes.put",
+      "method": "PUT",
+      "path": "/inboxes",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/inbox/store.ts",
+          "line": 111,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "lists.addFeeds",
+      "method": "POST",
+      "path": "/lists/feeds",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/list.ts", "line": 128, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/list/store.ts",
+          "line": 195,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "lists.create",
+      "method": "POST",
+      "path": "/lists",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/list.ts", "line": 61, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/list/store.ts",
+          "line": 97,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "lists.delete",
+      "method": "DELETE",
+      "path": "/lists",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/list.ts", "line": 116, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/list/store.ts",
+          "line": 175,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "lists.get",
+      "method": "GET",
+      "path": "/lists",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/list.ts", "line": 46, "target": "cli" },
+        {
+          "file": "apps/ssr/client/pages/(main)/share/lists/[id]/metadata.ts",
+          "line": 8,
+          "target": "ssr"
+        },
+        { "file": "apps/ssr/client/query/list.ts", "line": 6, "target": "ssr" },
+        { "file": "apps/ssr/src/router/og/list.tsx", "line": 9, "target": "ssr" },
+        {
+          "file": "packages/internal/store/src/modules/list/store.ts",
+          "line": 82,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "lists.list",
+      "method": "GET",
+      "path": "/lists/list",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/list.ts", "line": 35, "target": "cli" },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/user-profile-modal/UserProfileModalContent.tsx",
+          "line": 361,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/ssr/client/pages/(main)/share/users/[id]/metadata.ts",
+          "line": 30,
+          "target": "ssr"
+        },
+        { "file": "apps/ssr/client/query/list.ts", "line": 21, "target": "ssr" },
+        {
+          "file": "packages/internal/store/src/modules/list/store.ts",
+          "line": 90,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "lists.removeFeed",
+      "method": "DELETE",
+      "path": "/lists/feeds",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/list.ts", "line": 143, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/list/store.ts",
+          "line": 208,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "lists.update",
+      "method": "PATCH",
+      "path": "/lists",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/list.ts", "line": 97, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/list/store.ts",
+          "line": 142,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "mcp.createConnection",
+      "method": "POST",
+      "path": "/mcp/connections",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/mcp.ts",
+          "line": 12,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "mcp.deleteConnection",
+      "method": "DELETE",
+      "path": "/mcp/connections/{connectionId}",
+      "params": ["connectionId"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/mcp.ts",
+          "line": 28,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "mcp.getConnections",
+      "method": "GET",
+      "path": "/mcp/connections",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/mcp.ts",
+          "line": 16,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "mcp.getTools",
+      "method": "GET",
+      "path": "/mcp/connections/{connectionId}/tools",
+      "params": ["connectionId"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/mcp.ts",
+          "line": 36,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "mcp.refreshTools",
+      "method": "POST",
+      "path": "/mcp/tools/refresh",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/mcp.ts",
+          "line": 32,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "mcp.updateConnection",
+      "method": "PUT",
+      "path": "/mcp/connections/{connectionId}",
+      "params": ["connectionId"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/mcp.ts",
+          "line": 24,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "messaging.createToken",
+      "method": "POST",
+      "path": "/messaging",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/desktop/layer/main/src/lib/user.ts", "line": 24, "target": "desktop" },
+        {
+          "file": "apps/desktop/layer/renderer/src/push-notification.ts",
+          "line": 52,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/hooks/useMessaging.ts", "line": 25, "target": "mobile" }
+      ]
+    },
+    {
+      "api": "messaging.deleteToken",
+      "method": "DELETE",
+      "path": "/messaging",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/desktop/layer/main/src/lib/user.ts", "line": 36, "target": "desktop" }
+      ]
+    },
+    {
+      "api": "messaging.getTokens",
+      "method": "GET",
+      "path": "/messaging",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/messaging.ts",
+          "line": 9,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "messaging.testNotification",
+      "method": "GET",
+      "path": "/messaging/test",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/messaging.ts",
+          "line": 19,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "profiles.getBatch",
+      "method": "POST",
+      "path": "/profiles/batch",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/user/store.ts",
+          "line": 44,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "profiles.getProfile",
+      "method": "GET",
+      "path": "/profiles",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/ssr/client/pages/(main)/share/users/[id]/metadata.ts",
+          "line": 23,
+          "target": "ssr"
+        },
+        { "file": "apps/ssr/src/lib/user-profile-params.ts", "line": 19, "target": "ssr" }
+      ]
+    },
+    {
+      "api": "reads.get",
+      "method": "GET",
+      "path": "/reads",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/unread.ts", "line": 65, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/unread/store.ts",
+          "line": 60,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "reads.getTotalCount",
+      "method": "GET",
+      "path": "/reads/total-count",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/unread.ts", "line": 53, "target": "cli" },
+        {
+          "file": "apps/desktop/layer/main/src/ipc/services/dock.ts",
+          "line": 78,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "reads.markAllAsRead",
+      "method": "POST",
+      "path": "/reads/all",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/entry.ts", "line": 79, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/unread/store.ts",
+          "line": 180,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "reads.markAsRead",
+      "method": "POST",
+      "path": "/reads",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/entry.ts", "line": 45, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/unread/store.ts",
+          "line": 284,
+          "target": "shared"
+        },
+        {
+          "file": "packages/internal/store/src/modules/unread/store.ts",
+          "line": 287,
+          "target": "shared"
+        },
+        {
+          "file": "packages/internal/store/src/modules/unread/store.ts",
+          "line": 364,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "reads.markAsUnread",
+      "method": "DELETE",
+      "path": "/reads",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/entry.ts", "line": 56, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/unread/store.ts",
+          "line": 366,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "rsshub.create",
+      "method": "POST",
+      "path": "/rsshub",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 41,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "rsshub.delete",
+      "method": "DELETE",
+      "path": "/rsshub",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/rsshub/delete-modal-content.tsx",
+          "line": 13,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 60,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "rsshub.get",
+      "method": "GET",
+      "path": "/rsshub",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/rsshub/add-modal-content.tsx",
+          "line": 37,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 20,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 71,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "rsshub.list",
+      "method": "GET",
+      "path": "/rsshub/list",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/rsshub/delete-modal-content.tsx",
+          "line": 16,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/pages/(main)/(layer)/(subview)/rsshub/index.tsx",
+          "line": 47,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 16,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 48,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 77,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "rsshub.status",
+      "method": "GET",
+      "path": "/rsshub/status",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/pages/(main)/(layer)/(subview)/rsshub/index.tsx",
+          "line": 243,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/pages/(main)/(layer)/(subview)/rsshub/index.tsx",
+          "line": 298,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/pages/(main)/(layer)/(subview)/rsshub/index.tsx",
+          "line": 88,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 17,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 49,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 85,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "rsshub.use",
+      "method": "POST",
+      "path": "/rsshub/use",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/rsshub.ts",
+          "line": 13,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "settings.get",
+      "method": "GET",
+      "path": "/settings",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/app-tip/useNewUserGuideState.ts",
+          "line": 16,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
+          "line": 353,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
+          "line": 377,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/helper/SyncIndicator.tsx",
+          "line": 19,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/settings.ts",
+          "line": 5,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/sync-queue.ts",
+          "line": 533,
+          "target": "mobile"
+        }
+      ]
+    },
+    {
+      "api": "settings.update",
+      "method": "PATCH",
+      "path": "/settings/{tab}",
+      "params": ["tab"],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
+          "line": 479,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
+          "line": 512,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
+          "line": 516,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
+          "line": 520,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
+          "line": 549,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/sync-queue.ts",
+          "line": 450,
+          "target": "mobile"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/sync-queue.ts",
+          "line": 494,
+          "target": "mobile"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/sync-queue.ts",
+          "line": 513,
+          "target": "mobile"
+        }
+      ]
+    },
+    {
+      "api": "status.getConfigs",
+      "method": "GET",
+      "path": "/status/configs",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/server-configs.ts",
+          "line": 8,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/providers/ServerConfigsLoader.tsx",
+          "line": 22,
+          "target": "mobile"
+        },
+        {
+          "file": "apps/ssr/client/providers/server-configs-provider.tsx",
+          "line": 9,
+          "target": "ssr"
+        }
+      ]
+    },
+    {
+      "api": "subscriptions.batchUpdate",
+      "method": "PATCH",
+      "path": "/subscriptions/batch",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "packages/internal/store/src/modules/subscription/store.ts",
+          "line": 453,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "subscriptions.create",
+      "method": "POST",
+      "path": "/subscriptions",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/subscription.ts", "line": 113, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/subscription/store.ts",
+          "line": 284,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "subscriptions.delete",
+      "method": "DELETE",
+      "path": "/subscriptions",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/subscription.ts", "line": 144, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/subscription/store.ts",
+          "line": 365,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "subscriptions.export",
+      "method": "GET",
+      "path": "/subscriptions/export",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [{ "file": "apps/cli/src/commands/opml.ts", "line": 36, "target": "cli" }]
+    },
+    {
+      "api": "subscriptions.get",
+      "method": "GET",
+      "path": "/subscriptions",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/subscription.ts", "line": 66, "target": "cli" },
+        { "file": "apps/cli/src/commands/timeline.ts", "line": 59, "target": "cli" },
+        { "file": "apps/cli/src/commands/unread.ts", "line": 66, "target": "cli" },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/hooks.ts",
+          "line": 26,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/hooks/useShareSubscription.tsx",
+          "line": 14,
+          "target": "mobile"
+        },
+        {
+          "file": "apps/ssr/client/pages/(main)/share/users/[id]/metadata.ts",
+          "line": 29,
+          "target": "ssr"
+        },
+        { "file": "apps/ssr/client/query/users.ts", "line": 53, "target": "ssr" },
+        {
+          "file": "packages/internal/store/src/modules/subscription/store.ts",
+          "line": 205,
+          "target": "shared"
+        },
+        {
+          "file": "packages/internal/store/src/modules/user/hooks.ts",
+          "line": 87,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "subscriptions.import",
+      "method": "POST",
+      "path": "/subscriptions/import",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "formData",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/opml.ts", "line": 80, "target": "cli" },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/discover/OpmlSelectionModal.tsx",
+          "line": 39,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/modules/settings/utils.ts", "line": 70, "target": "mobile" }
+      ]
+    },
+    {
+      "api": "subscriptions.parseOpml",
+      "method": "POST",
+      "path": "/subscriptions/parse-opml",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "arrayBuffer",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/discover/DiscoverImport.tsx",
+          "line": 20,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "subscriptions.update",
+      "method": "PATCH",
+      "path": "/subscriptions",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/subscription.ts", "line": 198, "target": "cli" },
+        {
+          "file": "packages/internal/store/src/modules/subscription/store.ts",
+          "line": 267,
+          "target": "shared"
+        },
+        {
+          "file": "packages/internal/store/src/modules/subscription/store.ts",
+          "line": 515,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "api": "trending.getFeeds",
+      "method": "GET",
+      "path": "/trending/feeds",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        { "file": "apps/cli/src/commands/search.ts", "line": 90, "target": "cli" },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/trending/index.tsx",
+          "line": 79,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/modules/discover/api.ts", "line": 34, "target": "mobile" }
+      ]
+    },
+    {
+      "api": "upload.uploadAvatar",
+      "method": "POST",
+      "path": "/upload/avatar",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "formData",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/lib/avatar-upload.ts",
+          "line": 13,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/modules/settings/utils.ts", "line": 20, "target": "mobile" }
+      ]
+    },
+    {
+      "api": "upload.uploadChatAttachment",
+      "method": "POST",
+      "path": "/upload/chat-attachment",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "formData",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-chat/utils/file-processing.ts",
+          "line": 211,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "wallets.get",
+      "method": "GET",
+      "path": "/wallets",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/wallet.tsx",
+          "line": 15,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "wallets.post",
+      "method": "POST",
+      "path": "/wallets",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/wallet.tsx",
+          "line": 51,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "wallets.transactions.get",
+      "method": "GET",
+      "path": "/wallets/transactions",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "query",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/wallet.tsx",
+          "line": 29,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "api": "wallets.transactions.withdraw",
+      "method": "POST",
+      "path": "/wallets/transactions/withdraw",
+      "params": [],
+      "explicitQueryFields": [],
+      "explicitBodyFields": [],
+      "remainingInputPlacement": "body",
+      "requestType": "json",
+      "responseType": "json",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/power/my-wallet-section/withdraw.tsx",
+          "line": 89,
+          "target": "desktop"
+        }
+      ]
+    }
+  ],
+  "nonSdkRequests": [
+    {
+      "method": "GET",
+      "path": "/better-auth/get-account-info",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/auth.ts",
+          "line": 68,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/routes/Account.tsx",
+          "line": 74,
+          "target": "mobile"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/better-auth/get-providers",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/users.ts",
+          "line": 19,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/lib/auth.ts", "line": 216, "target": "mobile" },
+        {
+          "file": "apps/mobile/src/modules/settings/routes/Account.tsx",
+          "line": 202,
+          "target": "mobile"
+        },
+        { "file": "apps/ssr/client/query/users.ts", "line": 96, "target": "ssr" }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/better-auth/get-session",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/auth/LoginModalContent.tsx",
+          "line": 36,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/user/ProfileButton.tsx",
+          "line": 40,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/providers/user-provider.tsx",
+          "line": 7,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/lib/auth.ts", "line": 198, "target": "mobile" },
+        { "file": "apps/ssr/client/modules/login/index.tsx", "line": 72, "target": "ssr" },
+        { "file": "apps/ssr/client/pages/(login)/layout.tsx", "line": 19, "target": "ssr" },
+        { "file": "apps/ssr/client/providers/user-provider.tsx", "line": 8, "target": "ssr" },
+        { "file": "apps/ssr/client/query/auth.ts", "line": 8, "target": "ssr" }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/better-auth/one-time-token/generate",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/main/src/lib/cli-session-sync.ts",
+          "line": 118,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/tabs/cli.tsx",
+          "line": 67,
+          "target": "desktop"
+        },
+        { "file": "apps/ssr/client/modules/login/index.tsx", "line": 111, "target": "ssr" }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/billing/subscription",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/tabs/plan.tsx",
+          "line": 155,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/routes/Plan.tsx",
+          "line": 373,
+          "target": "mobile"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth{expression}",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/main/src/ipc/services/auth.ts",
+          "line": 117,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/change-email",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/email-management.tsx",
+          "line": 119,
+          "target": "desktop"
+        },
+        {
+          "file": "packages/internal/store/src/modules/user/store.ts",
+          "line": 181,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/change-password",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/update-password-form.tsx",
+          "line": 52,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/routes/ResetPassword.tsx",
+          "line": 35,
+          "target": "mobile"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/delete-user-custom",
+      "callsites": [{ "file": "apps/mobile/src/lib/auth.ts", "line": 262, "target": "mobile" }]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/link-social",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/account-management.tsx",
+          "line": 43,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/routes/Account.tsx",
+          "line": 155,
+          "target": "mobile"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/one-time-token/apply",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/main/src/lib/cli-session-sync.ts",
+          "line": 136,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/auth/TokenModal.tsx",
+          "line": 45,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/providers/extension-expose-provider.tsx",
+          "line": 92,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/lib/auth-cookie-migration.ts", "line": 138, "target": "mobile" }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/request-password-reset",
+      "callsites": [
+        {
+          "file": "apps/mobile/src/modules/settings/routes/Account.tsx",
+          "line": 255,
+          "target": "mobile"
+        },
+        {
+          "file": "apps/mobile/src/screens/(modal)/ForgetPasswordScreen.tsx",
+          "line": 31,
+          "target": "mobile"
+        },
+        { "file": "apps/ssr/client/pages/(login)/forget-password.tsx", "line": 57, "target": "ssr" }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/reset-password",
+      "callsites": [
+        { "file": "apps/ssr/client/pages/(login)/reset-password.tsx", "line": 59, "target": "ssr" }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/send-verification-email",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/email-management.tsx",
+          "line": 40,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/screens/(modal)/EditEmailScreen.tsx",
+          "line": 114,
+          "target": "mobile"
+        },
+        {
+          "file": "packages/internal/store/src/modules/user/store.ts",
+          "line": 144,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/sign-in/email",
+      "callsites": [
+        { "file": "apps/mobile/src/modules/login/email.tsx", "line": 52, "target": "mobile" },
+        { "file": "packages/internal/shared/src/auth.ts", "line": 130, "target": "shared" }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/sign-in/magic-link",
+      "callsites": [
+        { "file": "packages/internal/shared/src/auth.ts", "line": 138, "target": "shared" }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/sign-in/social",
+      "callsites": [
+        { "file": "apps/mobile/src/modules/login/social.tsx", "line": 81, "target": "mobile" },
+        { "file": "apps/mobile/src/modules/login/social.tsx", "line": 97, "target": "mobile" },
+        { "file": "apps/ssr/client/modules/login/index.tsx", "line": 91, "target": "ssr" },
+        { "file": "packages/internal/shared/src/auth.ts", "line": 148, "target": "shared" }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/sign-out",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/main/src/ipc/services/auth.ts",
+          "line": 239,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/auth.ts",
+          "line": 193,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/auth.ts",
+          "line": 197,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/queries/auth.ts",
+          "line": 224,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/lib/auth.ts", "line": 242, "target": "mobile" },
+        { "file": "apps/mobile/src/lib/auth.ts", "line": 265, "target": "mobile" },
+        {
+          "file": "apps/mobile/src/modules/settings/SettingsList.tsx",
+          "line": 230,
+          "target": "mobile"
+        },
+        {
+          "file": "apps/mobile/src/screens/(headless)/DebugScreen.tsx",
+          "line": 70,
+          "target": "mobile"
+        },
+        { "file": "apps/ssr/client/modules/login/index.tsx", "line": 196, "target": "ssr" }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/sign-up/email",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/auth/Form.tsx",
+          "line": 453,
+          "target": "desktop"
+        },
+        { "file": "apps/mobile/src/modules/login/email.tsx", "line": 210, "target": "mobile" },
+        { "file": "apps/ssr/client/pages/(login)/register.tsx", "line": 72, "target": "ssr" }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/subscription/upgrade",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/settings/tabs/plan.tsx",
+          "line": 126,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/routes/Plan.tsx",
+          "line": 476,
+          "target": "mobile"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/two-factor/disable",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/two-factor.tsx",
+          "line": 241,
+          "target": "desktop"
+        },
+        {
+          "file": "packages/internal/store/src/modules/user/store.ts",
+          "line": 154,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/two-factor/enable",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/two-factor.tsx",
+          "line": 242,
+          "target": "desktop"
+        },
+        {
+          "file": "packages/internal/store/src/modules/user/store.ts",
+          "line": 153,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/two-factor/verify-totp",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/main/src/ipc/services/auth.ts",
+          "line": 271,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/auth/Form.tsx",
+          "line": 255,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/two-factor.tsx",
+          "line": 227,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/routes/2FASetting.tsx",
+          "line": 34,
+          "target": "mobile"
+        },
+        {
+          "file": "apps/mobile/src/screens/(modal)/TwoFactorAuthScreen.tsx",
+          "line": 29,
+          "target": "mobile"
+        },
+        { "file": "apps/ssr/client/modules/login/index.tsx", "line": 371, "target": "ssr" }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/unlink-account",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/account-management.tsx",
+          "line": 20,
+          "target": "desktop"
+        },
+        {
+          "file": "apps/mobile/src/modules/settings/routes/Account.tsx",
+          "line": 120,
+          "target": "mobile"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/better-auth/update-user",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/profile/profile-setting-form.tsx",
+          "line": 105,
+          "target": "desktop"
+        },
+        {
+          "file": "packages/internal/store/src/modules/user/store.ts",
+          "line": 118,
+          "target": "shared"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/billing/apple/verify",
+      "callsites": [
+        {
+          "file": "apps/mobile/src/providers/AppleIAPProvider.tsx",
+          "line": 151,
+          "target": "mobile"
+        },
+        {
+          "file": "apps/mobile/src/providers/AppleIAPProvider.tsx",
+          "line": 244,
+          "target": "mobile"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/billing/portal",
+      "callsites": [
+        {
+          "file": "apps/mobile/src/modules/settings/routes/Plan.tsx",
+          "line": 438,
+          "target": "mobile"
+        }
+      ]
+    }
+  ]
+}
