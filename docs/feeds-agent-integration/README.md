@@ -11,6 +11,7 @@
 
 - [folo-integration-plan.md](./folo-integration-plan.md)：主方案，包含阶段路线、数据模型、API 边界、UI 改造和官方能力适配策略。
 - [stage-0-contract-freeze.md](./stage-0-contract-freeze.md)：已验证版本组合、实际 API 使用面、能力矩阵、契约样本和变更流程。
+- [stage-1-minimum-loop.md](./stage-1-minimum-loop.md)：已完成的自有认证、PostgreSQL、RSS 订阅、阅读状态与收藏最小闭环，以及完整阶段一的剩余边界。
 - [feeds-agent-CONTEXT.md](./feeds-agent-CONTEXT.md)：Feeds Agent 当前领域语言和已解决歧义快照。
 - [adr/0012-store-processing-results-by-content-version.md](./adr/0012-store-processing-results-by-content-version.md)：旧处理结果版本化 ADR，已被后续设计取代。
 - [adr/0023-split-feed-core-and-supplier-services.md](./adr/0023-split-feed-core-and-supplier-services.md)：feed_core 与 feed_supplier 拆分边界。

@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next"
 import { useSearchParams } from "react-router"
 import { z } from "zod"
 
+import { useCapability, useCapabilityManifest } from "~/atoms/capabilities"
 import { useModalStack } from "~/components/ui/modal/stacked/hooks"
 import { useRequireLogin } from "~/hooks/common/useRequireLogin"
 import { followClient } from "~/lib/api-client"
@@ -105,6 +106,13 @@ export function UnifiedDiscoverForm() {
   const { ensureLogin } = useRequireLogin()
   const { present, dismissAll } = useModalStack()
   const isMobile = useMobile()
+  const capabilityManifest = useCapabilityManifest()
+  const organizationEnabled = useCapability("organization.core")
+  const opmlEnabled = useCapability("subscriptions.opml")
+  const rsshubEnabled = useCapability("rsshub.hosted")
+  const inboxEnabled = useCapability("inboxes.core")
+  const profilesEnabled = useCapability("profiles.core")
+  const isSelfHosted = capabilityManifest !== null
 
   // Auto-detect input type based on current value
   const detectedType = useMemo(() => {
@@ -156,6 +164,9 @@ export function UnifiedDiscoverForm() {
       }
 
       if (inputType === "rsshub") {
+        if (!rsshubEnabled) {
+          throw new Error("RSSHub is unavailable on this server")
+        }
         const validated = rsshubSchema.safeParse({ keyword })
         if (!validated.success) {
           throw new Error("Invalid RSSHub route")
@@ -291,7 +302,7 @@ export function UnifiedDiscoverForm() {
     mutation.mutate({ keyword: values.keyword, target: values.target })
   }
 
-  const showTargetSelector = detectedType === "search"
+  const showTargetSelector = detectedType === "search" && organizationEnabled
 
   return (
     <>
@@ -318,7 +329,11 @@ export function UnifiedDiscoverForm() {
                       value={field.value || ""}
                       onChange={handleKeywordChange}
                       onCompositionEnd={handleCompositionEnd}
-                      placeholder="Enter URL, RSSHub route, or keyword..."
+                      placeholder={
+                        isSelfHosted
+                          ? t("discover.rss_url")
+                          : "Enter URL, RSSHub route, or keyword..."
+                      }
                       className="h-12 text-base"
                     />
                   </FormControl>
@@ -345,7 +360,7 @@ export function UnifiedDiscoverForm() {
                         </a>
                       </>
                     )}
-                    {detectedType === "rsshub" && (
+                    {detectedType === "rsshub" && rsshubEnabled && (
                       <>
                         <span>•</span>
                         <a
@@ -414,52 +429,62 @@ export function UnifiedDiscoverForm() {
               </Button>
 
               {/* Compact Tools */}
-              <div className="mt-5 flex items-center justify-center gap-3 text-xs">
-                <ToolLink
-                  icon="i-mgc-file-upload-cute-re"
-                  label={t("discover.tools.import")}
-                  onClick={() => {
-                    present({
-                      title: t("discover.tools.import"),
-                      content: () => <DiscoverImport />,
-                      modalClassName: "max-w-2xl w-full",
-                    })
-                  }}
-                />
-                <ToolLink
-                  icon="i-mgc-web-cute-re"
-                  label={t("discover.tools.transform")}
-                  onClick={() => {
-                    present({
-                      title: t("discover.tools.transform"),
-                      content: () => <DiscoverTransform />,
-                      modalClassName: "max-w-2xl w-full",
-                    })
-                  }}
-                />
-                <ToolLink
-                  icon="i-mgc-inbox-cute-re"
-                  label={t("discover.tools.inbox")}
-                  onClick={() => {
-                    present({
-                      title: t("words.inbox"),
-                      content: () => <DiscoverInboxList />,
-                      modalClassName: "max-w-2xl w-full",
-                    })
-                  }}
-                />
-                <ToolLink
-                  icon="i-mgc-user-3-cute-re"
-                  label={t("discover.tools.user")}
-                  onClick={() => {
-                    present({
-                      title: t("words.user"),
-                      content: () => <DiscoverUser />,
-                      modalClassName: "max-w-2xl w-full",
-                    })
-                  }}
-                />
-              </div>
+              {(opmlEnabled || rsshubEnabled || inboxEnabled || profilesEnabled) && (
+                <div className="mt-5 flex items-center justify-center gap-3 text-xs">
+                  {opmlEnabled && (
+                    <ToolLink
+                      icon="i-mgc-file-upload-cute-re"
+                      label={t("discover.tools.import")}
+                      onClick={() => {
+                        present({
+                          title: t("discover.tools.import"),
+                          content: () => <DiscoverImport />,
+                          modalClassName: "max-w-2xl w-full",
+                        })
+                      }}
+                    />
+                  )}
+                  {rsshubEnabled && (
+                    <ToolLink
+                      icon="i-mgc-web-cute-re"
+                      label={t("discover.tools.transform")}
+                      onClick={() => {
+                        present({
+                          title: t("discover.tools.transform"),
+                          content: () => <DiscoverTransform />,
+                          modalClassName: "max-w-2xl w-full",
+                        })
+                      }}
+                    />
+                  )}
+                  {inboxEnabled && (
+                    <ToolLink
+                      icon="i-mgc-inbox-cute-re"
+                      label={t("discover.tools.inbox")}
+                      onClick={() => {
+                        present({
+                          title: t("words.inbox"),
+                          content: () => <DiscoverInboxList />,
+                          modalClassName: "max-w-2xl w-full",
+                        })
+                      }}
+                    />
+                  )}
+                  {profilesEnabled && (
+                    <ToolLink
+                      icon="i-mgc-user-3-cute-re"
+                      label={t("discover.tools.user")}
+                      onClick={() => {
+                        present({
+                          title: t("words.user"),
+                          content: () => <DiscoverUser />,
+                          modalClassName: "max-w-2xl w-full",
+                        })
+                      }}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </form>

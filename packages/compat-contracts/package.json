@@ -9,7 +9,8 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
-    }
+    },
+    "./capabilities": "./contracts/capabilities.json"
   },
   "scripts": {
     "contracts:check": "tsx scripts/freeze-api-usage.ts --check",

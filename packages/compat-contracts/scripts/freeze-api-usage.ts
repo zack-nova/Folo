@@ -331,6 +331,9 @@ const sourceFiles = async (repositoryRoot: string): Promise<string[]> =>
       "**/*.test.tsx",
       "**/*.spec.ts",
       "**/*.spec.tsx",
+      // The inventory freezes client callsites only. Server implementations can share method names
+      // with SDK routes and would otherwise be reported as false-positive client usage.
+      "apps/server/**",
       "packages/compat-contracts/**",
     ],
   })

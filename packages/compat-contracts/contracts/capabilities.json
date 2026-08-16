@@ -130,7 +130,7 @@
     },
     {
       "id": "subscriptions.core",
-      "title": "Subscriptions and OPML",
+      "title": "Subscription management",
       "targetStage": 1,
       "provider": "local",
       "clientBehavior": "enabled_when_advertised",
@@ -138,12 +138,19 @@
         "subscriptions.batchUpdate",
         "subscriptions.create",
         "subscriptions.delete",
-        "subscriptions.export",
         "subscriptions.get",
-        "subscriptions.import",
-        "subscriptions.parseOpml",
         "subscriptions.update"
       ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "subscriptions.opml",
+      "title": "OPML import and export",
+      "targetStage": 1,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": ["subscriptions.export", "subscriptions.import", "subscriptions.parseOpml"],
       "nonSdkRequests": [],
       "protocolRoutes": []
     },

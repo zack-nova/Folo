@@ -19,6 +19,7 @@
     "dedupe:locales": "eslint --fix locales/**",
     "depcheck": "npx depcheck --quiet",
     "dev:web": "turbo run @follow/web#dev @follow/ssr#dev",
+    "dev:self-hosted": "pnpm server:db:up && cross-env DATABASE_URL=postgres://folo:folo@localhost:54329/folo BETTER_AUTH_SECRET=local-development-secret-at-least-32-characters SERVER_URL=http://localhost:3000 CLIENT_ORIGINS=http://localhost:2233 VITE_API_URL=http://localhost:3000 VITE_WEB_URL=http://localhost:2233 turbo run @follow/server#dev @follow/web#dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "icons:sync": "tsx scripts/svg-to-rn.ts && prettier --write apps/mobile/src/icons/**/*.tsx && eslint --fix apps/mobile/src/icons/**/*.tsx",
@@ -32,6 +33,10 @@
     "prepare": "simple-git-hooks && corepack prepare",
     "reinstall": "rm -rf node_modules && rm -rf apps/**/node_modules && rm -rf packages/**/node_modules && pnpm install",
     "test": "cross-env CI=1 pnpm --recursive run test",
+    "server:db:down": "docker compose -f apps/server/compose.yaml down",
+    "server:db:up": "docker compose -f apps/server/compose.yaml up -d --wait",
+    "server:migrate": "pnpm --filter @follow/server db:migrate",
+    "server:test:postgres": "cross-env TEST_DATABASE_URL=postgres://folo:folo@localhost:54329/folo pnpm --filter @follow/server test",
     "typecheck": "turbo typecheck"
   },
   "devDependencies": {

@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: folo
+      POSTGRES_PASSWORD: folo
+      POSTGRES_USER: folo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U folo -d folo"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    ports:
+      - "54329:5432"
+    volumes:
+      - folo-postgres:/var/lib/postgresql/data
+
+volumes:
+  folo-postgres:
