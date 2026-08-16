@@ -10,17 +10,16 @@ import DeviceInfo from "react-native-device-info"
 import { Image } from "@/src/components/ui/image/Image"
 import { PlatformActivityIndicator } from "@/src/components/ui/loading/PlatformActivityIndicator"
 import { Text } from "@/src/components/ui/typography/Text"
+import type { AuthProvider } from "@/src/lib/auth"
 import { signIn, useAuthProviders } from "@/src/lib/auth"
 
 import { loginWithSocialProvider } from "./social-login"
-
-type SocialProviderSignInInput = Parameters<typeof signIn.social>[0]
 
 export function SocialLogin({ onPressEmail }: { isRegister: boolean; onPressEmail: () => void }) {
   const { data: authProviders, isLoading } = useAuthProviders()
   const { colorScheme } = useColorScheme()
   const [pendingProviderId, setPendingProviderId] = useState<string | null>(null)
-  const providers = Object.entries(authProviders || {})
+  const providers = Object.entries((authProviders || {}) as Record<string, AuthProvider>)
   const credentialProvider = providers.find(([, provider]) => provider.id === "credential")?.[1]
   const socialProviders = providers.filter(([, provider]) => {
     if (provider.id === "credential") return false
@@ -78,10 +77,10 @@ export function SocialLogin({ onPressEmail }: { isRegister: boolean; onPressEmai
               void loginWithSocialProvider({
                 providerId: provider.id,
                 setPendingProviderId,
-                signInWithProvider: async (providerId) => {
+                signInWithProvider: async (providerId, { callbackURL }) => {
                   await signIn.social({
-                    provider: providerId as SocialProviderSignInInput["provider"],
-                    callbackURL: "/",
+                    provider: providerId as any,
+                    callbackURL,
                   })
                 },
                 signInWithAppleIdentityToken: async () => {
