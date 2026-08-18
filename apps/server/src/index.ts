@@ -26,11 +26,14 @@ const feedFetcher = new HttpFeedFetcher({
   timeoutMs: config.feedFetchTimeoutMs,
 })
 const server = await buildServer({
+  allowPublicRegistration: config.allowPublicRegistration,
   auth,
   clientOrigins: config.clientOrigins,
   dataStore,
   feedFetcher,
   logger: true,
+  serverURL: config.serverURL,
+  uploadsDirectory: config.uploadsDirectory,
 })
 
 await server.listen({ host: config.host, port: config.port })

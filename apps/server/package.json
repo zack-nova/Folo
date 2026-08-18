@@ -14,12 +14,15 @@
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",
+    "@fastify/multipart": "10.1.1",
     "@follow-app/client-sdk": "catalog:",
+    "@follow-app/readability": "workspace:*",
     "@follow/compat-contracts": "workspace:*",
     "better-auth": "1.6.23",
     "drizzle-orm": "0.45.2",
     "fast-xml-parser": "5.10.1",
     "fastify": "5.10.0",
+    "pathe": "2.0.3",
     "pg": "8.18.0",
     "zod": "4.4.3"
   },

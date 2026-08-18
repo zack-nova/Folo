@@ -12,6 +12,7 @@ const boolean = z
   .transform((value) => value === "true")
 
 const serverEnvironment = z.object({
+  ALLOW_PUBLIC_REGISTRATION: boolean,
   ALLOW_PRIVATE_FEEDS: boolean,
   BETTER_AUTH_SECRET: z.string().min(32),
   CLIENT_ORIGINS: z
@@ -34,11 +35,13 @@ const serverEnvironment = z.object({
   HOST: z.string().default("0.0.0.0"),
   PORT: integer(3000, 1).pipe(z.number().max(65_535)),
   SERVER_URL: z.url().default("http://localhost:3000"),
+  UPLOADS_DIRECTORY: z.string().min(1).default("./data/uploads"),
 })
 
 export const loadServerConfig = (environment: NodeJS.ProcessEnv) => {
   const parsed = serverEnvironment.parse(environment)
   return {
+    allowPublicRegistration: parsed.ALLOW_PUBLIC_REGISTRATION,
     allowPrivateFeeds: parsed.ALLOW_PRIVATE_FEEDS,
     authSecret: parsed.BETTER_AUTH_SECRET,
     clientOrigins: parsed.CLIENT_ORIGINS,
@@ -49,6 +52,7 @@ export const loadServerConfig = (environment: NodeJS.ProcessEnv) => {
     host: parsed.HOST,
     port: parsed.PORT,
     serverURL: parsed.SERVER_URL,
+    uploadsDirectory: parsed.UPLOADS_DIRECTORY,
   }
 }
 

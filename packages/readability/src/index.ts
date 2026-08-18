@@ -1,6 +1,6 @@
 import { Readability } from "@mozilla/readability"
 import chardet from "chardet"
-import { parseHTML } from "linkedom/worker"
+import { JSDOM } from "jsdom"
 
 import { sanitizeHTMLString } from "./sanitize"
 
@@ -38,20 +38,20 @@ export async function readability(baseUrl: string) {
     },
   }).then(decodeResponseBodyChars)
 
-  const sanitizedDocumentString = sanitizeHTMLString(dirtyDocumentString)
-  const baseOrigin = new URL(baseUrl).origin
+  return readabilityFromHTML(baseUrl, dirtyDocumentString)
+}
 
-  // FIXME: linkedom does not handle relative addresses in strings. Refer to
-  // @see https://github.com/WebReflection/linkedom/issues/153
-  // JSDOM handles it correctly, but JSDOM introduces canvas binding.
-  const { document } = parseHTML(sanitizedDocumentString)
+export function readabilityFromHTML(baseUrl: string, dirtyDocumentString: string) {
+  const sanitizedDocumentString = sanitizeHTMLString(dirtyDocumentString)
+
+  const { document } = new JSDOM(sanitizedDocumentString, { url: baseUrl }).window
 
   document.querySelectorAll("a").forEach((a) => {
-    a.href = replaceRelativeAddress(baseOrigin, a.href)
+    a.href = replaceRelativeAddress(baseUrl, a.href)
   })
   ;(["img", "audio", "video"] as const).forEach((tag) => {
     document.querySelectorAll(tag).forEach((img) => {
-      img.src = img.src && replaceRelativeAddress(baseOrigin, img.src)
+      img.src = img.src && replaceRelativeAddress(baseUrl, img.src)
     })
   })
 

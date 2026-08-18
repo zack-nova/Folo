@@ -60,6 +60,14 @@ export const entries = pgTable(
   ],
 )
 
+export const entryReadability = pgTable("entry_readability", {
+  entryId: text("entry_id")
+    .primaryKey()
+    .references(() => entries.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+})
+
 export const subscriptions = pgTable(
   "subscriptions",
   {
@@ -77,6 +85,49 @@ export const subscriptions = pgTable(
   (table) => [
     primaryKey({ columns: [table.userId, table.feedId] }),
     index("subscriptions_user_view_idx").on(table.userId, table.view),
+  ],
+)
+
+export const instanceOwnership = pgTable("instance_ownership", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+})
+
+export const lists = pgTable(
+  "lists",
+  {
+    id: text("id").primaryKey(),
+    feedIds: text("feed_ids").array().notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    image: text("image"),
+    view: integer("view").notNull(),
+    fee: integer("fee").notNull(),
+    ownerUserId: text("owner_user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("lists_owner_idx").on(table.ownerUserId)],
+)
+
+export const listSubscriptions = pgTable(
+  "list_subscriptions",
+  {
+    userId: text("user_id").notNull(),
+    listId: text("list_id")
+      .notNull()
+      .references(() => lists.id, { onDelete: "cascade" }),
+    view: integer("view").notNull(),
+    category: text("category"),
+    title: text("title"),
+    isPrivate: boolean("is_private").notNull(),
+    hideFromTimeline: boolean("hide_from_timeline"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.listId] }),
+    index("list_subscriptions_user_view_idx").on(table.userId, table.view),
   ],
 )
 

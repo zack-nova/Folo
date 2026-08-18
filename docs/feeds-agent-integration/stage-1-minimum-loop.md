@@ -14,8 +14,8 @@
          → 定时/手动刷新 → 时间线/正文 → 已读/未读/收藏
 ```
 
-它是“阶段一最小闭环”，不是主方案中“完整阶段一”的全部工作。Category/List、OPML、
-Profile/Avatar 和完整网页 Readability 仍属于后续的阶段一扩展包。
+它是阶段一的第一条纵向切片。Category/List、OPML、Profile/Avatar 和完整网页 Readability 已在
+2026-08-18 完成，交付证据见 [`stage-1-extension-package.md`](./stage-1-extension-package.md)。
 
 ## 架构结果
 
@@ -38,8 +38,8 @@ Profile/Avatar 和完整网页 Readability 仍属于后续的阶段一扩展包�
 - `/entries`、`/entries/preview`、`/entries/readability`、`/entries/stream`。
 - `/reads`、`/reads/total-count`、`/reads/all`、`/collections`。
 
-未实现路由继续使用阶段 0 冻结的 `501 capability_not_implemented` envelope。能力清单不会宣称
-OPML、Organization、RSSHub、Profile、AI、Wallet/Billing 等未交付能力；Desktop 的统一发现页会隐藏对应入口。
+未实现路由继续使用阶段 0 冻结的 `501 capability_not_implemented` envelope。本文记录的是最小切片当时
+的能力边界；当前能力清单以扩展包文档和 `/api/extensions/capabilities` 为准。
 
 ## 测试证据
 
@@ -52,15 +52,7 @@ OPML、Organization、RSSHub、Profile、AI、Wallet/Billing 等未交付能力�
 
 本地启动、环境变量和数据库命令见 [`apps/server/README.md`](../../apps/server/README.md)。
 
-## 完整阶段一剩余工作
+## 后续
 
-建议按以下顺序补齐：
-
-1. Category/List 的权威表、兼容 API 和前端组织操作。
-2. OPML 解析、预览、批量导入、冲突报告和导出。
-3. Profile/Avatar 的单人所有者模型，并收紧为“首次初始化后关闭公开注册”。
-4. 正文抽取器与可缓存 Readability 结果；RSS 自带全文继续作为零成本优先级。
-5. E2E 浏览器回归、备份/恢复、刷新退避、失败诊断和生产部署清单。
-
-上述工作完成后，才应把主方案的阶段一整体状态标记为完成；随后进入 Entry Evaluation 与
-Processing Job，而不是提前接入官方 AI 或 RSSHub。
+完整阶段一已完成。下一阶段进入 Entry Evaluation 与 Processing Job，而不是接回官方 AI 或 RSSHub；
+刷新退避、失败诊断、生产部署和可观测性作为上线加固工作继续推进。

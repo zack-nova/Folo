@@ -89,10 +89,11 @@ describe("capability discovery", () => {
       unavailable: string[]
     }
     expect(data.capabilities).toContainEqual({ id: "auth.credentials", provider: "local" })
+    expect(data.capabilities).toContainEqual({ id: "organization.core", provider: "local" })
+    expect(data.capabilities).toContainEqual({ id: "profiles.core", provider: "local" })
     expect(data.capabilities).toContainEqual({ id: "subscriptions.core", provider: "local" })
-    expect(data.unavailable).toContain("subscriptions.opml")
+    expect(data.capabilities).toContainEqual({ id: "subscriptions.opml", provider: "local" })
     expect(data.unavailable).toContain("ai.chat")
-    expect(data.unavailable).toContain("organization.core")
     expect(data.capabilities.some((capability) => capability.provider === "official")).toBe(false)
   })
 

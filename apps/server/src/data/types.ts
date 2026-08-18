@@ -63,6 +63,34 @@ export type SubscriptionPatch = Partial<
   Pick<SubscriptionRecord, "category" | "hideFromTimeline" | "isPrivate" | "title" | "view">
 >
 
+export interface ListRecord {
+  id: string
+  feedIds: string[]
+  title: string
+  description: string | null
+  image: string | null
+  view: number
+  fee: number
+  ownerUserId: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface ListSubscriptionRecord {
+  userId: string
+  listId: string
+  view: number
+  category: string | null
+  title: string | null
+  isPrivate: boolean
+  hideFromTimeline: boolean | null
+  createdAt: Date
+}
+
+export type ListPatch = Partial<
+  Pick<ListRecord, "description" | "fee" | "image" | "title" | "view">
+>
+
 export interface EntryListFilter {
   userId: string
   view?: number
@@ -81,6 +109,12 @@ export interface MarkAllReadFilter {
   feedIdList?: string[]
 }
 
+export interface ReadabilityRecord {
+  entryId: string
+  content: string
+  updatedAt: Date
+}
+
 export type SettingsTab = "ai" | "appearance" | "general" | "integration"
 export interface SettingsRecord {
   payload: Record<string, unknown>
@@ -88,6 +122,8 @@ export interface SettingsRecord {
 }
 
 export interface DataStore {
+  getOwnerUserId(): Promise<string | null>
+  claimOwner(userId: string): Promise<string>
   saveFeed(feed: FeedRecord, entries: EntryRecord[]): Promise<void>
   createSubscription(subscription: SubscriptionRecord): Promise<void>
   updateSubscription(
@@ -97,6 +133,19 @@ export interface DataStore {
   ): Promise<SubscriptionRecord | null>
   deleteSubscriptions(userId: string, feedIds: string[]): Promise<void>
   listSubscriptions(userId: string, view?: number): Promise<SubscriptionRecord[]>
+  createList(list: ListRecord, subscription: ListSubscriptionRecord): Promise<void>
+  updateList(userId: string, listId: string, patch: ListPatch): Promise<ListRecord | null>
+  deleteList(userId: string, listId: string): Promise<void>
+  getList(userId: string, listId: string): Promise<ListRecord | null>
+  listLists(userId: string): Promise<ListRecord[]>
+  setListFeeds(userId: string, listId: string, feedIds: string[]): Promise<ListRecord | null>
+  listListSubscriptions(userId: string, view?: number): Promise<ListSubscriptionRecord[]>
+  updateListSubscription(
+    userId: string,
+    listId: string,
+    patch: SubscriptionPatch,
+  ): Promise<ListSubscriptionRecord | null>
+  deleteListSubscription(userId: string, listId: string): Promise<void>
   listEntries(filter: EntryListFilter): Promise<
     Array<{
       entry: EntryRecord
@@ -108,6 +157,8 @@ export interface DataStore {
   getFeed(id: string): Promise<FeedRecord | null>
   getFeedByUrl(url: string): Promise<FeedRecord | null>
   getEntry(userId: string, id: string): Promise<EntryRecord | null>
+  getReadability(userId: string, entryId: string): Promise<ReadabilityRecord | null>
+  setReadability(userId: string, entryId: string, content: string): Promise<void>
   getUnreadCounts(userId: string, view?: number): Promise<Record<string, number>>
   setEntriesRead(userId: string, entryIds: string[], read: boolean): Promise<void>
   markAllAsRead(userId: string, filter: MarkAllReadFilter): Promise<Record<string, number>>

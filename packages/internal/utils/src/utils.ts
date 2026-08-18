@@ -125,7 +125,9 @@ export function isBizId(id: string): boolean
 export function isBizId(id: string | undefined): id is string
 
 export function isBizId(id: string | undefined): id is string {
-  if (!id || !/^\d{13,19}$/.test(id)) return false
+  if (!id) return false
+  if (/^(?:entry|feed)_[a-f0-9]{24}$/.test(id)) return true
+  if (!/^\d{13,19}$/.test(id)) return false
 
   const snowflake = BigInt(id)
 

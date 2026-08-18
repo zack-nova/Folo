@@ -4,6 +4,9 @@ import { doesTextContainHTML, isBizId, omitShallow, toScientificNotation } from 
 
 describe("utils", () => {
   test("isBizId", () => {
+    expect(isBizId("feed_d7d575246f5f7e764929e791")).toBe(true)
+    expect(isBizId("entry_73951c9a26f12971f60c810e")).toBe(true)
+    expect(isBizId("other_73951c9a26f12971f60c810e")).toBe(false)
     expect(isBizId("1712546615000")).toBe(true)
     expect(isBizId("17125466150000")).toBe(true)
     expect(isBizId("171254661500000")).toBe(true)

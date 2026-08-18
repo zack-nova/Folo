@@ -33,6 +33,7 @@ describe.runIf(databaseURL)("PostgreSQL authority", () => {
 
     const feedURL = `https://feeds.example.com/rss.xml?run=${randomUUID()}`
     let server = await buildServer({
+      allowPublicRegistration: true,
       auth,
       clientOrigins: ["http://localhost:2233"],
       dataStore: new PostgresDataStore(database.db),
@@ -84,6 +85,7 @@ describe.runIf(databaseURL)("PostgreSQL authority", () => {
     await server.close()
 
     server = await buildServer({
+      allowPublicRegistration: true,
       auth,
       clientOrigins: ["http://localhost:2233"],
       dataStore: new PostgresDataStore(database.db),
@@ -98,6 +100,16 @@ describe.runIf(databaseURL)("PostgreSQL authority", () => {
     expect(subscriptions.data).toContainEqual(
       expect.objectContaining({ feedId: created.feed!.id, userId: registration.json().user.id }),
     )
+
+    const emptyList = await client.api.lists.create({
+      title: "Empty list",
+      description: null,
+      image: null,
+      view: 0,
+      fee: 0,
+    })
+    const emptyListDetail = await client.api.lists.get({ listId: emptyList.data.id })
+    expect(emptyListDetail.data).toMatchObject({ feedCount: 0, entries: [] })
 
     await server.close()
   })

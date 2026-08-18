@@ -1,13 +1,28 @@
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm"
 
 import type { ApplicationDatabase } from "../db/database"
-import { collections, entries, feeds, readStates, settings, subscriptions } from "../db/schema"
+import {
+  collections,
+  entries,
+  entryReadability,
+  feeds,
+  instanceOwnership,
+  lists,
+  listSubscriptions,
+  readStates,
+  settings,
+  subscriptions,
+} from "../db/schema"
 import type {
   DataStore,
   EntryListFilter,
   EntryRecord,
   FeedRecord,
+  ListPatch,
+  ListRecord,
+  ListSubscriptionRecord,
   MarkAllReadFilter,
+  ReadabilityRecord,
   SettingsRecord,
   SettingsTab,
   SubscriptionPatch,
@@ -16,6 +31,25 @@ import type {
 
 export class PostgresDataStore implements DataStore {
   constructor(private readonly database: ApplicationDatabase) {}
+
+  async getOwnerUserId(): Promise<string | null> {
+    const [owner] = await this.database
+      .select({ userId: instanceOwnership.userId })
+      .from(instanceOwnership)
+      .where(eq(instanceOwnership.id, "primary"))
+      .limit(1)
+    return owner?.userId ?? null
+  }
+
+  async claimOwner(userId: string): Promise<string> {
+    await this.database
+      .insert(instanceOwnership)
+      .values({ createdAt: new Date(), id: "primary", userId })
+      .onConflictDoNothing()
+    const ownerUserId = await this.getOwnerUserId()
+    if (!ownerUserId) throw new Error("The instance owner could not be established")
+    return ownerUserId
+  }
 
   async saveFeed(feed: FeedRecord, entryRecords: EntryRecord[]): Promise<void> {
     await this.database.transaction(async (transaction) => {
@@ -110,6 +144,94 @@ export class PostgresDataStore implements DataStore {
       )
   }
 
+  async createList(list: ListRecord, subscription: ListSubscriptionRecord): Promise<void> {
+    await this.database.transaction(async (transaction) => {
+      await transaction.insert(lists).values(list)
+      await transaction.insert(listSubscriptions).values(subscription)
+    })
+  }
+
+  async updateList(userId: string, listId: string, patch: ListPatch): Promise<ListRecord | null> {
+    const updatedAt = new Date()
+    return this.database.transaction(async (transaction) => {
+      const [updated] = await transaction
+        .update(lists)
+        .set({ ...patch, updatedAt })
+        .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
+        .returning()
+      if (!updated) return null
+      if (patch.view !== undefined) {
+        await transaction
+          .update(listSubscriptions)
+          .set({ view: patch.view })
+          .where(and(eq(listSubscriptions.userId, userId), eq(listSubscriptions.listId, listId)))
+      }
+      return updated
+    })
+  }
+
+  async deleteList(userId: string, listId: string): Promise<void> {
+    await this.database
+      .delete(lists)
+      .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
+  }
+
+  async getList(userId: string, listId: string): Promise<ListRecord | null> {
+    const [list] = await this.database
+      .select()
+      .from(lists)
+      .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
+      .limit(1)
+    return list ?? null
+  }
+
+  async listLists(userId: string): Promise<ListRecord[]> {
+    return this.database.select().from(lists).where(eq(lists.ownerUserId, userId))
+  }
+
+  async setListFeeds(
+    userId: string,
+    listId: string,
+    feedIds: string[],
+  ): Promise<ListRecord | null> {
+    const [updated] = await this.database
+      .update(lists)
+      .set({ feedIds: [...new Set(feedIds)], updatedAt: new Date() })
+      .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
+      .returning()
+    return updated ?? null
+  }
+
+  async listListSubscriptions(userId: string, view?: number): Promise<ListSubscriptionRecord[]> {
+    return this.database
+      .select()
+      .from(listSubscriptions)
+      .where(
+        view === undefined
+          ? eq(listSubscriptions.userId, userId)
+          : and(eq(listSubscriptions.userId, userId), eq(listSubscriptions.view, view)),
+      )
+  }
+
+  async updateListSubscription(
+    userId: string,
+    listId: string,
+    patch: SubscriptionPatch,
+  ): Promise<ListSubscriptionRecord | null> {
+    const [updated] = await this.database
+      .update(listSubscriptions)
+      .set(patch)
+      .where(and(eq(listSubscriptions.userId, userId), eq(listSubscriptions.listId, listId)))
+      .returning()
+    return updated ?? null
+  }
+
+  async deleteListSubscription(userId: string, listId: string): Promise<void> {
+    await this.database
+      .delete(listSubscriptions)
+      .where(and(eq(listSubscriptions.userId, userId), eq(listSubscriptions.listId, listId)))
+  }
+
   async listEntries({
     userId,
     view,
@@ -128,6 +250,8 @@ export class PostgresDataStore implements DataStore {
       collectionCreatedAt: Date | null
     }>
   > {
+    if (feedIdList?.length === 0) return []
+
     const conditions = [eq(subscriptions.userId, userId)]
     if (view !== undefined) conditions.push(eq(subscriptions.view, view))
     if (feedId !== undefined) conditions.push(eq(subscriptions.feedId, feedId))
@@ -187,6 +311,32 @@ export class PostgresDataStore implements DataStore {
       .where(eq(entries.id, id))
       .limit(1)
     return row?.entry ?? null
+  }
+
+  async getReadability(userId: string, entryId: string): Promise<ReadabilityRecord | null> {
+    const [record] = await this.database
+      .select({ readability: entryReadability })
+      .from(entryReadability)
+      .innerJoin(entries, eq(entries.id, entryReadability.entryId))
+      .innerJoin(
+        subscriptions,
+        and(eq(subscriptions.feedId, entries.feedId), eq(subscriptions.userId, userId)),
+      )
+      .where(eq(entryReadability.entryId, entryId))
+      .limit(1)
+    return record?.readability ?? null
+  }
+
+  async setReadability(userId: string, entryId: string, content: string): Promise<void> {
+    if (!(await this.getEntry(userId, entryId))) return
+    const updatedAt = new Date()
+    await this.database
+      .insert(entryReadability)
+      .values({ content, entryId, updatedAt })
+      .onConflictDoUpdate({
+        target: entryReadability.entryId,
+        set: { content, updatedAt },
+      })
   }
 
   async getUnreadCounts(userId: string, view?: number): Promise<Record<string, number>> {

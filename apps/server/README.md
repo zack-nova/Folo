@@ -1,7 +1,7 @@
-# Folo 自托管后端（阶段一最小闭环）
+# Folo 自托管后端（完整阶段一）
 
 这个服务是 FOLO API 的自有兼容门面。当前版本不访问 FOLO 官方后端，PostgreSQL 是 Feed、
-Subscription、Entry、阅读状态、收藏和用户设置的权威存储；客户端 SQLite 仍只是可重建缓存。
+Subscription、List、Entry、阅读状态、收藏、正文缓存和用户设置的权威存储；客户端 SQLite 仍只是可重建缓存。
 
 ## 本地启动
 
@@ -15,7 +15,8 @@ pnpm dev:self-hosted
 ```
 
 `pnpm dev:self-hosted` 会同时启动 API（`http://localhost:3000`）和 Desktop Web renderer
-（`http://localhost:2233`），并把前端 API 地址切到本地服务。首次使用时通过邮箱和密码注册本地账号。
+（`http://localhost:2233`），并把前端 API 地址切到本地服务。首次使用时通过邮箱和密码注册本地账号；
+默认首个账号成为实例所有者，随后注册入口关闭。
 
 只启动后端：
 
@@ -37,6 +38,8 @@ pnpm server:db:down
 - `BETTER_AUTH_SECRET`：至少 32 字符的随机密钥，不能使用仓库中的开发值。
 - `SERVER_URL`：浏览器实际访问的 API 地址。
 - `CLIENT_ORIGINS`：允许携带登录 Cookie 的前端 origin，多个值用逗号分隔。
+- `UPLOADS_DIRECTORY`：头像文件目录；生产环境应放在持久卷中并单独备份。
+- `ALLOW_PUBLIC_REGISTRATION`：默认 `false`；只应在明确需要多人注册时临时开启。
 - `FEED_POLL_INTERVAL_MS`：已订阅 Feed 的刷新周期，默认 15 分钟。
 
 默认拒绝回环、内网、link-local 等私有地址，以降低 RSS URL 造成 SSRF 的风险。只有明确需要订阅
@@ -47,13 +50,29 @@ pnpm server:db:down
 - Better Auth 邮箱密码注册、登录、会话和账号基本设置。
 - 标准 RSS 2.0 / Atom 解析，稳定 Feed/Entry ID、重复导入幂等。
 - URL 预览、订阅、编辑、批量编辑、退订、手动刷新和定时轮询。
-- 时间线、Entry 详情、正文 NDJSON 流和 RSS 正文的 Readability 回退。
+- Category、List 及 List Feed 成员管理。
+- OPML 安全解析、预览、选择性导入、冲突报告和 OPML/JSON 导出。
+- 单实例所有者、资料字段、头像内容校验、哈希存储和本地读取。
+- 时间线、Entry 详情、正文 NDJSON 流、网页 Readability 抽取、缓存及 RSS 正文回退。
 - 已读、未读、全部已读、未读计数和收藏。
 - 基础 Settings、Status Configs、能力发现和未实现能力的固定 `501` 响应。
-- PostgreSQL migration、真实数据库持久化集成测试和 URL 获取安全边界测试。
+- PostgreSQL migration、隔离备份恢复演练、真实数据库持久化和浏览器端到端测试。
 
-阶段一最小闭环暂不包括 Category/List 实体、OPML 导入导出、Profile/Avatar、网页正文抽取、
-官方 RSSHub/Trending、AI、Billing 或 MCP。前端会根据能力清单隐藏已知不可用的发现入口。
+官方 RSSHub/Trending、AI、Billing、MCP、多人权限和生产级可观测性不属于阶段一；前端会根据能力清单
+隐藏尚未实现的入口。
+
+## 备份与恢复演练
+
+数据库备份使用 PostgreSQL custom archive，拒绝覆盖已有文件，并在落盘前执行 archive 校验：
+
+```bash
+pnpm server:backup backups/folo-$(date +%F).dump
+pnpm server:restore:drill backups/folo-2026-08-18.dump
+```
+
+恢复演练只操作唯一命名的临时库，验证关键权威表并输出恢复后的行数，随后自动删除，不改动 `folo` 主库。
+头像不在 PostgreSQL 中；必须同时备份 `UPLOADS_DIRECTORY` 所在持久卷。生产恢复应先恢复到新数据库并完成
+演练，再切换 `DATABASE_URL`，不要直接覆盖运行中的主库。
 
 ## 验证
 
@@ -61,6 +80,7 @@ pnpm server:db:down
 pnpm --filter @follow/server test
 pnpm server:db:up
 pnpm server:test:postgres
+pnpm server:e2e:web
 pnpm contracts:check
 ```
 

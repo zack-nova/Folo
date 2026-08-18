@@ -34,6 +34,7 @@
     "e2e:electron": "playwright test -c e2e/playwright.config.ts --project=electron",
     "e2e:electron:prod": "cross-env FOLO_E2E_PROFILE=prod playwright test -c e2e/playwright.config.ts --project=electron",
     "e2e:install": "playwright install chromium",
+    "e2e:self-hosted": "playwright test -c e2e/self-hosted.playwright.config.ts",
     "e2e:web": "playwright test -c e2e/playwright.config.ts --project=web",
     "e2e:web:prod": "cross-env FOLO_E2E_PROFILE=prod playwright test -c e2e/playwright.config.ts --project=web",
     "hotfix": "vv -c bump.hotfix.config.js --patch",

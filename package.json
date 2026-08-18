@@ -35,7 +35,10 @@
     "test": "cross-env CI=1 pnpm --recursive run test",
     "server:db:down": "docker compose -f apps/server/compose.yaml down",
     "server:db:up": "docker compose -f apps/server/compose.yaml up -d --wait",
+    "server:backup": "bash apps/server/scripts/backup.sh",
     "server:migrate": "pnpm --filter @follow/server db:migrate",
+    "server:e2e:web": "pnpm --dir apps/desktop e2e:self-hosted",
+    "server:restore:drill": "bash apps/server/scripts/restore-drill.sh",
     "server:test:postgres": "cross-env TEST_DATABASE_URL=postgres://folo:folo@localhost:54329/folo pnpm --filter @follow/server test",
     "typecheck": "turbo typecheck"
   },

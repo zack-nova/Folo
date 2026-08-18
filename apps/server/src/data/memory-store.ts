@@ -3,7 +3,11 @@ import type {
   EntryListFilter,
   EntryRecord,
   FeedRecord,
+  ListPatch,
+  ListRecord,
+  ListSubscriptionRecord,
   MarkAllReadFilter,
+  ReadabilityRecord,
   SettingsRecord,
   SettingsTab,
   SubscriptionPatch,
@@ -13,14 +17,28 @@ import type {
 const subscriptionKey = (userId: string, feedId: string) => `${userId}:${feedId}`
 const readKey = (userId: string, entryId: string) => `${userId}:${entryId}`
 const collectionKey = (userId: string, entryId: string) => `${userId}:${entryId}`
+const listSubscriptionKey = (userId: string, listId: string) => `${userId}:${listId}`
 
 export class MemoryDataStore implements DataStore {
   private readonly collections = new Map<string, Date>()
   private readonly entries = new Map<string, EntryRecord>()
   private readonly feeds = new Map<string, FeedRecord>()
+  private readonly lists = new Map<string, ListRecord>()
+  private readonly listSubscriptionRecords = new Map<string, ListSubscriptionRecord>()
   private readonly reads = new Set<string>()
+  private readonly readability = new Map<string, ReadabilityRecord>()
   private readonly settings = new Map<string, SettingsRecord>()
   private readonly subscriptions = new Map<string, SubscriptionRecord>()
+  private ownerUserId: string | null = null
+
+  async getOwnerUserId(): Promise<string | null> {
+    return this.ownerUserId
+  }
+
+  async claimOwner(userId: string): Promise<string> {
+    this.ownerUserId ??= userId
+    return this.ownerUserId
+  }
 
   async saveFeed(feed: FeedRecord, entries: EntryRecord[]): Promise<void> {
     this.feeds.set(feed.id, structuredClone(feed))
@@ -60,6 +78,83 @@ export class MemoryDataStore implements DataStore {
           subscription.userId === userId && (view === undefined || subscription.view === view),
       )
       .map((subscription) => structuredClone(subscription))
+  }
+
+  async createList(list: ListRecord, subscription: ListSubscriptionRecord): Promise<void> {
+    this.lists.set(list.id, structuredClone(list))
+    this.listSubscriptionRecords.set(
+      listSubscriptionKey(subscription.userId, subscription.listId),
+      structuredClone(subscription),
+    )
+  }
+
+  async updateList(userId: string, listId: string, patch: ListPatch): Promise<ListRecord | null> {
+    const current = await this.getList(userId, listId)
+    if (!current) return null
+    const updated = { ...current, ...structuredClone(patch), updatedAt: new Date() }
+    this.lists.set(listId, updated)
+    if (patch.view !== undefined) {
+      await this.updateListSubscription(userId, listId, { view: patch.view })
+    }
+    return structuredClone(updated)
+  }
+
+  async deleteList(userId: string, listId: string): Promise<void> {
+    const list = await this.getList(userId, listId)
+    if (!list) return
+    this.lists.delete(listId)
+    for (const [key, subscription] of this.listSubscriptionRecords) {
+      if (subscription.listId === listId) this.listSubscriptionRecords.delete(key)
+    }
+  }
+
+  async getList(userId: string, listId: string): Promise<ListRecord | null> {
+    const list = this.lists.get(listId)
+    return list?.ownerUserId === userId ? structuredClone(list) : null
+  }
+
+  async listLists(userId: string): Promise<ListRecord[]> {
+    return [...this.lists.values()]
+      .filter((list) => list.ownerUserId === userId)
+      .map((list) => structuredClone(list))
+  }
+
+  async setListFeeds(
+    userId: string,
+    listId: string,
+    feedIds: string[],
+  ): Promise<ListRecord | null> {
+    const list = await this.getList(userId, listId)
+    if (!list) return null
+    const updated = { ...list, feedIds: [...new Set(feedIds)], updatedAt: new Date() }
+    this.lists.set(listId, updated)
+    return structuredClone(updated)
+  }
+
+  async listListSubscriptions(userId: string, view?: number): Promise<ListSubscriptionRecord[]> {
+    return [...this.listSubscriptionRecords.values()]
+      .filter(
+        (subscription) =>
+          subscription.userId === userId && (view === undefined || subscription.view === view),
+      )
+      .map((subscription) => structuredClone(subscription))
+  }
+
+  async updateListSubscription(
+    userId: string,
+    listId: string,
+    patch: SubscriptionPatch,
+  ): Promise<ListSubscriptionRecord | null> {
+    const key = listSubscriptionKey(userId, listId)
+    const current = this.listSubscriptionRecords.get(key)
+    if (!current) return null
+    const updated = { ...current, ...structuredClone(patch) }
+    this.listSubscriptionRecords.set(key, updated)
+    return structuredClone(updated)
+  }
+
+  async deleteListSubscription(userId: string, listId: string): Promise<void> {
+    this.listSubscriptionRecords.delete(listSubscriptionKey(userId, listId))
   }
 
   async listEntries({
@@ -131,6 +226,17 @@ export class MemoryDataStore implements DataStore {
     const entry = this.entries.get(id)
     if (!entry || !this.subscriptions.has(subscriptionKey(userId, entry.feedId))) return null
     return structuredClone(entry)
+  }
+
+  async getReadability(userId: string, entryId: string): Promise<ReadabilityRecord | null> {
+    if (!(await this.getEntry(userId, entryId))) return null
+    const record = this.readability.get(entryId)
+    return record ? structuredClone(record) : null
+  }
+
+  async setReadability(userId: string, entryId: string, content: string): Promise<void> {
+    if (!(await this.getEntry(userId, entryId))) return
+    this.readability.set(entryId, { content, entryId, updatedAt: new Date() })
   }
 
   async getUnreadCounts(userId: string, view?: number): Promise<Record<string, number>> {
