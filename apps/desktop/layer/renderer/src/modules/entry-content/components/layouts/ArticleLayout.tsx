@@ -15,6 +15,7 @@ import type { TocRef } from "~/components/ui/markdown/components/Toc"
 import { useInPeekModal } from "~/components/ui/modal/inspire/InPeekModal"
 import { readableContentMaxWidthClassName } from "~/constants/ui"
 import { useRenderStyle } from "~/hooks/biz/useRenderStyle"
+import { EntryEvaluationPanel } from "~/modules/ai-processing"
 import { EntryContentHTMLRenderer } from "~/modules/renderer/html"
 import { EntryContentMarkdownRenderer } from "~/modules/renderer/markdown"
 import { WrappedElementProvider } from "~/providers/wrapped-element-provider"
@@ -60,6 +61,8 @@ export const ArticleLayout: React.FC<EntryLayoutProps> = ({
   return (
     <div className={cn(readableContentMaxWidthClassName, "mx-auto mt-1 px-4")}>
       <EntryTitle entryId={entryId} compact={compact} containerClassName="mt-12 print:mt-6" />
+
+      <EntryEvaluationPanel entryId={entryId} />
 
       <ArticleAudioPlayer entryId={entryId} />
 

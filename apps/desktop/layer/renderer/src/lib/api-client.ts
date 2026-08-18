@@ -55,6 +55,32 @@ const fetchWithElectronAuth = async (request: Request) => {
   })
 }
 
+export const fetchAPI = async (path: string, init: RequestInit = {}) => {
+  const headers = new Headers(init.headers)
+  headers.set("X-Client-Id", getClientId())
+  headers.set("X-Session-Id", getSessionId())
+  Object.entries(createDesktopAPIHeaders({ version: PKG.version })).forEach(([key, value]) => {
+    headers.set(key, value)
+  })
+
+  const authSessionToken = isElectronRuntime() ? getAuthSessionToken() : null
+  if (authSessionToken && !headers.has("Cookie") && !headers.has("cookie")) {
+    headers.set(
+      "Cookie",
+      buildBetterAuthSessionTokenCookieHeader(env.VITE_API_URL, authSessionToken),
+    )
+  }
+
+  return fetchWithElectronAuth(
+    new Request(new URL(path, env.VITE_API_URL), {
+      ...init,
+      cache: "no-store",
+      credentials: "include",
+      headers,
+    }),
+  )
+}
+
 export const followClient = new FollowClient({
   credentials: "include",
   timeout: 60_000,

@@ -2073,6 +2073,72 @@
   ],
   "nonSdkRequests": [
     {
+      "method": "DELETE",
+      "path": "/api/extensions/ai/provider",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 61,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/extensions/ai/provider",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 53,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/extensions/entries/{expression}/evaluation",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 101,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/extensions/entries/{expression}/processing-status",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 114,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/extensions/profiles",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 64,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/extensions/taxonomies",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 72,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
       "method": "GET",
       "path": "/better-auth/get-account-info",
       "callsites": [
@@ -2162,6 +2228,94 @@
           "file": "apps/mobile/src/modules/settings/routes/Plan.tsx",
           "line": 373,
           "target": "mobile"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/entries/{expression}/evaluation/{expression}/select",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 106,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/entries/projections",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 87,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/processing/jobs",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 119,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/processing/jobs/{expression}/retry",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 127,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/processing/re-evaluation-jobs",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 143,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/processing/re-evaluation-preview",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 135,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/profiles",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 68,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/taxonomies",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 76,
+          "target": "desktop"
         }
       ]
     },
@@ -2509,6 +2663,17 @@
           "file": "apps/mobile/src/modules/settings/routes/Plan.tsx",
           "line": 438,
           "target": "mobile"
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/extensions/ai/provider",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
+          "line": 57,
+          "target": "desktop"
         }
       ]
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { checkCapability } from "./capabilities"
+import { checkAdvertisedCapability, checkCapability } from "./capabilities"
 
 describe("self-hosted capabilities", () => {
   it("keeps capability-gated UI hidden while the manifest is loading", () => {
@@ -12,5 +12,16 @@ describe("self-hosted capabilities", () => {
     expect(checkCapability(new Set(["subscriptions.core"]), "subscriptions.core")).toBe(true)
     expect(checkCapability(new Set(["subscriptions.core"]), "subscriptions.opml")).toBe(false)
     expect(checkCapability(new Set(["subscriptions.core"]), "rsshub.hosted")).toBe(false)
+  })
+
+  it("requires extension capabilities to be explicitly advertised", () => {
+    expect(checkAdvertisedCapability(undefined, "entries.evaluation_processing")).toBe(false)
+    expect(checkAdvertisedCapability(null, "entries.evaluation_processing")).toBe(false)
+    expect(
+      checkAdvertisedCapability(
+        new Set(["entries.evaluation_processing"]),
+        "entries.evaluation_processing",
+      ),
+    ).toBe(true)
   })
 })

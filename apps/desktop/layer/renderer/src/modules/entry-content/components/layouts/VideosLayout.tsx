@@ -1,6 +1,8 @@
 import { useEntry } from "@follow/store/entry/hooks"
 import { useState } from "react"
 
+import { EntryEvaluationPanel } from "~/modules/ai-processing"
+
 import { EntryTitle } from "../EntryTitle"
 import { ContentBody, MediaTranscript, TranscriptToggle, useTranscription } from "./shared"
 import { VideoPlayer } from "./shared/VideoPlayer"
@@ -42,6 +44,8 @@ export const VideosLayout: React.FC<EntryLayoutProps> = ({
       <div className="flex-1 space-y-4">
         {/* Title */}
         <EntryTitle entryId={entryId} compact={compact} />
+
+        <EntryEvaluationPanel entryId={entryId} />
 
         {/* Content Type Toggle */}
         <TranscriptToggle

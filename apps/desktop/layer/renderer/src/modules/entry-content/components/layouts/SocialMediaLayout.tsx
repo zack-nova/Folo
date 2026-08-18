@@ -4,6 +4,7 @@ import { cn } from "@follow/utils/utils"
 
 import { Media } from "~/components/ui/media/Media"
 import { readableContentMaxWidthClassName } from "~/constants/ui"
+import { EntryEvaluationPanel } from "~/modules/ai-processing"
 
 import { AuthorHeader } from "./shared/AuthorHeader"
 import { ContentBody } from "./shared/ContentBody"
@@ -24,6 +25,8 @@ export const SocialMediaLayout: React.FC<EntryLayoutProps> = ({
     <div className={cn(readableContentMaxWidthClassName, "mx-auto space-y-5 pt-12 print:pt-6")}>
       {/* Single Author header without avatar */}
       <AuthorHeader entryId={entryId} />
+
+      <EntryEvaluationPanel entryId={entryId} />
 
       {/* Main content - direct ContentBody usage without show more logic */}
       <ContentBody

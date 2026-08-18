@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "compatibilityVersion": "folo-client-sdk-0.3.95",
-  "extensionContractVersion": "feeds-agent-extensions-v2",
+  "extensionContractVersion": "feeds-agent-extensions-v3",
   "manifestEndpoint": "/api/extensions/capabilities",
   "capabilities": [
     {
@@ -300,7 +300,11 @@
       "provider": "local",
       "clientBehavior": "enabled_when_advertised",
       "sdkApis": [],
-      "nonSdkRequests": [],
+      "nonSdkRequests": [
+        "DELETE /api/extensions/ai/provider",
+        "GET /api/extensions/ai/provider",
+        "PUT /api/extensions/ai/provider"
+      ],
       "protocolRoutes": [
         "GET /api/extensions/ai/provider",
         "PUT /api/extensions/ai/provider",
@@ -314,7 +318,20 @@
       "provider": "local",
       "clientBehavior": "enabled_when_advertised",
       "sdkApis": [],
-      "nonSdkRequests": [],
+      "nonSdkRequests": [
+        "GET /api/extensions/entries/{expression}/evaluation",
+        "POST /api/extensions/entries/{expression}/evaluation/{expression}/select",
+        "GET /api/extensions/entries/{expression}/processing-status",
+        "POST /api/extensions/entries/projections",
+        "POST /api/extensions/processing/jobs",
+        "POST /api/extensions/processing/jobs/{expression}/retry",
+        "GET /api/extensions/profiles",
+        "POST /api/extensions/profiles",
+        "GET /api/extensions/taxonomies",
+        "POST /api/extensions/taxonomies",
+        "POST /api/extensions/processing/re-evaluation-preview",
+        "POST /api/extensions/processing/re-evaluation-jobs"
+      ],
       "protocolRoutes": [
         "GET /api/extensions/entries/{entryId}/evaluation",
         "POST /api/extensions/entries/{entryId}/evaluation/{evaluationId}/select",
@@ -330,6 +347,16 @@
         "POST /api/extensions/processing/re-evaluation-preview",
         "POST /api/extensions/processing/re-evaluation-jobs"
       ]
+    },
+    {
+      "id": "entries.ai_fusion",
+      "title": "Featured timeline and autonomous AI frontend fusion",
+      "targetStage": 3,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
     },
     {
       "id": "ai.chat",

@@ -16,6 +16,7 @@ import { useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router"
 
+import { useAdvertisedCapability } from "~/atoms/capabilities"
 import { previewBackPath } from "~/atoms/preview"
 import { useGeneralSettingKey } from "~/atoms/settings/general"
 import { useSubscriptionColumnShow } from "~/atoms/sidebar"
@@ -25,6 +26,7 @@ import { useFollow } from "~/hooks/biz/useFollow"
 import { getRouteParams, useRouteParams } from "~/hooks/biz/useRouteParams"
 import { useLoginModal } from "~/hooks/common"
 import { useSendAIShortcut } from "~/modules/ai-chat/hooks/useSendAIShortcut"
+import { TimelineAIControls } from "~/modules/ai-processing"
 import { COMMAND_ID } from "~/modules/command/commands/id"
 import { useRunCommandFn } from "~/modules/command/hooks/use-command"
 import { useCommandShortcut } from "~/modules/command/hooks/use-command-binding"
@@ -41,16 +43,18 @@ import { AppendTaildingDivider } from "./AppendTaildingDivider"
 import { SwitchToMasonryButton } from "./buttons/SwitchToMasonryButton"
 
 export const EntryListHeader: FC<{
+  entryIds: string[]
   refetch: () => void
   isRefreshing: boolean
   onBeforeRefresh?: () => void
-}> = ({ refetch, isRefreshing, onBeforeRefresh }) => {
+}> = ({ entryIds, refetch, isRefreshing, onBeforeRefresh }) => {
   const routerParams = useRouteParams()
   const { t } = useTranslation()
 
   const unreadOnly = useGeneralSettingKey("unreadOnly")
   const [aiTimelineEnabled, setAiTimelineEnabled] = useAtom(aiTimelineEnabledAtom)
   const aiEnabled = useFeature("ai")
+  const aiProcessingEnabled = useAdvertisedCapability("entries.ai_fusion")
 
   const { feedId, entryId, view, isCollection } = routerParams
   const isPreview = useIsPreviewFeed()
@@ -104,7 +108,7 @@ export const EntryListHeader: FC<{
   }, [sendAIShortcut])
   const showEntryHeader = isWideMode && !!entryId && entryId !== ROUTE_ENTRY_PENDING
   const showTimelineSummaryButton = isWideMode && aiEnabled
-  const showAiTimelineToggle = aiEnabled
+  const showAiTimelineToggle = aiEnabled || aiProcessingEnabled
 
   const handleAiTimelineButtonClick = useCallback(() => {
     setAiTimelineEnabled((prev) => !prev)
@@ -114,7 +118,11 @@ export const EntryListHeader: FC<{
     if (!showAiTimelineToggle) return null
     return (
       <ActionButton
-        tooltip={t("entry_list_header.ai_timeline")}
+        tooltip={
+          aiProcessingEnabled
+            ? t("ai_processing.featured_timeline")
+            : t("entry_list_header.ai_timeline")
+        }
         active={aiTimelineEnabled}
         onClick={handleAiTimelineButtonClick}
       >
@@ -168,7 +176,8 @@ export const EntryListHeader: FC<{
                   {showEntryHeader && <EntryHeader entryId={entryId} />}
                   {(showAiTimelineToggle || showTimelineSummaryButton) && (
                     <div className="flex items-center gap-2">
-                      {aiTimelineEnabled && renderAiTimelineButton()}
+                      {renderAiTimelineButton()}
+                      {aiProcessingEnabled && <TimelineAIControls entryIds={entryIds} />}
                       {renderTimelineSummaryButton()}
                     </div>
                   )}
@@ -176,7 +185,7 @@ export const EntryListHeader: FC<{
                 </>
               )}
 
-            {!isWideMode && aiTimelineEnabled && renderAiTimelineButton()}
+            {!isWideMode && renderAiTimelineButton()}
 
             <AppendTaildingDivider>
               {view === FeedViewType.Pictures && <SwitchToMasonryButton />}

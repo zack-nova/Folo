@@ -506,7 +506,7 @@ export class PostgresDataStore implements DataStore {
           }
           return { job: active as ProcessingJobRecord, outcome: "reused" as const }
         }
-        await transaction
+        const superseded = await transaction
           .update(processingJobs)
           .set({ finishedAt: new Date(), status: "superseded", supersededByJobId: job.id })
           .where(
@@ -517,8 +517,9 @@ export class PostgresDataStore implements DataStore {
               eq(processingJobs.status, "queued"),
             ),
           )
+          .returning({ id: processingJobs.id })
         await transaction.insert(processingJobs).values(job)
-        return { job, outcome: "created" as const }
+        return { job, outcome: "created" as const, supersededCount: superseded.length }
       })
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "23505")) throw error

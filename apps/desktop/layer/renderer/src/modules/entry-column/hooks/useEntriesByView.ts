@@ -21,10 +21,17 @@ import { debounce } from "es-toolkit/compat"
 import { useAtomValue } from "jotai"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
+import { useAdvertisedCapability } from "~/atoms/capabilities"
 import { useGeneralSettingKey } from "~/atoms/settings/general"
 import { ROUTE_FEED_PENDING } from "~/constants/app"
 import { useFeature } from "~/hooks/biz/useFeature"
 import { useRouteParams } from "~/hooks/biz/useRouteParams"
+import {
+  aiEntryFiltersAtom,
+  applyEntryProjectionFilters,
+  hasActiveAIEntryFilters,
+  useEntryProjections,
+} from "~/modules/ai-processing"
 
 import { aiTimelineEnabledAtom } from "../atoms/ai-timeline"
 import { getVisibleLocalEntryIds } from "./filter-local-entry-ids"
@@ -40,6 +47,7 @@ const useRemoteEntries = (): UseEntriesReturn => {
   )
   const aiTimelineEnabled = useAtomValue(aiTimelineEnabledAtom)
   const aiEnabled = useFeature("ai")
+  const evaluationEnabled = useAdvertisedCapability("entries.ai_fusion")
 
   const folderIds = useFolderFeedsByFeedId({
     feedId,
@@ -57,7 +65,7 @@ const useRemoteEntries = (): UseEntriesReturn => {
         hidePrivateSubscriptionsInTimeline: true,
       }),
       ...(view === FeedViewType.All && { limit: 40 }),
-      ...(aiTimelineEnabled && aiEnabled && { aiSort: true }),
+      ...(aiTimelineEnabled && (aiEnabled || evaluationEnabled) && { aiSort: true }),
     }
 
     if (feedId && listId && isBizId(feedId)) {
@@ -76,6 +84,7 @@ const useRemoteEntries = (): UseEntriesReturn => {
     hidePrivateSubscriptionsInTimeline,
     aiTimelineEnabled,
     aiEnabled,
+    evaluationEnabled,
   ])
   const query = useEntriesQuery(entriesOptions)
 
@@ -260,7 +269,16 @@ export const useEntriesByView = ({ onReset }: { onReset?: () => void }) => {
   // We need to add an interface to incrementally update the data based on the version hash.
 
   const query = remoteQuery.isReady ? remoteQuery : localQuery
-  const entryIds: string[] = query.entriesIds
+  const evaluationEnabled = useAdvertisedCapability("entries.ai_fusion")
+  const filters = useAtomValue(aiEntryFiltersAtom)
+  const projections = useEntryProjections(query.entriesIds, evaluationEnabled)
+  const entryIds: string[] = useMemo(
+    () =>
+      hasActiveAIEntryFilters(filters)
+        ? applyEntryProjectionFilters(query.entriesIds, projections.data ?? {}, filters)
+        : query.entriesIds,
+    [filters, projections.data, query.entriesIds],
+  )
 
   const isFetchingFirstPage = remoteQuery.isFetching && !remoteQuery.isFetchingNextPage
 

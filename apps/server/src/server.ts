@@ -29,6 +29,7 @@ import type {
   ListRecord,
   ListSubscriptionRecord,
   ProcessingJobRecord,
+  ProcessingTaxonomySnapshotRecord,
   SettingsTab,
   SubscriptionPatch,
   SubscriptionRecord,
@@ -230,6 +231,45 @@ const apiEvaluation = (evaluation: EntryEvaluationRecord, configurationOutdated:
   configuration_outdated: configurationOutdated,
 })
 
+const DEFAULT_FEATURED_HALF_LIFE_DAYS = 7
+const FEATURED_SCORE_THRESHOLD = 70
+
+const positiveNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null
+
+const featuredHalfLifeDays = (
+  taxonomy: ProcessingTaxonomySnapshotRecord | null,
+  primaryCategory: string,
+) => {
+  if (!taxonomy) return DEFAULT_FEATURED_HALF_LIFE_DAYS
+  const defaultHalfLife =
+    positiveNumber(taxonomy.content.default_half_life_days) ?? DEFAULT_FEATURED_HALF_LIFE_DAYS
+  const categories = Array.isArray(taxonomy.content.categories) ? taxonomy.content.categories : []
+  const category = categories.find(
+    (item): item is Record<string, unknown> =>
+      !!item && typeof item === "object" && !Array.isArray(item) && item.name === primaryCategory,
+  )
+  return (
+    positiveNumber(category?.featured_half_life_days) ??
+    positiveNumber(category?.half_life_days) ??
+    defaultHalfLife
+  )
+}
+
+const featuredRankingScore = (
+  entry: EntryRecord,
+  evaluation: EntryEvaluationRecord,
+  taxonomy: ProcessingTaxonomySnapshotRecord | null,
+  now = new Date(),
+) => {
+  const latestReliablePublishedAt = new Date(now.getTime() + 24 * 60 * 60 * 1_000)
+  const ageBaseline =
+    entry.publishedAt <= latestReliablePublishedAt ? entry.publishedAt : entry.insertedAt
+  const ageDays = Math.max(0, now.getTime() - ageBaseline.getTime()) / (24 * 60 * 60 * 1_000)
+  const halfLifeDays = featuredHalfLifeDays(taxonomy, evaluation.primaryCategory)
+  return evaluation.overallScore * 2 ** (-ageDays / halfLifeDays)
+}
+
 const numberFromUnknown = (value: unknown): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) return value
   if (typeof value !== "string" || value.trim() === "") return undefined
@@ -287,6 +327,7 @@ const implementedCapabilities = new Set([
   "collections.core",
   "discovery.standard_feed",
   "entries.core",
+  "entries.ai_fusion",
   "entries.evaluation_processing",
   "feeds.core",
   "organization.core",
@@ -618,7 +659,7 @@ export const buildServer = async ({
       code: 0,
       data: {
         compatibilityVersion: capabilityManifest.compatibilityVersion,
-        stage: 2,
+        stage: 3,
         capabilities,
         unavailable: capabilityManifest.capabilities
           .map((capability) => capability.id)
@@ -888,7 +929,11 @@ export const buildServer = async ({
       }
       return reply.status(result.outcome === "created" ? 202 : 200).send({
         code: 0,
-        data: { job: apiProcessingJob(result.job), outcome: result.outcome },
+        data: {
+          job: apiProcessingJob(result.job),
+          outcome: result.outcome,
+          ...(result.outcome === "created" ? { superseded: result.supersededCount } : {}),
+        },
       })
     } catch (error) {
       if (error instanceof ProcessingError) {
@@ -1166,6 +1211,7 @@ export const buildServer = async ({
         matched: entries.length,
         reused: 0,
         skipped: 0,
+        superseded: 0,
       }
       for (const entry of entries) {
         try {
@@ -1183,6 +1229,9 @@ export const buildServer = async ({
           else if (enqueued.outcome === "failed_requires_retry") result.skipped += 1
           else {
             result[enqueued.outcome] += 1
+            if (enqueued.outcome === "created") {
+              result.superseded += enqueued.supersededCount
+            }
             result.job_ids.push(enqueued.job.id)
           }
         } catch (error) {
@@ -2188,7 +2237,9 @@ export const buildServer = async ({
     }
 
     const body = (request.body ?? {}) as Record<string, unknown>
-    const rows = await dataStore.listEntries({
+    const aiSort = body.aiSort === true
+    const requestedLimit = limitFromUnknown(body.limit, 20, 100)
+    let rows = await dataStore.listEntries({
       userId,
       view: numberFromUnknown(body.view),
       feedId: typeof body.feedId === "string" ? body.feedId : undefined,
@@ -2199,8 +2250,34 @@ export const buildServer = async ({
       isCollection: body.isCollection === true,
       publishedAfter: dateFromUnknown(body.publishedAfter),
       publishedBefore: dateFromUnknown(body.publishedBefore),
-      limit: limitFromUnknown(body.limit, 20, 100),
+      limit: aiSort ? 1_000 : requestedLimit,
     })
+    if (aiSort) {
+      const now = new Date()
+      const featuredRows = await Promise.all(
+        rows.map(async (row) => {
+          const evaluation = await dataStore.getCurrentEntryEvaluation(userId, row.entry.id)
+          if (!evaluation || evaluation.overallScore < FEATURED_SCORE_THRESHOLD) return null
+          const taxonomy = await dataStore.getProcessingTaxonomySnapshot(
+            userId,
+            evaluation.taxonomySnapshotId,
+          )
+          return {
+            rankingScore: featuredRankingScore(row.entry, evaluation, taxonomy, now),
+            row,
+          }
+        }),
+      )
+      rows = featuredRows
+        .filter((item): item is NonNullable<typeof item> => item !== null)
+        .sort(
+          (left, right) =>
+            right.rankingScore - left.rankingScore ||
+            right.row.entry.publishedAt.getTime() - left.row.entry.publishedAt.getTime(),
+        )
+        .slice(0, requestedLimit)
+        .map((item) => item.row)
+    }
     const data = await Promise.all(
       rows.map(async ({ entry, subscription, read, collectionCreatedAt }) => {
         const feed = await dataStore.getFeed(entry.feedId)

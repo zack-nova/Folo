@@ -100,7 +100,9 @@ describe("stage 0 baseline", () => {
     expect(usage.sdkVersion).toBe(baseline.client.clientSdkVersion)
     expect(usage.sdkCodeHash).toBe(baseline.client.clientSdkCodeHash)
     expect(usage.routes).toHaveLength(baseline.apiUsage.sdkRoutes)
-    expect(usage.nonSdkRequests).toHaveLength(baseline.apiUsage.nonSdkRequests)
+    expect(
+      usage.nonSdkRequests.filter((request) => !request.path.startsWith("/api/extensions/")),
+    ).toHaveLength(baseline.apiUsage.nonSdkRequests)
     expect(createHash("sha256").update(schema).digest("hex")).toBe(baseline.localProjection.sha256)
 
     for (const table of baseline.localProjection.criticalTables) {
@@ -131,10 +133,18 @@ describe("capability manifest", () => {
   it("uses explicit client behavior and never selects an official provider before stage 5", async () => {
     const manifest = await readJson<CapabilityManifest>(join(contractsRoot, "capabilities.json"))
 
-    expect(manifest.schemaVersion).toBe(2)
+    expect(manifest.schemaVersion).toBe(3)
     expect(manifest.compatibilityVersion).toBe("folo-client-sdk-0.3.95")
-    expect(manifest.extensionContractVersion).toBe("feeds-agent-extensions-v2")
+    expect(manifest.extensionContractVersion).toBe("feeds-agent-extensions-v3")
     expect(manifest.manifestEndpoint).toBe("/api/extensions/capabilities")
+    expect(manifest.capabilities).toContainEqual(
+      expect.objectContaining({
+        id: "entries.ai_fusion",
+        targetStage: 3,
+        provider: "local",
+        clientBehavior: "enabled_when_advertised",
+      }),
+    )
     expect(manifest.capabilities.map((capability) => capability.id)).toHaveLength(
       new Set(manifest.capabilities.map((capability) => capability.id)).size,
     )

@@ -1,3 +1,4 @@
+import { getCapabilityManifest } from "~/atoms/capabilities"
 import { getFeature } from "~/hooks/biz/useFeature"
 import { SettingAI } from "~/modules/settings/tabs/ai"
 import { SettingsTitle } from "~/modules/settings/title"
@@ -10,7 +11,7 @@ export const handle = defineSettingPageData({
   icon: iconName,
   name: "titles.ai",
   priority,
-  hideIf: () => !getFeature("ai"),
+  hideIf: () => !getFeature("ai") && getCapabilityManifest() === null,
 })
 
 export function Component() {

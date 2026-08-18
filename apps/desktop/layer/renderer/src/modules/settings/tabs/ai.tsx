@@ -1,10 +1,12 @@
 import { Label } from "@follow/components/ui/label/index.js"
 import { useTranslation } from "react-i18next"
 
+import { useCapabilityManifest } from "~/atoms/capabilities"
 import { setAISetting, useAISettingValue } from "~/atoms/settings/ai"
 
 import { createDefineSettingItem } from "../helper/builder"
 import { createSettingBuilder } from "../helper/setting-builder"
+import { AutonomousAISettings } from "./ai/AutonomousAISettings"
 import { ByokSection } from "./ai/byok"
 import { MCPServicesSection } from "./ai/mcp/MCPServicesSection"
 import { PanelStyleSection } from "./ai/PanelStyleSection"
@@ -24,66 +26,78 @@ export const AI_SETTING_SECTION_IDS = {
 
 export const SettingAI = () => {
   const { t } = useTranslation("ai")
+  const capabilityManifest = useCapabilityManifest()
+  const autonomousAI = capabilityManifest?.has("ai.provider_configuration") === true
 
   return (
     <div className="mt-4">
       <SettingBuilder
-        settings={[
-          {
-            type: "title",
-            value: t("features.title"),
-          },
+        settings={
+          autonomousAI
+            ? [
+                {
+                  type: "title",
+                  value: t("autonomous.title"),
+                },
+                AutonomousAISettings,
+              ]
+            : [
+                {
+                  type: "title",
+                  value: t("features.title"),
+                },
 
-          PanelStyleSection,
-          defineSettingItem("showSplineButton", {
-            label: t("settings.showSplineButton.label"),
-            description: t("settings.showSplineButton.description"),
-          }),
-          defineSettingItem("autoScrollWhenStreaming", {
-            label: t("settings.autoScrollWhenStreaming.label"),
-            description: t("settings.autoScrollWhenStreaming.description"),
-          }),
+                PanelStyleSection,
+                defineSettingItem("showSplineButton", {
+                  label: t("settings.showSplineButton.label"),
+                  description: t("settings.showSplineButton.description"),
+                }),
+                defineSettingItem("autoScrollWhenStreaming", {
+                  label: t("settings.autoScrollWhenStreaming.label"),
+                  description: t("settings.autoScrollWhenStreaming.description"),
+                }),
 
-          {
-            type: "title",
-            value: t("personalize.title"),
-          },
+                {
+                  type: "title",
+                  value: t("personalize.title"),
+                },
 
-          PersonalizePromptSection,
+                PersonalizePromptSection,
 
-          {
-            type: "title",
-            value: t("shortcuts.title"),
-            id: AI_SETTING_SECTION_IDS.shortcuts,
-          },
-          AIShortcutsSection,
+                {
+                  type: "title",
+                  value: t("shortcuts.title"),
+                  id: AI_SETTING_SECTION_IDS.shortcuts,
+                },
+                AIShortcutsSection,
 
-          {
-            type: "title",
-            value: t("tasks.section.title"),
-            id: AI_SETTING_SECTION_IDS.tasks,
-          },
-          TaskSchedulingSection,
+                {
+                  type: "title",
+                  value: t("tasks.section.title"),
+                  id: AI_SETTING_SECTION_IDS.tasks,
+                },
+                TaskSchedulingSection,
 
-          {
-            type: "title",
-            value: t("integration.title"),
-          },
-          MCPServicesSection,
+                {
+                  type: "title",
+                  value: t("integration.title"),
+                },
+                MCPServicesSection,
 
-          {
-            type: "title",
-            value: t("byok.title"),
-          },
-          ByokSection,
+                {
+                  type: "title",
+                  value: t("byok.title"),
+                },
+                ByokSection,
 
-          {
-            type: "title",
-            value: t("usage_analysis.title"),
-          },
-          UsageAnalysisSection,
-          AISecurityDisclosureSection,
-        ]}
+                {
+                  type: "title",
+                  value: t("usage_analysis.title"),
+                },
+                UsageAnalysisSection,
+                AISecurityDisclosureSection,
+              ]
+        }
       />
     </div>
   )

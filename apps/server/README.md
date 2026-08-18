@@ -78,6 +78,8 @@ pnpm server:db:down
 
 阶段二完整接口和状态语义见
 [`stage-2-ai-processing-backend.md`](../../docs/feeds-agent-integration/stage-2-ai-processing-backend.md)。
+对应的阶段三 Folo 前端融合与能力门控见
+[`stage-3-frontend-fusion.md`](../../docs/feeds-agent-integration/stage-3-frontend-fusion.md)。
 
 ## 备份与恢复演练
 

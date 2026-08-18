@@ -7,13 +7,15 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { AIProvider } from "../src/ai/provider"
 import { createAuth } from "../src/auth"
 import { MemoryDataStore } from "../src/data/memory-store"
-import type { EntrySummaryRecord } from "../src/data/types"
+import type { EntrySummaryRecord, ProcessingJobRecord } from "../src/data/types"
 import { buildServer } from "../src/server"
 
 const rss = `<?xml version="1.0"?>
 <rss version="2.0"><channel><title>AI feed</title><link>https://example.com</link>
 <item><guid>ai-entry</guid><title>Local AI changes RSS reading</title><link>https://example.com/ai</link>
 <description><![CDATA[<p>A detailed article about personally controlled information flows.</p>]]></description></item>
+<item><guid>unprocessed-entry</guid><title>An entry without an evaluation</title><link>https://example.com/plain</link>
+<description><![CDATA[<p>This entry must not appear in the featured timeline.</p>]]></description></item>
 </channel></rss>`
 
 class SummaryFailingDataStore extends MemoryDataStore {
@@ -27,6 +29,53 @@ describe("entry evaluation processing", () => {
 
   afterEach(async () => {
     await Promise.all(servers.splice(0).map((server) => server.close()))
+  })
+
+  it("reports the queued jobs replaced by a newer processing configuration", async () => {
+    const dataStore = new MemoryDataStore()
+    const queuedAt = new Date("2026-08-18T00:00:00.000Z")
+    const first: ProcessingJobRecord = {
+      attemptCount: 0,
+      contentFingerprint: "content-v1",
+      entryId: "entry-1",
+      finishedAt: null,
+      forceRerun: false,
+      id: "job-1",
+      idempotencyKey: "entry-1:profile-1",
+      lastErrorCode: null,
+      lastErrorSummary: null,
+      nextRetryAt: null,
+      priority: 0,
+      processorName: "ai-evaluation",
+      processorVersion: "1",
+      profileSnapshotId: "profile-1",
+      purpose: "entry_evaluation",
+      queuedAt,
+      scoreFormulaVersion: "weighted-v1",
+      startedAt: null,
+      status: "queued",
+      supersededByJobId: null,
+      taxonomySnapshotId: "taxonomy-1",
+      userId: "user-1",
+    }
+
+    expect(await dataStore.enqueueProcessingJob(first)).toMatchObject({
+      outcome: "created",
+      supersededCount: 0,
+    })
+    expect(
+      await dataStore.enqueueProcessingJob({
+        ...first,
+        id: "job-2",
+        idempotencyKey: "entry-1:profile-2",
+        profileSnapshotId: "profile-2",
+      }),
+    ).toMatchObject({ outcome: "created", supersededCount: 1 })
+    expect(await dataStore.getProcessingJob("user-1", "job-1")).toMatchObject({
+      id: "job-1",
+      status: "superseded",
+      supersededByJobId: "job-2",
+    })
   })
 
   it("processes an entry into an immutable evaluation and reuses the satisfied configuration", async () => {
@@ -103,7 +152,9 @@ describe("entry evaluation processing", () => {
       },
     })
     await client.api.subscriptions.create({ url: "https://feeds.example.com/ai.xml", view: 0 })
-    const entryId = (await client.api.entries.list({ view: 0 })).data.at(0)!.entries.id
+    const entryId = (await client.api.entries.list({ view: 0 })).data.find(
+      (item) => item.entries.title === "Local AI changes RSS reading",
+    )!.entries.id
 
     const profile = await server.inject({
       method: "POST",
@@ -208,6 +259,9 @@ describe("entry evaluation processing", () => {
     })
     expect(complete).toHaveBeenCalledTimes(1)
 
+    const featured = await client.api.entries.list({ aiSort: true, view: 0 })
+    expect(featured.data.map((item) => item.entries.id)).toEqual([entryId])
+
     const duplicate = await server.inject({
       method: "POST",
       url: "/api/extensions/processing/jobs",
@@ -256,6 +310,7 @@ describe("entry evaluation processing", () => {
     })
     expect(history.json().data.current.overall_score).toBe(63)
     expect(history.json().data.history).toHaveLength(2)
+    expect((await client.api.entries.list({ aiSort: true, view: 0 })).data).toHaveLength(0)
     const firstEvaluationId = history
       .json()
       .data.history.find((item: { overall_score: number }) => item.overall_score === 83)
@@ -362,7 +417,7 @@ describe("entry evaluation processing", () => {
     expect(bulk.statusCode).toBe(202)
     expect(bulk.json()).toMatchObject({
       code: 0,
-      data: { already_satisfied: 1, created: 0, matched: 1, reused: 0 },
+      data: { already_satisfied: 1, created: 0, matched: 1, reused: 0, superseded: 0 },
     })
   })
 })

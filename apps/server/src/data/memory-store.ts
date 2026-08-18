@@ -362,6 +362,7 @@ export class MemoryDataStore implements DataStore {
       return { job: structuredClone(active), outcome: "reused" }
     }
 
+    let supersededCount = 0
     for (const candidate of this.processingJobs.values()) {
       if (
         candidate.userId === job.userId &&
@@ -372,10 +373,11 @@ export class MemoryDataStore implements DataStore {
         candidate.status = "superseded"
         candidate.finishedAt = new Date()
         candidate.supersededByJobId = job.id
+        supersededCount += 1
       }
     }
     this.processingJobs.set(job.id, structuredClone(job))
-    return { job: structuredClone(job), outcome: "created" }
+    return { job: structuredClone(job), outcome: "created", supersededCount }
   }
 
   async claimNextProcessingJob(now: Date): Promise<ProcessingJobRecord | null> {

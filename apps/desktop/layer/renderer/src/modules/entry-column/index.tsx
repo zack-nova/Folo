@@ -18,6 +18,7 @@ import { FeedNotFound } from "~/components/errors/FeedNotFound"
 import { FEED_COLLECTION_LIST, HotkeyScope, ROUTE_FEED_PENDING } from "~/constants"
 import { useNavigateEntry } from "~/hooks/biz/useNavigateEntry"
 import { useRouteParams, useRouteParamsSelector } from "~/hooks/biz/useRouteParams"
+import { ProcessingStatusBanner } from "~/modules/ai-processing"
 import { useFeedQuery } from "~/queries/feed"
 import { useFeedHeaderTitle } from "~/store/feed/hooks"
 
@@ -266,10 +267,13 @@ function EntryColumnContent() {
         (!feed || feed?.type === "feed") && <AddFeedHelper />}
 
       <EntryListHeader
+        entryIds={entriesIds}
         refetch={actions.refetch}
         isRefreshing={isRefreshing}
         onBeforeRefresh={scrollTimelineToTop}
       />
+
+      <ProcessingStatusBanner entryIds={entriesIds} />
 
       <EntryColumnWrapper
         ref={scrollAreaRef}

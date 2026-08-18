@@ -1,5 +1,8 @@
 # 阶段二：自主 AI 处理后端
 
+> 后续前端融合、Featured 时间线和设置体验见
+> [`stage-3-frontend-fusion.md`](./stage-3-frontend-fusion.md)。
+
 ## 结果
 
 阶段二把摘要、翻译和逐条评估从 Folo 官方服务迁回自有后端。应用所有者控制 Provider、模型、Key、
@@ -77,7 +80,7 @@ POST /api/extensions/entries/{entryId}/evaluation/{evaluationId}/select
 ## 批量重评
 
 - `POST /api/extensions/processing/re-evaluation-preview` 返回匹配数、已满足数、活动 Job 数和预计调用数。
-- `POST /api/extensions/processing/re-evaluation-jobs` 返回 `created/reused/already_satisfied/skipped` 统计和 Job ID。
+- `POST /api/extensions/processing/re-evaluation-jobs` 返回 `created/reused/already_satisfied/superseded/skipped` 统计和 Job ID。
 - 支持明确 `entry_ids`，或按 Feed、View、发布时间范围筛选；单次最多 1000 个 Entry。
 
 ## Follow 兼容 AI

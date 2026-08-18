@@ -29,6 +29,7 @@ import { getRouteParams, useRouteParams, useRouteParamsSelector } from "~/hooks/
 import { useShowEntryDetailsColumn } from "~/hooks/biz/useShowEntryDetailsColumn"
 import { useFeedSafeUrl } from "~/hooks/common/useFeedSafeUrl"
 import { useRequireLogin } from "~/hooks/common/useRequireLogin"
+import { EntryAIStatusBadge } from "~/modules/ai-processing"
 
 export const EntryItemWrapper: FC<
   {
@@ -178,6 +179,7 @@ export const EntryItemWrapper: FC<
         {...(!isMobile ? { onTouchStart: handleClick } : {})}
       >
         {children}
+        <EntryAIStatusBadge entryId={entryId} />
         <AnimatePresence>
           {showAction && isWide && (
             <ActionBar

@@ -6,6 +6,7 @@ import { expect, test } from "@playwright/test"
 import { createTestAccount } from "../../support/account"
 import {
   expectTimelineSwitchAndEntryReadFlow,
+  openSettings,
   openWebApp,
   registerWithCredential,
 } from "../../support/app"
@@ -68,4 +69,11 @@ test("registers, subscribes, renders, and persists read state against the local 
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(page.getByText(entryTitle).first()).toBeVisible({ timeout: 120_000 })
   await expectTimelineSwitchAndEntryReadFlow(page)
+  await expect(page.getByTestId("entry-evaluation-panel")).toBeVisible()
+
+  await openSettings(page, "ai")
+  await expect(page.getByTestId("autonomous-ai-settings")).toBeVisible()
+  await expect(page.locator("#autonomous-ai-base-url")).toBeVisible()
+  await expect(page.locator("#autonomous-profile-document")).toBeVisible()
+  await expect(page.locator("#autonomous-taxonomy-document")).toBeVisible()
 })

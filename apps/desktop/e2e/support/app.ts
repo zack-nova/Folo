@@ -551,20 +551,27 @@ const returnToMainShell = async (page: Page) => {
   await closeVisibleDialog(page)
 }
 
-const waitForSettingsTabContent = async (page: Page, tab: "general" | "feeds") => {
+type SettingsTab = "ai" | "feeds" | "general"
+
+const waitForSettingsTabContent = async (page: Page, tab: SettingsTab) => {
   if (tab === "general") {
     await expect(page.getByTestId("settings-language-select")).toBeVisible({ timeout: 15_000 })
     return
   }
 
-  await expect
-    .poll(async () => page.locator('[data-testid^="settings-feed-row-"]').count(), {
-      timeout: 15_000,
-    })
-    .toBeGreaterThan(0)
+  if (tab === "feeds") {
+    await expect
+      .poll(async () => page.locator('[data-testid^="settings-feed-row-"]').count(), {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0)
+    return
+  }
+
+  await expect(page.getByTestId("autonomous-ai-settings")).toBeVisible({ timeout: 15_000 })
 }
 
-export const openSettings = async (page: Page, tab: "general" | "feeds" = "general") => {
+export const openSettings = async (page: Page, tab: SettingsTab = "general") => {
   await waitForAuthenticated(page)
 
   const settingsModal = page.locator("#setting-modal").first()
@@ -636,7 +643,7 @@ export const openSettings = async (page: Page, tab: "general" | "feeds" = "gener
   await openSettingsTab(page, tab)
 }
 
-export const openSettingsTab = async (page: Page, tab: "general" | "feeds") => {
+export const openSettingsTab = async (page: Page, tab: SettingsTab) => {
   const settingsTab = page.getByTestId(`settings-tab-${tab}`)
   await expect(settingsTab).toBeVisible({ timeout: 15_000 })
 

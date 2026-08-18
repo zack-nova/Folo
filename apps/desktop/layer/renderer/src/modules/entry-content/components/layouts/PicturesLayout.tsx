@@ -4,6 +4,7 @@ import { cn } from "@follow/utils/utils"
 import { usePreviewMedia } from "~/components/ui/media/hooks"
 import { SwipeMedia } from "~/components/ui/media/SwipeMedia"
 import { readableContentMaxWidthClassName } from "~/constants/ui"
+import { EntryEvaluationPanel } from "~/modules/ai-processing"
 
 import { AuthorHeader, ContentBody } from "./shared"
 import type { EntryLayoutProps } from "./types"
@@ -33,6 +34,10 @@ export const PicturesLayout: React.FC<EntryLayoutProps> = ({
 
       {/* Single Author header without avatar */}
       <AuthorHeader entryId={entryId} className={cn("mx-auto", readableContentMaxWidthClassName)} />
+
+      <div className={cn("mx-auto", readableContentMaxWidthClassName)}>
+        <EntryEvaluationPanel entryId={entryId} />
+      </div>
 
       {/* Text Content Section */}
       <ContentBody

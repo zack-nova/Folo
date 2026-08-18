@@ -233,7 +233,8 @@ export interface ActionRulesRecord {
 }
 
 export type EnqueueProcessingJobResult =
-  | { outcome: "created" | "reused"; job: ProcessingJobRecord }
+  | { outcome: "created"; job: ProcessingJobRecord; supersededCount: number }
+  | { outcome: "reused"; job: ProcessingJobRecord }
   | { outcome: "failed_requires_retry"; job: ProcessingJobRecord }
   | { outcome: "already_satisfied"; evaluation: EntryEvaluationRecord }
 
