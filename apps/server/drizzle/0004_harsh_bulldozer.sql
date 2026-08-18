@@ -1,0 +1,3 @@
+DROP INDEX "processing_jobs_idempotency_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "processing_jobs_active_idempotency_unique" ON "processing_jobs" USING btree ("idempotency_key") WHERE "processing_jobs"."status" in ('queued', 'running');--> statement-breakpoint
+CREATE UNIQUE INDEX "processing_jobs_one_running_per_entry_unique" ON "processing_jobs" USING btree ("user_id","entry_id","purpose") WHERE "processing_jobs"."status" = 'running';

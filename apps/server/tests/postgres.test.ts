@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { readFile } from "node:fs/promises"
+import { setTimeout as delay } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 
 import { FollowClient } from "@follow-app/client-sdk"
@@ -111,6 +112,89 @@ describe.runIf(databaseURL)("PostgreSQL authority", () => {
     const emptyListDetail = await client.api.lists.get({ listId: emptyList.data.id })
     expect(emptyListDetail.data).toMatchObject({ feedCount: 0, entries: [] })
 
+    await server.close()
+    server = await buildServer({
+      aiEncryptionSecret: "postgres-ai-encryption-secret-at-least-32-characters",
+      aiProvider: {
+        complete: async () => ({
+          content: JSON.stringify({
+            importance_score: 80,
+            timeliness_score: 70,
+            relevance_score: 90,
+            recommendation_reason: "PostgreSQL keeps the evaluation authoritative.",
+            primary_category: "Technology",
+            tags: ["postgres"],
+          }),
+          model: "postgres-test-model",
+          usage: { inputTokens: 10, outputTokens: 10 },
+        }),
+      },
+      allowPublicRegistration: true,
+      auth,
+      clientOrigins: ["http://localhost:2233"],
+      dataStore: new PostgresDataStore(database.db),
+      processingWorkerPollIntervalMs: 5,
+    })
+    const authenticated = async (
+      url: string,
+      payload?: Record<string, unknown>,
+      method: "GET" | "POST" | "PUT" = "POST",
+    ) =>
+      server.inject({
+        method,
+        url,
+        headers: { cookie: cookie! },
+        ...(payload === undefined ? {} : { payload }),
+      })
+    await authenticated(
+      "/api/extensions/ai/provider",
+      {
+        api_key: "sk-postgres-persisted-secret",
+        base_url: "https://ai.example.com/v1",
+        model: "postgres-test-model",
+      },
+      "PUT",
+    )
+    await authenticated("/api/extensions/profiles", {
+      content: { interests: ["PostgreSQL"] },
+      name: "default",
+    })
+    await authenticated("/api/extensions/taxonomies", {
+      content: { categories: ["Technology"] },
+      name: "default",
+    })
+    const entryId = (await client.api.entries.list({ view: 0 })).data.at(0)!.entries.id
+    const queued = await authenticated("/api/extensions/processing/jobs", { entry_id: entryId })
+    const jobId = queued.json().data.job.id as string
+    for (let index = 0; index < 100; index += 1) {
+      const job = await authenticated(`/api/extensions/processing/jobs/${jobId}`, undefined, "GET")
+      if (job.json().data.status === "succeeded") break
+      await delay(10)
+    }
+
+    await server.close()
+    server = await buildServer({
+      aiEncryptionSecret: "postgres-ai-encryption-secret-at-least-32-characters",
+      allowPublicRegistration: true,
+      auth,
+      clientOrigins: ["http://localhost:2233"],
+      dataStore: new PostgresDataStore(database.db),
+    })
+    const persistedEvaluation = await authenticated(
+      `/api/extensions/entries/${entryId}/evaluation`,
+      undefined,
+      "GET",
+    )
+    expect(persistedEvaluation.json()).toMatchObject({
+      code: 0,
+      data: { current: { overall_score: 83, tags: ["postgres"] } },
+    })
+    const persistedProvider = await authenticated("/api/extensions/ai/provider", undefined, "GET")
+    expect(persistedProvider.body).not.toContain("sk-postgres-persisted-secret")
+    expect(persistedProvider.json()).toMatchObject({
+      code: 0,
+      data: { configured: true, key_hint: "…cret", key_source: "stored" },
+    })
     await server.close()
   })
 })

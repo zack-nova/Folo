@@ -4,8 +4,6 @@ import { PostgresDataStore } from "./data/postgres-store"
 import { createPostgresDatabase } from "./db/database"
 import { migrateDatabase } from "./db/migrate"
 import { HttpFeedFetcher } from "./feeds/http-fetcher"
-import { FeedImporter } from "./feeds/importer"
-import { startFeedScheduler } from "./feeds/scheduler"
 import { buildServer } from "./server"
 
 const config = loadServerConfig(process.env)
@@ -26,30 +24,28 @@ const feedFetcher = new HttpFeedFetcher({
   timeoutMs: config.feedFetchTimeoutMs,
 })
 const server = await buildServer({
+  aiEncryptionSecret: config.aiEncryptionSecret,
+  aiProviderConfig: config.aiProviderConfig,
   allowPublicRegistration: config.allowPublicRegistration,
   auth,
   clientOrigins: config.clientOrigins,
   dataStore,
   feedFetcher,
+  feedPollIntervalMs: config.feedPollIntervalMs,
   logger: true,
+  processingMaxAttempts: config.processingMaxAttempts,
+  processingRetryBaseDelayMs: config.processingRetryBaseDelayMs,
+  processingWorkerPollIntervalMs: config.processingWorkerPollIntervalMs,
   serverURL: config.serverURL,
   uploadsDirectory: config.uploadsDirectory,
 })
 
 await server.listen({ host: config.host, port: config.port })
 
-const stopScheduler = startFeedScheduler({
-  dataStore,
-  importer: new FeedImporter(dataStore, feedFetcher),
-  intervalMs: config.feedPollIntervalMs,
-  onResult: (result) => server.log.info(result, "Feed polling cycle completed"),
-})
-
 let shuttingDown = false
 const shutdown = async () => {
   if (shuttingDown) return
   shuttingDown = true
-  stopScheduler()
   await server.close()
   await database.pool.end()
 }

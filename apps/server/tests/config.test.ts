@@ -13,6 +13,10 @@ describe("server configuration", () => {
 
     expect(
       loadServerConfig({
+        AI_API_KEY: "sk-environment-owner-key",
+        AI_ENCRYPTION_SECRET: "independent-ai-secret-that-is-at-least-32-characters",
+        AI_PROVIDER_BASE_URL: "https://ai.example.com/v1",
+        AI_PROVIDER_MODEL: "reader-model",
         ALLOW_PRIVATE_FEEDS: "true",
         BETTER_AUTH_SECRET: "a-production-secret-that-is-at-least-32-characters",
         CLIENT_ORIGINS: "http://localhost:2233,https://reader.example.com",
@@ -20,6 +24,13 @@ describe("server configuration", () => {
       }),
     ).toMatchObject({
       allowPrivateFeeds: true,
+      aiEncryptionSecret: "independent-ai-secret-that-is-at-least-32-characters",
+      aiProviderConfig: {
+        apiKey: "sk-environment-owner-key",
+        baseUrl: "https://ai.example.com/v1",
+        model: "reader-model",
+        timeoutMs: 60_000,
+      },
       clientOrigins: ["http://localhost:2233", "https://reader.example.com"],
       port: 3000,
     })

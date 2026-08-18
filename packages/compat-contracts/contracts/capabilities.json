@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "compatibilityVersion": "folo-client-sdk-0.3.95",
-  "extensionContractVersion": "feeds-agent-extensions-v1",
+  "extensionContractVersion": "feeds-agent-extensions-v2",
   "manifestEndpoint": "/api/extensions/capabilities",
   "capabilities": [
     {
@@ -294,6 +294,44 @@
       "protocolRoutes": []
     },
     {
+      "id": "ai.provider_configuration",
+      "title": "Owner-controlled OpenAI-compatible provider configuration",
+      "targetStage": 2,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [],
+      "protocolRoutes": [
+        "GET /api/extensions/ai/provider",
+        "PUT /api/extensions/ai/provider",
+        "DELETE /api/extensions/ai/provider"
+      ]
+    },
+    {
+      "id": "entries.evaluation_processing",
+      "title": "Versioned entry evaluation and reliable processing jobs",
+      "targetStage": 2,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [],
+      "protocolRoutes": [
+        "GET /api/extensions/entries/{entryId}/evaluation",
+        "POST /api/extensions/entries/{entryId}/evaluation/{evaluationId}/select",
+        "GET /api/extensions/entries/{entryId}/processing-status",
+        "POST /api/extensions/entries/projections",
+        "GET /api/extensions/processing/jobs/{jobId}",
+        "POST /api/extensions/processing/jobs",
+        "POST /api/extensions/processing/jobs/{jobId}/retry",
+        "GET /api/extensions/profiles",
+        "POST /api/extensions/profiles",
+        "GET /api/extensions/taxonomies",
+        "POST /api/extensions/taxonomies",
+        "POST /api/extensions/processing/re-evaluation-preview",
+        "POST /api/extensions/processing/re-evaluation-jobs"
+      ]
+    },
+    {
       "id": "ai.chat",
       "title": "Official-style AI chat and attachments",
       "targetStage": null,
@@ -436,16 +474,23 @@
     }
   ],
   "extensionRoutes": [
+    "GET /api/extensions/ai/provider",
+    "PUT /api/extensions/ai/provider",
+    "DELETE /api/extensions/ai/provider",
     "GET /api/extensions/capabilities",
     "GET /api/extensions/entries/{entryId}/evaluation",
+    "POST /api/extensions/entries/{entryId}/evaluation/{evaluationId}/select",
     "GET /api/extensions/entries/{entryId}/processing-status",
     "POST /api/extensions/entries/projections",
     "POST /api/extensions/processing/jobs",
+    "GET /api/extensions/processing/jobs/{jobId}",
     "POST /api/extensions/processing/jobs/{jobId}/retry",
     "GET /api/extensions/subscriptions/{subscriptionId}/acquisition",
     "GET /api/extensions/subscriptions/{subscriptionId}/acquisition/diagnostics",
     "GET /api/extensions/profiles",
+    "POST /api/extensions/profiles",
     "GET /api/extensions/taxonomies",
+    "POST /api/extensions/taxonomies",
     "POST /api/extensions/processing/re-evaluation-preview",
     "POST /api/extensions/processing/re-evaluation-jobs"
   ]

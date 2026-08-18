@@ -22,6 +22,20 @@
       "when": 1787026355352,
       "tag": "0002_lonely_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787039303437,
+      "tag": "0003_motionless_marrow",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787039537408,
+      "tag": "0004_harsh_bulldozer",
+      "breakpoints": true
     }
   ]
 }

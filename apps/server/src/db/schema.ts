@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm"
 import {
   boolean,
   index,
@@ -65,6 +66,203 @@ export const entryReadability = pgTable("entry_readability", {
     .primaryKey()
     .references(() => entries.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+})
+
+export const aiProviderConfigs = pgTable("ai_provider_configs", {
+  userId: text("user_id").primaryKey(),
+  type: text("type").notNull(),
+  baseUrl: text("base_url").notNull(),
+  model: text("model").notNull(),
+  encryptedApiKey: text("encrypted_api_key").notNull(),
+  keyHint: text("key_hint").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+})
+
+export const processingProfileSnapshots = pgTable(
+  "processing_profile_snapshots",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    name: text("name").notNull(),
+    version: integer("version").notNull(),
+    content: jsonb("content").$type<Record<string, unknown>>().notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("processing_profile_name_version_unique").on(
+      table.userId,
+      table.name,
+      table.version,
+    ),
+    index("processing_profile_latest_idx").on(table.userId, table.name, table.version),
+  ],
+)
+
+export const processingTaxonomySnapshots = pgTable(
+  "processing_taxonomy_snapshots",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    name: text("name").notNull(),
+    version: integer("version").notNull(),
+    content: jsonb("content").$type<Record<string, unknown>>().notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("processing_taxonomy_name_version_unique").on(
+      table.userId,
+      table.name,
+      table.version,
+    ),
+    index("processing_taxonomy_latest_idx").on(table.userId, table.name, table.version),
+  ],
+)
+
+export const processingJobs = pgTable(
+  "processing_jobs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    entryId: text("entry_id")
+      .notNull()
+      .references(() => entries.id, { onDelete: "cascade" }),
+    purpose: text("purpose").notNull(),
+    processorName: text("processor_name").notNull(),
+    processorVersion: text("processor_version").notNull(),
+    scoreFormulaVersion: text("score_formula_version").notNull(),
+    profileSnapshotId: text("profile_snapshot_id")
+      .notNull()
+      .references(() => processingProfileSnapshots.id),
+    taxonomySnapshotId: text("taxonomy_snapshot_id")
+      .notNull()
+      .references(() => processingTaxonomySnapshots.id),
+    contentFingerprint: text("content_fingerprint").notNull(),
+    status: text("status").notNull(),
+    priority: integer("priority").notNull(),
+    attemptCount: integer("attempt_count").notNull(),
+    queuedAt: timestamp("queued_at", { withTimezone: true }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+    lastErrorCode: text("last_error_code"),
+    lastErrorSummary: text("last_error_summary"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    forceRerun: boolean("force_rerun").notNull(),
+    supersededByJobId: text("superseded_by_job_id"),
+  },
+  (table) => [
+    index("processing_jobs_queue_idx").on(table.status, table.nextRetryAt, table.priority),
+    index("processing_jobs_entry_idx").on(table.userId, table.entryId, table.queuedAt),
+    uniqueIndex("processing_jobs_active_idempotency_unique")
+      .on(table.idempotencyKey)
+      .where(sql`${table.status} in ('queued', 'running')`),
+    uniqueIndex("processing_jobs_one_running_per_entry_unique")
+      .on(table.userId, table.entryId, table.purpose)
+      .where(sql`${table.status} = 'running'`),
+  ],
+)
+
+export const processingAttempts = pgTable(
+  "processing_attempts",
+  {
+    id: text("id").primaryKey(),
+    jobId: text("job_id")
+      .notNull()
+      .references(() => processingJobs.id, { onDelete: "cascade" }),
+    attemptNumber: integer("attempt_number").notNull(),
+    status: text("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    errorSummary: text("error_summary"),
+    executionMetadata: jsonb("execution_metadata").$type<Record<string, unknown>>(),
+  },
+  (table) => [
+    uniqueIndex("processing_attempt_job_number_unique").on(table.jobId, table.attemptNumber),
+  ],
+)
+
+export const entryEvaluations = pgTable(
+  "entry_evaluations",
+  {
+    id: text("id").primaryKey(),
+    entryId: text("entry_id")
+      .notNull()
+      .references(() => entries.id, { onDelete: "cascade" }),
+    importanceScore: integer("importance_score").notNull(),
+    timelinessScore: integer("timeliness_score").notNull(),
+    relevanceScore: integer("relevance_score").notNull(),
+    overallScore: integer("overall_score").notNull(),
+    recommendationReason: text("recommendation_reason").notNull(),
+    primaryCategory: text("primary_category").notNull(),
+    secondaryCategory: text("secondary_category"),
+    tags: jsonb("tags").$type<string[]>().notNull(),
+    processorType: text("processor_type").notNull(),
+    processorName: text("processor_name").notNull(),
+    processorVersion: text("processor_version").notNull(),
+    scoreFormulaVersion: text("score_formula_version").notNull(),
+    profileSnapshotId: text("profile_snapshot_id")
+      .notNull()
+      .references(() => processingProfileSnapshots.id),
+    taxonomySnapshotId: text("taxonomy_snapshot_id")
+      .notNull()
+      .references(() => processingTaxonomySnapshots.id),
+    contentFingerprint: text("content_fingerprint").notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }).notNull(),
+    details: jsonb("details").$type<Record<string, unknown>>(),
+  },
+  (table) => [index("entry_evaluations_history_idx").on(table.entryId, table.processedAt)],
+)
+
+export const entryCurrentEvaluations = pgTable("entry_current_evaluations", {
+  entryId: text("entry_id")
+    .primaryKey()
+    .references(() => entries.id, { onDelete: "cascade" }),
+  evaluationId: text("evaluation_id")
+    .notNull()
+    .references(() => entryEvaluations.id, { onDelete: "cascade" }),
+  selectedAt: timestamp("selected_at", { withTimezone: true }).notNull(),
+  selectionReason: text("selection_reason").notNull(),
+})
+
+export const entrySummaries = pgTable(
+  "entry_summaries",
+  {
+    entryId: text("entry_id")
+      .notNull()
+      .references(() => entries.id, { onDelete: "cascade" }),
+    language: text("language").notNull(),
+    target: text("target").notNull(),
+    summary: text("summary").notNull(),
+    model: text("model").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.entryId, table.language, table.target] })],
+)
+
+export const entryTranslations = pgTable(
+  "entry_translations",
+  {
+    entryId: text("entry_id")
+      .notNull()
+      .references(() => entries.id, { onDelete: "cascade" }),
+    language: text("language").notNull(),
+    title: text("title"),
+    description: text("description"),
+    content: text("content"),
+    readabilityContent: text("readability_content"),
+    model: text("model").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.entryId, table.language] })],
+)
+
+export const actionRules = pgTable("action_rules", {
+  userId: text("user_id").primaryKey(),
+  rules: jsonb("rules").$type<Array<Record<string, unknown>>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 })
 

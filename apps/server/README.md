@@ -1,7 +1,8 @@
-# Folo 自托管后端（完整阶段一）
+# Folo 自托管后端（阶段二：自主 AI 处理）
 
 这个服务是 FOLO API 的自有兼容门面。当前版本不访问 FOLO 官方后端，PostgreSQL 是 Feed、
-Subscription、List、Entry、阅读状态、收藏、正文缓存和用户设置的权威存储；客户端 SQLite 仍只是可重建缓存。
+Subscription、List、Entry、阅读状态、收藏、正文缓存、AI 配置、处理作业和评估结果的权威存储；客户端
+SQLite 仍只是可重建缓存。
 
 ## 本地启动
 
@@ -41,6 +42,11 @@ pnpm server:db:down
 - `UPLOADS_DIRECTORY`：头像文件目录；生产环境应放在持久卷中并单独备份。
 - `ALLOW_PUBLIC_REGISTRATION`：默认 `false`；只应在明确需要多人注册时临时开启。
 - `FEED_POLL_INTERVAL_MS`：已订阅 Feed 的刷新周期，默认 15 分钟。
+- `AI_API_KEY`、`AI_PROVIDER_BASE_URL`、`AI_PROVIDER_MODEL`：可选的环境托管 Provider。也可以登录后通过
+  `/api/extensions/ai/provider` 保存 BYOK 配置；数据库只保存 AES-256-GCM 密文和末四位提示。
+- `AI_ENCRYPTION_SECRET`：用于加密数据库 BYOK，默认复用 `BETTER_AUTH_SECRET`。生产环境建议独立设置且必须
+  纳入密钥备份；更换后旧密文无法解密。
+- `PROCESSING_MAX_ATTEMPTS`、`PROCESSING_RETRY_BASE_DELAY_MS`：后台处理的最大自动尝试次数和指数退避基数。
 
 默认拒绝回环、内网、link-local 等私有地址，以降低 RSS URL 造成 SSRF 的风险。只有明确需要订阅
 局域网 Feed 时才设置 `ALLOW_PRIVATE_FEEDS=true`；不要在不可信用户可注册的公网实例上开启。
@@ -57,9 +63,21 @@ pnpm server:db:down
 - 已读、未读、全部已读、未读计数和收藏。
 - 基础 Settings、Status Configs、能力发现和未实现能力的固定 `501` 响应。
 - PostgreSQL migration、隔离备份恢复演练、真实数据库持久化和浏览器端到端测试。
+- OpenAI-compatible BYOK 或环境 Provider；服务端不向客户端回传完整 Key。
+- Follow 原生摘要和 NDJSON 批量翻译接口，按 Entry、语言和目标持久化缓存。
+- 版本化用户画像和 Taxonomy 快照；内容哈希避免相同配置重复创建版本。
+- `queued → running → succeeded/failed/superseded` Processing Job、Attempt、指数退避和人工重试。
+- 不可变 Entry Evaluation、当前指针、强制重评、历史回滚和失败保护。
+- 批量投影、批量重评预览/提交，以及 Action `evaluate` 自动处理新导入和定时刷新 Entry。
+- 三维评分使用后端版本化公式：`importance × 0.3 + timeliness × 0.2 + relevance × 0.5`。
+- 启动及每日清理：成功 Attempt 30 天、失败 Attempt 90 天、诊断元数据 7 天；评估至少保留最近 10 条且
+  至少保留 180 天，当前指针引用永不清理。
 
-官方 RSSHub/Trending、AI、Billing、MCP、多人权限和生产级可观测性不属于阶段一；前端会根据能力清单
-隐藏尚未实现的入口。
+官方 RSSHub/Trending、AI Chat、Billing、MCP、多人权限和生产级可观测性仍未实现；阶段二的摘要、翻译和
+逐条评估全部由本地后端调用所有者配置的 Provider，不访问 Folo 官方后端。
+
+阶段二完整接口和状态语义见
+[`stage-2-ai-processing-backend.md`](../../docs/feeds-agent-integration/stage-2-ai-processing-backend.md)。
 
 ## 备份与恢复演练
 
@@ -70,7 +88,8 @@ pnpm server:backup backups/folo-$(date +%F).dump
 pnpm server:restore:drill backups/folo-2026-08-18.dump
 ```
 
-恢复演练只操作唯一命名的临时库，验证关键权威表并输出恢复后的行数，随后自动删除，不改动 `folo` 主库。
+恢复演练只操作唯一命名的临时库，对比主库与恢复库的阶段一、阶段二关键权威表行数，随后自动删除，
+不改动 `folo` 主库。
 头像不在 PostgreSQL 中；必须同时备份 `UPLOADS_DIRECTORY` 所在持久卷。生产恢复应先恢复到新数据库并完成
 演练，再切换 `DATABASE_URL`，不要直接覆盖运行中的主库。
 

@@ -45,10 +45,30 @@ count_query="SELECT json_build_array(
   (SELECT count(*) FROM lists),
   (SELECT count(*) FROM list_subscriptions),
   (SELECT count(*) FROM entry_readability),
-  (SELECT count(*) FROM instance_ownership)
+  (SELECT count(*) FROM instance_ownership),
+  (SELECT count(*) FROM ai_provider_configs),
+  (SELECT count(*) FROM action_rules),
+  (SELECT count(*) FROM processing_profile_snapshots),
+  (SELECT count(*) FROM processing_taxonomy_snapshots),
+  (SELECT count(*) FROM processing_jobs),
+  (SELECT count(*) FROM processing_attempts),
+  (SELECT count(*) FROM entry_evaluations),
+  (SELECT count(*) FROM entry_current_evaluations),
+  (SELECT count(*) FROM entry_summaries),
+  (SELECT count(*) FROM entry_translations)
 )::text;"
+source_counts=$(docker compose -f "$compose_file" exec -T postgres \
+  psql --username=folo --dbname=folo --tuples-only --no-align \
+  --command="$count_query")
 restored_counts=$(docker compose -f "$compose_file" exec -T postgres \
   psql --username=folo --dbname="$drill_database" --tuples-only --no-align \
   --command="$count_query")
+
+if [[ "$source_counts" != "$restored_counts" ]]; then
+  echo "Restore drill failed: authoritative row counts differ" >&2
+  echo "Source:   $source_counts" >&2
+  echo "Restored: $restored_counts" >&2
+  exit 1
+fi
 
 echo "Restore drill passed with $table_count public tables and authoritative row counts $restored_counts"

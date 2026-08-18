@@ -1,5 +1,8 @@
 # 完整阶段一扩展包
 
+> 阶段一已经完成；后续自主 AI 能力见
+> [`stage-2-ai-processing-backend.md`](./stage-2-ai-processing-backend.md)。
+
 - 状态：已完成
 - 完成日期：2026-08-18
 - 前置基线：阶段 0 契约冻结、阶段 1 最小阅读闭环

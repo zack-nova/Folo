@@ -1,27 +1,47 @@
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm"
 
 import type { ApplicationDatabase } from "../db/database"
 import {
+  actionRules,
+  aiProviderConfigs,
   collections,
   entries,
+  entryCurrentEvaluations,
+  entryEvaluations,
   entryReadability,
+  entrySummaries,
+  entryTranslations,
   feeds,
   instanceOwnership,
   lists,
   listSubscriptions,
+  processingAttempts,
+  processingJobs,
+  processingProfileSnapshots,
+  processingTaxonomySnapshots,
   readStates,
   settings,
   subscriptions,
 } from "../db/schema"
 import type {
+  ActionRulesRecord,
+  AIProviderConfigRecord,
   DataStore,
+  EnqueueProcessingJobResult,
+  EntryEvaluationRecord,
   EntryListFilter,
   EntryRecord,
+  EntrySummaryRecord,
+  EntryTranslationRecord,
   FeedRecord,
   ListPatch,
   ListRecord,
   ListSubscriptionRecord,
   MarkAllReadFilter,
+  ProcessingAttemptRecord,
+  ProcessingJobRecord,
+  ProcessingProfileSnapshotRecord,
+  ProcessingTaxonomySnapshotRecord,
   ReadabilityRecord,
   SettingsRecord,
   SettingsTab,
@@ -91,7 +111,10 @@ export class PostgresDataStore implements DataStore {
             attachments: sql`excluded.attachments`,
             media: sql`excluded.media`,
             extra: sql`excluded.extra`,
-            publishedAt: sql`excluded.published_at`,
+            publishedAt: sql`case
+              when excluded.published_at = excluded.inserted_at then ${entries.publishedAt}
+              else excluded.published_at
+            end`,
           },
         })
     })
@@ -337,6 +360,516 @@ export class PostgresDataStore implements DataStore {
         target: entryReadability.entryId,
         set: { content, updatedAt },
       })
+  }
+
+  async getAIProviderConfig(userId: string): Promise<AIProviderConfigRecord | null> {
+    const [config] = await this.database
+      .select()
+      .from(aiProviderConfigs)
+      .where(eq(aiProviderConfigs.userId, userId))
+      .limit(1)
+    return (config as AIProviderConfigRecord | undefined) ?? null
+  }
+
+  async setAIProviderConfig(config: AIProviderConfigRecord): Promise<void> {
+    await this.database
+      .insert(aiProviderConfigs)
+      .values(config)
+      .onConflictDoUpdate({
+        target: aiProviderConfigs.userId,
+        set: {
+          baseUrl: config.baseUrl,
+          encryptedApiKey: config.encryptedApiKey,
+          keyHint: config.keyHint,
+          model: config.model,
+          type: config.type,
+          updatedAt: config.updatedAt,
+        },
+      })
+  }
+
+  async deleteAIProviderConfig(userId: string): Promise<void> {
+    await this.database.delete(aiProviderConfigs).where(eq(aiProviderConfigs.userId, userId))
+  }
+
+  async createProcessingProfileSnapshot(
+    snapshot: ProcessingProfileSnapshotRecord,
+  ): Promise<ProcessingProfileSnapshotRecord> {
+    await this.database.insert(processingProfileSnapshots).values(snapshot)
+    return snapshot
+  }
+
+  async listProcessingProfileSnapshots(userId: string): Promise<ProcessingProfileSnapshotRecord[]> {
+    return this.database
+      .select()
+      .from(processingProfileSnapshots)
+      .where(eq(processingProfileSnapshots.userId, userId))
+      .orderBy(desc(processingProfileSnapshots.createdAt), desc(processingProfileSnapshots.version))
+  }
+
+  async getProcessingProfileSnapshot(
+    userId: string,
+    snapshotId: string,
+  ): Promise<ProcessingProfileSnapshotRecord | null> {
+    const [snapshot] = await this.database
+      .select()
+      .from(processingProfileSnapshots)
+      .where(
+        and(
+          eq(processingProfileSnapshots.userId, userId),
+          eq(processingProfileSnapshots.id, snapshotId),
+        ),
+      )
+      .limit(1)
+    return snapshot ?? null
+  }
+
+  async createProcessingTaxonomySnapshot(
+    snapshot: ProcessingTaxonomySnapshotRecord,
+  ): Promise<ProcessingTaxonomySnapshotRecord> {
+    await this.database.insert(processingTaxonomySnapshots).values(snapshot)
+    return snapshot
+  }
+
+  async listProcessingTaxonomySnapshots(
+    userId: string,
+  ): Promise<ProcessingTaxonomySnapshotRecord[]> {
+    return this.database
+      .select()
+      .from(processingTaxonomySnapshots)
+      .where(eq(processingTaxonomySnapshots.userId, userId))
+      .orderBy(
+        desc(processingTaxonomySnapshots.createdAt),
+        desc(processingTaxonomySnapshots.version),
+      )
+  }
+
+  async getProcessingTaxonomySnapshot(
+    userId: string,
+    snapshotId: string,
+  ): Promise<ProcessingTaxonomySnapshotRecord | null> {
+    const [snapshot] = await this.database
+      .select()
+      .from(processingTaxonomySnapshots)
+      .where(
+        and(
+          eq(processingTaxonomySnapshots.userId, userId),
+          eq(processingTaxonomySnapshots.id, snapshotId),
+        ),
+      )
+      .limit(1)
+    return snapshot ?? null
+  }
+
+  async enqueueProcessingJob(job: ProcessingJobRecord): Promise<EnqueueProcessingJobResult> {
+    if (!job.forceRerun) {
+      const current = await this.getCurrentEntryEvaluation(job.userId, job.entryId)
+      if (
+        current &&
+        current.contentFingerprint === job.contentFingerprint &&
+        current.processorName === job.processorName &&
+        current.processorVersion === job.processorVersion &&
+        current.scoreFormulaVersion === job.scoreFormulaVersion &&
+        current.profileSnapshotId === job.profileSnapshotId &&
+        current.taxonomySnapshotId === job.taxonomySnapshotId
+      ) {
+        return { evaluation: current, outcome: "already_satisfied" }
+      }
+    }
+
+    try {
+      return await this.database.transaction(async (transaction) => {
+        await transaction.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${`${job.userId}:${job.entryId}:${job.purpose}`}))`,
+        )
+        const [active] = await transaction
+          .select()
+          .from(processingJobs)
+          .where(
+            and(
+              eq(processingJobs.idempotencyKey, job.idempotencyKey),
+              inArray(processingJobs.status, ["queued", "running"]),
+            ),
+          )
+          .limit(1)
+        if (active) {
+          if (active.status === "queued" && job.priority > active.priority) {
+            const [reprioritized] = await transaction
+              .update(processingJobs)
+              .set({ priority: job.priority })
+              .where(and(eq(processingJobs.id, active.id), eq(processingJobs.status, "queued")))
+              .returning()
+            return {
+              job: (reprioritized ?? active) as ProcessingJobRecord,
+              outcome: "reused" as const,
+            }
+          }
+          return { job: active as ProcessingJobRecord, outcome: "reused" as const }
+        }
+        await transaction
+          .update(processingJobs)
+          .set({ finishedAt: new Date(), status: "superseded", supersededByJobId: job.id })
+          .where(
+            and(
+              eq(processingJobs.userId, job.userId),
+              eq(processingJobs.entryId, job.entryId),
+              eq(processingJobs.purpose, job.purpose),
+              eq(processingJobs.status, "queued"),
+            ),
+          )
+        await transaction.insert(processingJobs).values(job)
+        return { job, outcome: "created" as const }
+      })
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "23505")) throw error
+      const [active] = await this.database
+        .select()
+        .from(processingJobs)
+        .where(
+          and(
+            eq(processingJobs.idempotencyKey, job.idempotencyKey),
+            inArray(processingJobs.status, ["queued", "running"]),
+          ),
+        )
+        .limit(1)
+      if (!active) throw error
+      if (active.status === "queued" && job.priority > active.priority) {
+        const [reprioritized] = await this.database
+          .update(processingJobs)
+          .set({ priority: job.priority })
+          .where(and(eq(processingJobs.id, active.id), eq(processingJobs.status, "queued")))
+          .returning()
+        return {
+          job: (reprioritized ?? active) as ProcessingJobRecord,
+          outcome: "reused",
+        }
+      }
+      return { job: active as ProcessingJobRecord, outcome: "reused" }
+    }
+  }
+
+  async claimNextProcessingJob(now: Date): Promise<ProcessingJobRecord | null> {
+    return this.database.transaction(async (transaction) => {
+      const [candidate] = await transaction
+        .select()
+        .from(processingJobs)
+        .where(
+          and(
+            eq(processingJobs.status, "queued"),
+            or(isNull(processingJobs.nextRetryAt), lte(processingJobs.nextRetryAt, now)),
+            sql`not exists (
+              select 1 from ${processingJobs} running
+              where running.entry_id = ${processingJobs.entryId}
+                and running.purpose = ${processingJobs.purpose}
+                and running.status = 'running'
+            )`,
+          ),
+        )
+        .orderBy(desc(processingJobs.priority), asc(processingJobs.queuedAt))
+        .limit(1)
+        .for("update", { skipLocked: true })
+      if (!candidate) return null
+      const [claimed] = await transaction
+        .update(processingJobs)
+        .set({
+          attemptCount: candidate.attemptCount + 1,
+          startedAt: now,
+          status: "running",
+        })
+        .where(and(eq(processingJobs.id, candidate.id), eq(processingJobs.status, "queued")))
+        .returning()
+      return (claimed as ProcessingJobRecord | undefined) ?? null
+    })
+  }
+
+  async getProcessingJob(userId: string, jobId: string): Promise<ProcessingJobRecord | null> {
+    const [job] = await this.database
+      .select()
+      .from(processingJobs)
+      .where(and(eq(processingJobs.userId, userId), eq(processingJobs.id, jobId)))
+      .limit(1)
+    return (job as ProcessingJobRecord | undefined) ?? null
+  }
+
+  async listProcessingAttempts(userId: string, jobId: string): Promise<ProcessingAttemptRecord[]> {
+    const job = await this.getProcessingJob(userId, jobId)
+    if (!job) return []
+    return (await this.database
+      .select()
+      .from(processingAttempts)
+      .where(eq(processingAttempts.jobId, jobId))
+      .orderBy(asc(processingAttempts.attemptNumber))) as ProcessingAttemptRecord[]
+  }
+
+  async getEntryProcessingJobs(userId: string, entryId: string): Promise<ProcessingJobRecord[]> {
+    return (await this.database
+      .select()
+      .from(processingJobs)
+      .where(and(eq(processingJobs.userId, userId), eq(processingJobs.entryId, entryId)))
+      .orderBy(
+        sql`case when ${processingJobs.status} in ('queued', 'running') then 1 else 0 end desc`,
+        desc(processingJobs.queuedAt),
+      )) as ProcessingJobRecord[]
+  }
+
+  async completeProcessingJob(input: {
+    attempt: ProcessingAttemptRecord
+    evaluation: EntryEvaluationRecord
+    jobId: string
+  }): Promise<void> {
+    await this.database.transaction(async (transaction) => {
+      const [completedJob] = await transaction
+        .update(processingJobs)
+        .set({
+          finishedAt: input.attempt.finishedAt ?? new Date(),
+          lastErrorCode: null,
+          lastErrorSummary: null,
+          nextRetryAt: null,
+          status: "succeeded",
+        })
+        .where(and(eq(processingJobs.id, input.jobId), eq(processingJobs.status, "running")))
+        .returning({ id: processingJobs.id })
+      if (!completedJob) return
+      await transaction.insert(entryEvaluations).values(input.evaluation)
+      await transaction
+        .insert(entryCurrentEvaluations)
+        .values({
+          entryId: input.evaluation.entryId,
+          evaluationId: input.evaluation.id,
+          selectedAt: input.evaluation.processedAt,
+          selectionReason: "processing_succeeded",
+        })
+        .onConflictDoUpdate({
+          target: entryCurrentEvaluations.entryId,
+          set: {
+            evaluationId: input.evaluation.id,
+            selectedAt: input.evaluation.processedAt,
+            selectionReason: "processing_succeeded",
+          },
+        })
+      await transaction.insert(processingAttempts).values(input.attempt)
+    })
+  }
+
+  async failProcessingJob(input: {
+    attempt: ProcessingAttemptRecord
+    errorCode: string
+    errorSummary: string
+    jobId: string
+    nextRetryAt: Date | null
+  }): Promise<void> {
+    await this.database.transaction(async (transaction) => {
+      await transaction.insert(processingAttempts).values(input.attempt)
+      await transaction
+        .update(processingJobs)
+        .set({
+          finishedAt: input.nextRetryAt ? null : (input.attempt.finishedAt ?? new Date()),
+          lastErrorCode: input.errorCode,
+          lastErrorSummary: input.errorSummary,
+          nextRetryAt: input.nextRetryAt,
+          status: input.nextRetryAt ? "queued" : "failed",
+        })
+        .where(and(eq(processingJobs.id, input.jobId), eq(processingJobs.status, "running")))
+    })
+  }
+
+  async retryProcessingJob(userId: string, jobId: string): Promise<ProcessingJobRecord | null> {
+    const [job] = await this.database
+      .update(processingJobs)
+      .set({
+        finishedAt: null,
+        lastErrorCode: null,
+        lastErrorSummary: null,
+        nextRetryAt: null,
+        status: "queued",
+      })
+      .where(
+        and(
+          eq(processingJobs.userId, userId),
+          eq(processingJobs.id, jobId),
+          eq(processingJobs.status, "failed"),
+        ),
+      )
+      .returning()
+    return (job as ProcessingJobRecord | undefined) ?? null
+  }
+
+  async getCurrentEntryEvaluation(
+    userId: string,
+    entryId: string,
+  ): Promise<EntryEvaluationRecord | null> {
+    const [row] = await this.database
+      .select({ evaluation: entryEvaluations })
+      .from(entryCurrentEvaluations)
+      .innerJoin(entryEvaluations, eq(entryEvaluations.id, entryCurrentEvaluations.evaluationId))
+      .innerJoin(entries, eq(entries.id, entryCurrentEvaluations.entryId))
+      .innerJoin(
+        subscriptions,
+        and(eq(subscriptions.feedId, entries.feedId), eq(subscriptions.userId, userId)),
+      )
+      .where(eq(entryCurrentEvaluations.entryId, entryId))
+      .limit(1)
+    return (row?.evaluation as EntryEvaluationRecord | undefined) ?? null
+  }
+
+  async listEntryEvaluations(userId: string, entryId: string): Promise<EntryEvaluationRecord[]> {
+    const allowedEntry = await this.getEntry(userId, entryId)
+    if (!allowedEntry) return []
+    return (await this.database
+      .select()
+      .from(entryEvaluations)
+      .where(eq(entryEvaluations.entryId, entryId))
+      .orderBy(desc(entryEvaluations.processedAt))) as EntryEvaluationRecord[]
+  }
+
+  async selectEntryEvaluation(
+    userId: string,
+    entryId: string,
+    evaluationId: string,
+    reason: string,
+  ): Promise<EntryEvaluationRecord | null> {
+    if (!(await this.getEntry(userId, entryId))) return null
+    const [evaluation] = await this.database
+      .select()
+      .from(entryEvaluations)
+      .where(and(eq(entryEvaluations.entryId, entryId), eq(entryEvaluations.id, evaluationId)))
+      .limit(1)
+    if (!evaluation) return null
+    await this.database
+      .insert(entryCurrentEvaluations)
+      .values({ entryId, evaluationId, selectedAt: new Date(), selectionReason: reason })
+      .onConflictDoUpdate({
+        target: entryCurrentEvaluations.entryId,
+        set: { evaluationId, selectedAt: new Date(), selectionReason: reason },
+      })
+    return evaluation as EntryEvaluationRecord
+  }
+
+  async getEntrySummary(
+    userId: string,
+    entryId: string,
+    language: string,
+    target: EntrySummaryRecord["target"],
+  ): Promise<EntrySummaryRecord | null> {
+    if (!(await this.getEntry(userId, entryId))) return null
+    const [summary] = await this.database
+      .select()
+      .from(entrySummaries)
+      .where(
+        and(
+          eq(entrySummaries.entryId, entryId),
+          eq(entrySummaries.language, language),
+          eq(entrySummaries.target, target),
+        ),
+      )
+      .limit(1)
+    return (summary as EntrySummaryRecord | undefined) ?? null
+  }
+
+  async setEntrySummary(userId: string, summary: EntrySummaryRecord): Promise<void> {
+    if (!(await this.getEntry(userId, summary.entryId))) return
+    await this.database
+      .insert(entrySummaries)
+      .values(summary)
+      .onConflictDoUpdate({
+        target: [entrySummaries.entryId, entrySummaries.language, entrySummaries.target],
+        set: { createdAt: summary.createdAt, model: summary.model, summary: summary.summary },
+      })
+  }
+
+  async getEntryTranslation(
+    userId: string,
+    entryId: string,
+    language: string,
+  ): Promise<EntryTranslationRecord | null> {
+    if (!(await this.getEntry(userId, entryId))) return null
+    const [translation] = await this.database
+      .select()
+      .from(entryTranslations)
+      .where(and(eq(entryTranslations.entryId, entryId), eq(entryTranslations.language, language)))
+      .limit(1)
+    return (translation as EntryTranslationRecord | undefined) ?? null
+  }
+
+  async setEntryTranslation(userId: string, translation: EntryTranslationRecord): Promise<void> {
+    if (!(await this.getEntry(userId, translation.entryId))) return
+    await this.database
+      .insert(entryTranslations)
+      .values(translation)
+      .onConflictDoUpdate({
+        target: [entryTranslations.entryId, entryTranslations.language],
+        set: {
+          content: translation.content,
+          createdAt: translation.createdAt,
+          description: translation.description,
+          model: translation.model,
+          readabilityContent: translation.readabilityContent,
+          title: translation.title,
+        },
+      })
+  }
+
+  async getActionRules(userId: string): Promise<ActionRulesRecord | null> {
+    const [record] = await this.database
+      .select()
+      .from(actionRules)
+      .where(eq(actionRules.userId, userId))
+      .limit(1)
+    return record ?? null
+  }
+
+  async setActionRules(userId: string, rules: Array<Record<string, unknown>>): Promise<void> {
+    const now = new Date()
+    await this.database
+      .insert(actionRules)
+      .values({ createdAt: now, rules, updatedAt: now, userId })
+      .onConflictDoUpdate({
+        target: actionRules.userId,
+        set: { rules, updatedAt: now },
+      })
+  }
+
+  async cleanupProcessingHistory(now: Date): Promise<void> {
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1_000)
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1_000)
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1_000)
+    const oneHundredEightyDaysAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1_000)
+    await this.database.transaction(async (transaction) => {
+      await transaction
+        .update(processingAttempts)
+        .set({ executionMetadata: null })
+        .where(lt(processingAttempts.finishedAt, sevenDaysAgo))
+      await transaction
+        .delete(processingAttempts)
+        .where(
+          or(
+            and(
+              eq(processingAttempts.status, "succeeded"),
+              lt(processingAttempts.finishedAt, thirtyDaysAgo),
+            ),
+            and(
+              eq(processingAttempts.status, "failed"),
+              lt(processingAttempts.finishedAt, ninetyDaysAgo),
+            ),
+          ),
+        )
+      await transaction.execute(sql`
+        delete from ${entryEvaluations} evaluation
+        using (
+          select id, row_number() over (
+            partition by entry_id order by processed_at desc
+          ) as history_rank
+          from ${entryEvaluations}
+        ) ranked
+        where evaluation.id = ranked.id
+          and ranked.history_rank > 10
+          and evaluation.processed_at < ${oneHundredEightyDaysAgo}
+          and not exists (
+            select 1 from ${entryCurrentEvaluations} current_evaluation
+            where current_evaluation.evaluation_id = evaluation.id
+          )
+      `)
+    })
   }
 
   async getUnreadCounts(userId: string, view?: number): Promise<Record<string, number>> {

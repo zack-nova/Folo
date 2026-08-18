@@ -115,6 +115,128 @@ export interface ReadabilityRecord {
   updatedAt: Date
 }
 
+export interface AIProviderConfigRecord {
+  userId: string
+  type: "openai-compatible"
+  baseUrl: string
+  model: string
+  encryptedApiKey: string
+  keyHint: string
+  updatedAt: Date
+}
+
+export interface ProcessingProfileSnapshotRecord {
+  id: string
+  userId: string
+  name: string
+  version: number
+  content: Record<string, unknown>
+  contentHash: string
+  createdAt: Date
+}
+
+export interface ProcessingTaxonomySnapshotRecord {
+  id: string
+  userId: string
+  name: string
+  version: number
+  content: Record<string, unknown>
+  contentHash: string
+  createdAt: Date
+}
+
+export type ProcessingJobStatus = "queued" | "running" | "succeeded" | "failed" | "superseded"
+
+export interface ProcessingJobRecord {
+  id: string
+  userId: string
+  entryId: string
+  purpose: "entry_evaluation"
+  processorName: string
+  processorVersion: string
+  scoreFormulaVersion: string
+  profileSnapshotId: string
+  taxonomySnapshotId: string
+  contentFingerprint: string
+  status: ProcessingJobStatus
+  priority: number
+  attemptCount: number
+  queuedAt: Date
+  startedAt: Date | null
+  finishedAt: Date | null
+  nextRetryAt: Date | null
+  lastErrorCode: string | null
+  lastErrorSummary: string | null
+  idempotencyKey: string
+  forceRerun: boolean
+  supersededByJobId: string | null
+}
+
+export interface ProcessingAttemptRecord {
+  id: string
+  jobId: string
+  attemptNumber: number
+  status: "running" | "succeeded" | "failed"
+  startedAt: Date
+  finishedAt: Date | null
+  errorSummary: string | null
+  executionMetadata: Record<string, unknown> | null
+}
+
+export interface EntryEvaluationRecord {
+  id: string
+  entryId: string
+  importanceScore: number
+  timelinessScore: number
+  relevanceScore: number
+  overallScore: number
+  recommendationReason: string
+  primaryCategory: string
+  secondaryCategory: string | null
+  tags: string[]
+  processorType: "ai"
+  processorName: string
+  processorVersion: string
+  scoreFormulaVersion: string
+  profileSnapshotId: string
+  taxonomySnapshotId: string
+  contentFingerprint: string
+  processedAt: Date
+  details: Record<string, unknown> | null
+}
+
+export interface EntrySummaryRecord {
+  entryId: string
+  language: string
+  target: "content" | "readabilityContent"
+  summary: string
+  model: string
+  createdAt: Date
+}
+
+export interface EntryTranslationRecord {
+  entryId: string
+  language: string
+  title: string | null
+  description: string | null
+  content: string | null
+  readabilityContent: string | null
+  model: string
+  createdAt: Date
+}
+
+export interface ActionRulesRecord {
+  userId: string
+  rules: Array<Record<string, unknown>>
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type EnqueueProcessingJobResult =
+  | { outcome: "created" | "reused"; job: ProcessingJobRecord }
+  | { outcome: "failed_requires_retry"; job: ProcessingJobRecord }
+  | { outcome: "already_satisfied"; evaluation: EntryEvaluationRecord }
+
 export type SettingsTab = "ai" | "appearance" | "general" | "integration"
 export interface SettingsRecord {
   payload: Record<string, unknown>
@@ -159,6 +281,67 @@ export interface DataStore {
   getEntry(userId: string, id: string): Promise<EntryRecord | null>
   getReadability(userId: string, entryId: string): Promise<ReadabilityRecord | null>
   setReadability(userId: string, entryId: string, content: string): Promise<void>
+  getAIProviderConfig(userId: string): Promise<AIProviderConfigRecord | null>
+  setAIProviderConfig(config: AIProviderConfigRecord): Promise<void>
+  deleteAIProviderConfig(userId: string): Promise<void>
+  createProcessingProfileSnapshot(
+    snapshot: ProcessingProfileSnapshotRecord,
+  ): Promise<ProcessingProfileSnapshotRecord>
+  listProcessingProfileSnapshots(userId: string): Promise<ProcessingProfileSnapshotRecord[]>
+  getProcessingProfileSnapshot(
+    userId: string,
+    snapshotId: string,
+  ): Promise<ProcessingProfileSnapshotRecord | null>
+  createProcessingTaxonomySnapshot(
+    snapshot: ProcessingTaxonomySnapshotRecord,
+  ): Promise<ProcessingTaxonomySnapshotRecord>
+  listProcessingTaxonomySnapshots(userId: string): Promise<ProcessingTaxonomySnapshotRecord[]>
+  getProcessingTaxonomySnapshot(
+    userId: string,
+    snapshotId: string,
+  ): Promise<ProcessingTaxonomySnapshotRecord | null>
+  enqueueProcessingJob(job: ProcessingJobRecord): Promise<EnqueueProcessingJobResult>
+  claimNextProcessingJob(now: Date): Promise<ProcessingJobRecord | null>
+  getProcessingJob(userId: string, jobId: string): Promise<ProcessingJobRecord | null>
+  listProcessingAttempts(userId: string, jobId: string): Promise<ProcessingAttemptRecord[]>
+  getEntryProcessingJobs(userId: string, entryId: string): Promise<ProcessingJobRecord[]>
+  completeProcessingJob(input: {
+    attempt: ProcessingAttemptRecord
+    evaluation: EntryEvaluationRecord
+    jobId: string
+  }): Promise<void>
+  failProcessingJob(input: {
+    attempt: ProcessingAttemptRecord
+    errorCode: string
+    errorSummary: string
+    jobId: string
+    nextRetryAt: Date | null
+  }): Promise<void>
+  retryProcessingJob(userId: string, jobId: string): Promise<ProcessingJobRecord | null>
+  getCurrentEntryEvaluation(userId: string, entryId: string): Promise<EntryEvaluationRecord | null>
+  listEntryEvaluations(userId: string, entryId: string): Promise<EntryEvaluationRecord[]>
+  selectEntryEvaluation(
+    userId: string,
+    entryId: string,
+    evaluationId: string,
+    reason: string,
+  ): Promise<EntryEvaluationRecord | null>
+  getEntrySummary(
+    userId: string,
+    entryId: string,
+    language: string,
+    target: EntrySummaryRecord["target"],
+  ): Promise<EntrySummaryRecord | null>
+  setEntrySummary(userId: string, summary: EntrySummaryRecord): Promise<void>
+  getEntryTranslation(
+    userId: string,
+    entryId: string,
+    language: string,
+  ): Promise<EntryTranslationRecord | null>
+  setEntryTranslation(userId: string, translation: EntryTranslationRecord): Promise<void>
+  getActionRules(userId: string): Promise<ActionRulesRecord | null>
+  setActionRules(userId: string, rules: Array<Record<string, unknown>>): Promise<void>
+  cleanupProcessingHistory(now: Date): Promise<void>
   getUnreadCounts(userId: string, view?: number): Promise<Record<string, number>>
   setEntriesRead(userId: string, entryIds: string[], read: boolean): Promise<void>
   markAllAsRead(userId: string, filter: MarkAllReadFilter): Promise<Record<string, number>>

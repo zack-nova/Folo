@@ -10,31 +10,61 @@ import { fromNodeHeaders } from "better-auth/node"
 import Fastify from "fastify"
 import { join } from "pathe"
 
+import {
+  credentialHint,
+  decryptCredential,
+  encryptCredential,
+  normalizeProviderBaseURL,
+} from "./ai/credentials"
+import type { AIProvider } from "./ai/provider"
+import { OpenAICompatibleProvider } from "./ai/provider"
 import type { AppAuth } from "./auth"
 import { MemoryDataStore } from "./data/memory-store"
 import type {
   DataStore,
+  EntryEvaluationRecord,
   EntryRecord,
   FeedRecord,
   ListPatch,
   ListRecord,
   ListSubscriptionRecord,
+  ProcessingJobRecord,
   SettingsTab,
   SubscriptionPatch,
   SubscriptionRecord,
 } from "./data/types"
 import type { FeedFetcher } from "./feeds/importer"
 import { FeedImporter } from "./feeds/importer"
+import { startFeedScheduler } from "./feeds/scheduler"
 import { exportOpml, parseOpml } from "./opml"
+import {
+  contentHash,
+  entryContentFingerprint,
+  ProcessingError,
+  ProcessingService,
+} from "./processing/service"
 
 export interface BuildServerOptions {
+  aiEncryptionSecret?: string
+  aiProvider?: AIProvider
+  aiProviderFetch?: typeof globalThis.fetch
+  aiProviderConfig?: {
+    apiKey: string
+    baseUrl: string
+    model: string
+    timeoutMs?: number
+  }
   allowPublicRegistration?: boolean
   auth: AppAuth
   clientOrigins: string[]
   dataStore?: DataStore
   feedFetcher?: FeedFetcher
+  feedPollIntervalMs?: number
   readabilityFetcher?: FeedFetcher
   logger?: boolean
+  processingMaxAttempts?: number
+  processingRetryBaseDelayMs?: number
+  processingWorkerPollIntervalMs?: number
   serverURL?: string
   uploadsDirectory?: string
 }
@@ -141,6 +171,65 @@ const apiListSubscription = (subscription: ListSubscriptionRecord, list: ListRec
   },
 })
 
+const apiProcessingJob = (job: ProcessingJobRecord) => ({
+  id: job.id,
+  entry_id: job.entryId,
+  purpose: job.purpose,
+  processor_name: job.processorName,
+  processor_version: job.processorVersion,
+  score_formula_version: job.scoreFormulaVersion,
+  profile_snapshot_id: job.profileSnapshotId,
+  taxonomy_snapshot_id: job.taxonomySnapshotId,
+  content_fingerprint: job.contentFingerprint,
+  status: job.status,
+  priority: job.priority,
+  attempt_count: job.attemptCount,
+  queued_at: job.queuedAt.toISOString(),
+  started_at: job.startedAt?.toISOString() ?? null,
+  finished_at: job.finishedAt?.toISOString() ?? null,
+  next_retry_at: job.nextRetryAt?.toISOString() ?? null,
+  last_error_code: job.lastErrorCode,
+  last_error_summary: job.lastErrorSummary,
+  force_rerun: job.forceRerun,
+  superseded_by_job_id: job.supersededByJobId,
+})
+
+const apiProcessingAttempt = (
+  attempt: Awaited<ReturnType<DataStore["listProcessingAttempts"]>>[number],
+) => ({
+  id: attempt.id,
+  job_id: attempt.jobId,
+  attempt_number: attempt.attemptNumber,
+  status: attempt.status,
+  started_at: attempt.startedAt.toISOString(),
+  finished_at: attempt.finishedAt?.toISOString() ?? null,
+  error_summary: attempt.errorSummary,
+  execution_metadata: attempt.executionMetadata,
+})
+
+const apiEvaluation = (evaluation: EntryEvaluationRecord, configurationOutdated: boolean) => ({
+  id: evaluation.id,
+  entry_id: evaluation.entryId,
+  importance_score: evaluation.importanceScore,
+  timeliness_score: evaluation.timelinessScore,
+  relevance_score: evaluation.relevanceScore,
+  overall_score: evaluation.overallScore,
+  recommendation_reason: evaluation.recommendationReason,
+  primary_category: evaluation.primaryCategory,
+  secondary_category: evaluation.secondaryCategory,
+  tags: evaluation.tags,
+  processor_type: evaluation.processorType,
+  processor_name: evaluation.processorName,
+  processor_version: evaluation.processorVersion,
+  score_formula_version: evaluation.scoreFormulaVersion,
+  profile_snapshot_id: evaluation.profileSnapshotId,
+  taxonomy_snapshot_id: evaluation.taxonomySnapshotId,
+  content_fingerprint: evaluation.contentFingerprint,
+  processed_at: evaluation.processedAt.toISOString(),
+  details: evaluation.details,
+  configuration_outdated: configurationOutdated,
+})
+
 const numberFromUnknown = (value: unknown): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) return value
   if (typeof value !== "string" || value.trim() === "") return undefined
@@ -190,11 +279,15 @@ const settingsTabs = ["general", "appearance", "integration", "ai"] as const
 const isSettingsTab = (value: string): value is SettingsTab =>
   settingsTabs.includes(value as SettingsTab)
 const implementedCapabilities = new Set([
+  "actions.entry_processing",
+  "ai.entry_processing",
+  "ai.provider_configuration",
   "auth.account_management",
   "auth.credentials",
   "collections.core",
   "discovery.standard_feed",
   "entries.core",
+  "entries.evaluation_processing",
   "feeds.core",
   "organization.core",
   "profiles.core",
@@ -205,20 +298,164 @@ const implementedCapabilities = new Set([
 ])
 
 export const buildServer = async ({
+  aiEncryptionSecret,
+  aiProvider,
+  aiProviderFetch,
+  aiProviderConfig,
   allowPublicRegistration = false,
   auth,
   clientOrigins,
   dataStore = new MemoryDataStore(),
   feedFetcher,
+  feedPollIntervalMs,
   readabilityFetcher = feedFetcher,
   logger = false,
+  processingMaxAttempts,
+  processingRetryBaseDelayMs,
+  processingWorkerPollIntervalMs,
   serverURL = "http://localhost:3000",
   uploadsDirectory = "./data/uploads",
 }: BuildServerOptions) => {
-  const server = Fastify({ logger })
-  const importer = feedFetcher ? new FeedImporter(dataStore, feedFetcher) : null
+  const server = Fastify({ logger, routerOptions: { ignoreTrailingSlash: true } })
   const pendingReadability = new Map<string, Promise<string | null>>()
+  const pendingSummaries = new Map<string, Promise<string>>()
+  const pendingTranslations = new Map<string, Promise<Record<string, string>>>()
   let registrationTail = Promise.resolve()
+
+  const resolveAIProvider = async (userId: string): Promise<AIProvider> => {
+    if (aiProvider) return aiProvider
+    const stored = await dataStore.getAIProviderConfig(userId)
+    if (stored) {
+      if (!aiEncryptionSecret) {
+        throw new ProcessingError(
+          "ai_encryption_unavailable",
+          "AI credential encryption is not configured",
+        )
+      }
+      return new OpenAICompatibleProvider({
+        apiKey: decryptCredential(stored.encryptedApiKey, aiEncryptionSecret),
+        baseUrl: stored.baseUrl,
+        fetch: aiProviderFetch,
+        model: stored.model,
+      })
+    }
+    if (aiProviderConfig) {
+      return new OpenAICompatibleProvider({ ...aiProviderConfig, fetch: aiProviderFetch })
+    }
+    throw new ProcessingError("ai_provider_not_configured", "Configure an AI provider first")
+  }
+
+  const processingService = new ProcessingService({
+    dataStore,
+    maxAttempts: processingMaxAttempts,
+    onError: (error) => server.log.error(error, "Processing worker failed"),
+    pollIntervalMs: processingWorkerPollIntervalMs,
+    resolveProvider: resolveAIProvider,
+    retryBaseDelayMs: processingRetryBaseDelayMs,
+  })
+  processingService.start()
+  server.addHook("onClose", async () => processingService.stop())
+
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === "object" && !Array.isArray(value)
+
+  const actionMatchesEntry = (rule: Record<string, unknown>, entry: EntryRecord): boolean => {
+    const conditions = Array.isArray(rule.condition) ? rule.condition : []
+    if (conditions.length === 0) return true
+    const groups = Array.isArray(conditions[0]) ? conditions : [conditions]
+    const fieldValue = (field: unknown): string => {
+      switch (field) {
+        case "entry_title":
+          return entry.title ?? ""
+        case "entry_content":
+          return entry.content ?? entry.description ?? ""
+        case "entry_url":
+          return entry.url ?? ""
+        case "entry_author":
+          return entry.author ?? ""
+        default:
+          return ""
+      }
+    }
+    const matchesCondition = (condition: unknown): boolean => {
+      if (!isRecord(condition)) return false
+      const actual = fieldValue(condition.field)
+      const expected = String(condition.value ?? "")
+      switch (condition.operator) {
+        case "contains":
+          return actual.toLocaleLowerCase().includes(expected.toLocaleLowerCase())
+        case "not_contains":
+          return !actual.toLocaleLowerCase().includes(expected.toLocaleLowerCase())
+        case "eq":
+          return actual === expected
+        case "not_eq":
+          return actual !== expected
+        case "regex":
+          try {
+            return new RegExp(expected, "i").test(actual)
+          } catch {
+            return false
+          }
+        default:
+          return false
+      }
+    }
+    return groups.some(
+      (group) => Array.isArray(group) && group.length > 0 && group.every(matchesCondition),
+    )
+  }
+
+  const enqueueImportedEntries = async (entries: EntryRecord[], importedUserId: string | null) => {
+    const userId = importedUserId ?? (await dataStore.getOwnerUserId())
+    if (!userId) return
+    const actionRecord = await dataStore.getActionRules(userId)
+    const evaluationRules = (actionRecord?.rules ?? []).filter((rule) => {
+      const result = isRecord(rule.result) ? rule.result : null
+      return result?.disabled !== true && Boolean(result?.evaluate)
+    })
+    if (evaluationRules.length === 0) return
+    const actionPriority = (rule: Record<string, unknown>): number => {
+      const result = isRecord(rule.result) ? rule.result : null
+      const evaluate = result && isRecord(result.evaluate) ? result.evaluate : null
+      if (typeof evaluate?.priority === "number") return evaluate.priority
+      if (evaluate?.priority === "high") return 5
+      if (evaluate?.priority === "low") return -5
+      return 0
+    }
+    await Promise.all(
+      entries.map(async (entry) => {
+        const matchingRules = evaluationRules.filter((rule) => actionMatchesEntry(rule, entry))
+        if (matchingRules.length === 0) return
+        try {
+          await processingService.enqueueEvaluation(userId, entry.id, {
+            automatic: true,
+            priority: Math.max(...matchingRules.map(actionPriority)),
+          })
+        } catch (error) {
+          if (!(error instanceof ProcessingError)) throw error
+        }
+      }),
+    )
+  }
+
+  const importer = feedFetcher
+    ? new FeedImporter(dataStore, feedFetcher, async ({ entries, userId }) => {
+        try {
+          await enqueueImportedEntries(entries, userId)
+        } catch (error) {
+          server.log.error(error, "Automatic entry processing failed after feed import")
+        }
+      })
+    : null
+  if (importer && feedPollIntervalMs) {
+    const stopFeedScheduler = startFeedScheduler({
+      dataStore,
+      importer,
+      intervalMs: feedPollIntervalMs,
+      onResult: (result) => server.log.info(result, "Feed polling cycle completed"),
+    })
+    server.addHook("onClose", async () => stopFeedScheduler())
+  }
 
   const acquireRegistrationLock = async () => {
     const previous = registrationTail
@@ -270,7 +507,7 @@ export const buildServer = async ({
 
   await server.register(cors, {
     credentials: true,
-    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     origin: clientOrigins,
   })
   await server.register(multipart, {
@@ -381,12 +618,766 @@ export const buildServer = async ({
       code: 0,
       data: {
         compatibilityVersion: capabilityManifest.compatibilityVersion,
-        stage: 1,
+        stage: 2,
         capabilities,
         unavailable: capabilityManifest.capabilities
           .map((capability) => capability.id)
           .filter((id) => !enabled.has(id)),
       },
+    }
+  })
+
+  server.get("/api/extensions/ai/provider", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const config = await dataStore.getAIProviderConfig(userId)
+    const environmentConfig = !config && aiProviderConfig ? aiProviderConfig : null
+    return {
+      code: 0,
+      data: config
+        ? {
+            base_url: config.baseUrl,
+            configured: true,
+            key_hint: config.keyHint,
+            key_source: "stored" as const,
+            model: config.model,
+            type: config.type,
+          }
+        : environmentConfig
+          ? {
+              base_url: environmentConfig.baseUrl,
+              configured: true,
+              key_hint: null,
+              key_source: "environment" as const,
+              model: environmentConfig.model,
+              type: "openai-compatible" as const,
+            }
+          : {
+              base_url: null,
+              configured: false,
+              key_hint: null,
+              key_source: null,
+              model: null,
+              type: "openai-compatible" as const,
+            },
+    }
+  })
+
+  server.put("/api/extensions/ai/provider", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    if (!aiEncryptionSecret) {
+      return reply.status(503).send({
+        code: "ai_encryption_unavailable",
+        message: "AI credential encryption is not configured",
+      })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    if (
+      typeof body.api_key !== "string" ||
+      body.api_key.trim() === "" ||
+      typeof body.base_url !== "string" ||
+      typeof body.model !== "string" ||
+      body.model.trim() === ""
+    ) {
+      return reply.status(400).send({
+        code: "invalid_ai_provider",
+        message: "api_key, base_url, and model are required",
+      })
+    }
+
+    try {
+      const baseUrl = normalizeProviderBaseURL(body.base_url)
+      const apiKey = body.api_key.trim()
+      const config = {
+        baseUrl,
+        encryptedApiKey: encryptCredential(apiKey, aiEncryptionSecret),
+        keyHint: credentialHint(apiKey),
+        model: body.model.trim(),
+        type: "openai-compatible" as const,
+        updatedAt: new Date(),
+        userId,
+      }
+      await dataStore.setAIProviderConfig(config)
+      return {
+        code: 0,
+        data: {
+          base_url: config.baseUrl,
+          configured: true,
+          key_hint: config.keyHint,
+          key_source: "stored" as const,
+          model: config.model,
+          type: config.type,
+        },
+      }
+    } catch (error) {
+      return reply.status(400).send({
+        code: "invalid_ai_provider",
+        message: error instanceof Error ? error.message : "Invalid AI provider configuration",
+      })
+    }
+  })
+
+  server.delete("/api/extensions/ai/provider", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    await dataStore.deleteAIProviderConfig(userId)
+    return { code: 0, data: null }
+  })
+
+  server.get("/api/extensions/profiles", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const snapshots = await dataStore.listProcessingProfileSnapshots(userId)
+    return {
+      code: 0,
+      data: {
+        current: snapshots.at(0) ?? null,
+        snapshots,
+      },
+    }
+  })
+
+  server.post("/api/extensions/profiles", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    if (
+      typeof body.name !== "string" ||
+      body.name.trim() === "" ||
+      !body.content ||
+      typeof body.content !== "object" ||
+      Array.isArray(body.content)
+    ) {
+      return reply.status(400).send({
+        code: "invalid_profile",
+        message: "name and object content are required",
+      })
+    }
+    const name = body.name.trim()
+    const content = structuredClone(body.content as Record<string, unknown>)
+    const existing = (await dataStore.listProcessingProfileSnapshots(userId)).filter(
+      (snapshot) => snapshot.name === name,
+    )
+    const matching = existing.find((snapshot) => snapshot.contentHash === contentHash(content))
+    if (matching) return { code: 0, data: matching }
+    const snapshot = await dataStore.createProcessingProfileSnapshot({
+      content,
+      contentHash: contentHash(content),
+      createdAt: new Date(),
+      id: `profile_${randomUUID().replaceAll("-", "")}`,
+      name,
+      userId,
+      version: Math.max(0, ...existing.map((item) => item.version)) + 1,
+    })
+    return reply.status(201).send({ code: 0, data: snapshot })
+  })
+
+  server.get("/api/extensions/taxonomies", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const snapshots = await dataStore.listProcessingTaxonomySnapshots(userId)
+    return {
+      code: 0,
+      data: {
+        current: snapshots.at(0) ?? null,
+        snapshots,
+      },
+    }
+  })
+
+  server.post("/api/extensions/taxonomies", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    if (
+      typeof body.name !== "string" ||
+      body.name.trim() === "" ||
+      !body.content ||
+      typeof body.content !== "object" ||
+      Array.isArray(body.content)
+    ) {
+      return reply.status(400).send({
+        code: "invalid_taxonomy",
+        message: "name and object content are required",
+      })
+    }
+    const name = body.name.trim()
+    const content = structuredClone(body.content as Record<string, unknown>)
+    const existing = (await dataStore.listProcessingTaxonomySnapshots(userId)).filter(
+      (snapshot) => snapshot.name === name,
+    )
+    const matching = existing.find((snapshot) => snapshot.contentHash === contentHash(content))
+    if (matching) return { code: 0, data: matching }
+    const snapshot = await dataStore.createProcessingTaxonomySnapshot({
+      content,
+      contentHash: contentHash(content),
+      createdAt: new Date(),
+      id: `taxonomy_${randomUUID().replaceAll("-", "")}`,
+      name,
+      userId,
+      version: Math.max(0, ...existing.map((item) => item.version)) + 1,
+    })
+    return reply.status(201).send({ code: 0, data: snapshot })
+  })
+
+  const isEvaluationOutdated = async (userId: string, evaluation: EntryEvaluationRecord) => {
+    const [profile, taxonomy] = await Promise.all([
+      dataStore.listProcessingProfileSnapshots(userId),
+      dataStore.listProcessingTaxonomySnapshots(userId),
+    ])
+    return (
+      evaluation.processorVersion !== "1" ||
+      evaluation.scoreFormulaVersion !== "weighted-v1" ||
+      profile.at(0)?.id !== evaluation.profileSnapshotId ||
+      taxonomy.at(0)?.id !== evaluation.taxonomySnapshotId
+    )
+  }
+
+  server.post("/api/extensions/processing/jobs", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    if (typeof body.entry_id !== "string") {
+      return reply.status(400).send({ code: "invalid_request", message: "entry_id is required" })
+    }
+    try {
+      const result = await processingService.enqueueEvaluation(userId, body.entry_id, {
+        forceRerun: body.force_rerun === true,
+        ...(typeof body.priority === "number" ? { priority: body.priority } : {}),
+        ...(typeof body.profile_snapshot_id === "string"
+          ? { profileSnapshotId: body.profile_snapshot_id }
+          : {}),
+        ...(typeof body.taxonomy_snapshot_id === "string"
+          ? { taxonomySnapshotId: body.taxonomy_snapshot_id }
+          : {}),
+      })
+      if (result.outcome === "already_satisfied") {
+        return {
+          code: 0,
+          data: {
+            evaluation: apiEvaluation(
+              result.evaluation,
+              await isEvaluationOutdated(userId, result.evaluation),
+            ),
+            outcome: result.outcome,
+          },
+        }
+      }
+      if (result.outcome === "failed_requires_retry") {
+        return reply.status(409).send({
+          code: "processing_job_requires_retry",
+          message: "The previous processing job failed and requires an explicit retry",
+        })
+      }
+      return reply.status(result.outcome === "created" ? 202 : 200).send({
+        code: 0,
+        data: { job: apiProcessingJob(result.job), outcome: result.outcome },
+      })
+    } catch (error) {
+      if (error instanceof ProcessingError) {
+        const status = error.code === "entry_not_found" ? 404 : 409
+        return reply.status(status).send({ code: error.code, message: error.message })
+      }
+      throw error
+    }
+  })
+
+  server.get<{ Params: { jobId: string } }>(
+    "/api/extensions/processing/jobs/:jobId",
+    async (request, reply) => {
+      const userId = await authenticatedUserId(request.headers)
+      if (!userId) {
+        return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+      }
+      const job = await dataStore.getProcessingJob(userId, request.params.jobId)
+      if (!job) {
+        return reply
+          .status(404)
+          .send({ code: "processing_job_not_found", message: "Job not found" })
+      }
+      const attempts = await dataStore.listProcessingAttempts(userId, job.id)
+      return {
+        code: 0,
+        data: { ...apiProcessingJob(job), attempts: attempts.map(apiProcessingAttempt) },
+      }
+    },
+  )
+
+  server.post<{ Params: { jobId: string } }>(
+    "/api/extensions/processing/jobs/:jobId/retry",
+    async (request, reply) => {
+      const userId = await authenticatedUserId(request.headers)
+      if (!userId) {
+        return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+      }
+      const job = await dataStore.retryProcessingJob(userId, request.params.jobId)
+      if (!job) {
+        return reply.status(409).send({
+          code: "processing_job_not_retryable",
+          message: "Only failed jobs can be retried",
+        })
+      }
+      processingService.kick()
+      return reply.status(202).send({ code: 0, data: apiProcessingJob(job) })
+    },
+  )
+
+  server.get<{ Params: { entryId: string } }>(
+    "/api/extensions/entries/:entryId/evaluation",
+    async (request, reply) => {
+      const userId = await authenticatedUserId(request.headers)
+      if (!userId) {
+        return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+      }
+      if (!(await dataStore.getEntry(userId, request.params.entryId))) {
+        return reply.status(404).send({ code: "entry_not_found", message: "Entry not found" })
+      }
+      const [current, history] = await Promise.all([
+        dataStore.getCurrentEntryEvaluation(userId, request.params.entryId),
+        dataStore.listEntryEvaluations(userId, request.params.entryId),
+      ])
+      const outdated = new Map<string, boolean>()
+      await Promise.all(
+        history.map(async (evaluation) => {
+          outdated.set(evaluation.id, await isEvaluationOutdated(userId, evaluation))
+        }),
+      )
+      return {
+        code: 0,
+        data: {
+          current: current ? apiEvaluation(current, outdated.get(current.id) ?? false) : null,
+          history: history.map((evaluation) =>
+            apiEvaluation(evaluation, outdated.get(evaluation.id) ?? false),
+          ),
+        },
+      }
+    },
+  )
+
+  server.post<{ Params: { entryId: string; evaluationId: string } }>(
+    "/api/extensions/entries/:entryId/evaluation/:evaluationId/select",
+    async (request, reply) => {
+      const userId = await authenticatedUserId(request.headers)
+      if (!userId) {
+        return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+      }
+      const body = (request.body ?? {}) as Record<string, unknown>
+      const evaluation = await dataStore.selectEntryEvaluation(
+        userId,
+        request.params.entryId,
+        request.params.evaluationId,
+        typeof body.reason === "string" ? body.reason : "manual_selection",
+      )
+      if (!evaluation) {
+        return reply
+          .status(404)
+          .send({ code: "evaluation_not_found", message: "Evaluation not found" })
+      }
+      return {
+        code: 0,
+        data: apiEvaluation(evaluation, await isEvaluationOutdated(userId, evaluation)),
+      }
+    },
+  )
+
+  server.get<{ Params: { entryId: string } }>(
+    "/api/extensions/entries/:entryId/processing-status",
+    async (request, reply) => {
+      const userId = await authenticatedUserId(request.headers)
+      if (!userId) {
+        return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+      }
+      if (!(await dataStore.getEntry(userId, request.params.entryId))) {
+        return reply.status(404).send({ code: "entry_not_found", message: "Entry not found" })
+      }
+      const jobs = await dataStore.getEntryProcessingJobs(userId, request.params.entryId)
+      return {
+        code: 0,
+        data: {
+          current: jobs.at(0) ? apiProcessingJob(jobs[0]!) : null,
+          jobs: jobs.map(apiProcessingJob),
+        },
+      }
+    },
+  )
+
+  server.post("/api/extensions/entries/projections", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    const entryIds = Array.isArray(body.entry_ids)
+      ? [...new Set(body.entry_ids.filter((id): id is string => typeof id === "string"))]
+      : []
+    if (entryIds.length > 100) {
+      return reply.status(400).send({ code: "too_many_entries", message: "At most 100 entries" })
+    }
+    const projections = await Promise.all(
+      entryIds.map(async (entryId) => {
+        const [evaluation, jobs] = await Promise.all([
+          dataStore.getCurrentEntryEvaluation(userId, entryId),
+          dataStore.getEntryProcessingJobs(userId, entryId),
+        ])
+        return [
+          entryId,
+          {
+            evaluation: evaluation
+              ? apiEvaluation(evaluation, await isEvaluationOutdated(userId, evaluation))
+              : null,
+            processing_status: jobs.at(0) ? apiProcessingJob(jobs[0]!) : null,
+          },
+        ] as const
+      }),
+    )
+    return { code: 0, data: Object.fromEntries(projections) }
+  })
+
+  const entriesForReevaluation = async (userId: string, body: Record<string, unknown>) => {
+    if (Array.isArray(body.entry_ids)) {
+      const ids = [...new Set(body.entry_ids.filter((id): id is string => typeof id === "string"))]
+      if (ids.length > 1_000) {
+        throw new ProcessingError("too_many_entries", "At most 1000 entries can be submitted")
+      }
+      return (await Promise.all(ids.map((entryId) => dataStore.getEntry(userId, entryId)))).filter(
+        (entry): entry is EntryRecord => entry !== null,
+      )
+    }
+    return (
+      await dataStore.listEntries({
+        userId,
+        ...(typeof body.feed_id === "string" ? { feedId: body.feed_id } : {}),
+        ...(Array.isArray(body.feed_ids)
+          ? {
+              feedIdList: body.feed_ids.filter(
+                (feedId): feedId is string => typeof feedId === "string",
+              ),
+            }
+          : {}),
+        ...(typeof body.view === "number" ? { view: body.view } : {}),
+        ...(dateFromUnknown(body.published_after)
+          ? { publishedAfter: dateFromUnknown(body.published_after) }
+          : {}),
+        ...(dateFromUnknown(body.published_before)
+          ? { publishedBefore: dateFromUnknown(body.published_before) }
+          : {}),
+        limit: limitFromUnknown(body.limit, 100, 1_000),
+      })
+    ).map((row) => row.entry)
+  }
+
+  server.post("/api/extensions/processing/re-evaluation-preview", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    try {
+      const [entries, profiles, taxonomies] = await Promise.all([
+        entriesForReevaluation(userId, body),
+        dataStore.listProcessingProfileSnapshots(userId),
+        dataStore.listProcessingTaxonomySnapshots(userId),
+      ])
+      const profile =
+        typeof body.profile_snapshot_id === "string"
+          ? await dataStore.getProcessingProfileSnapshot(userId, body.profile_snapshot_id)
+          : profiles.at(0)
+      const taxonomy =
+        typeof body.taxonomy_snapshot_id === "string"
+          ? await dataStore.getProcessingTaxonomySnapshot(userId, body.taxonomy_snapshot_id)
+          : taxonomies.at(0)
+      if (!profile || !taxonomy) {
+        throw new ProcessingError(
+          "processing_configuration_required",
+          "Create a profile and taxonomy before re-evaluation",
+        )
+      }
+      let alreadySatisfied = 0
+      let active = 0
+      for (const entry of entries) {
+        const [current, jobs] = await Promise.all([
+          dataStore.getCurrentEntryEvaluation(userId, entry.id),
+          dataStore.getEntryProcessingJobs(userId, entry.id),
+        ])
+        if (
+          current &&
+          current.contentFingerprint === entryContentFingerprint(entry) &&
+          current.processorVersion === "1" &&
+          current.scoreFormulaVersion === "weighted-v1" &&
+          current.profileSnapshotId === profile.id &&
+          current.taxonomySnapshotId === taxonomy.id
+        ) {
+          alreadySatisfied += 1
+        }
+        if (jobs.some((job) => job.status === "queued" || job.status === "running")) active += 1
+      }
+      const forceRerun = body.force_rerun === true
+      return {
+        code: 0,
+        data: {
+          active,
+          already_satisfied: alreadySatisfied,
+          estimated_calls: Math.max(
+            0,
+            entries.length - active - (forceRerun ? 0 : alreadySatisfied),
+          ),
+          matched: entries.length,
+          profile_snapshot_id: profile.id,
+          taxonomy_snapshot_id: taxonomy.id,
+        },
+      }
+    } catch (error) {
+      if (error instanceof ProcessingError) {
+        return reply.status(400).send({ code: error.code, message: error.message })
+      }
+      throw error
+    }
+  })
+
+  server.post("/api/extensions/processing/re-evaluation-jobs", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    try {
+      const entries = await entriesForReevaluation(userId, body)
+      const result = {
+        already_satisfied: 0,
+        created: 0,
+        job_ids: [] as string[],
+        matched: entries.length,
+        reused: 0,
+        skipped: 0,
+      }
+      for (const entry of entries) {
+        try {
+          const enqueued = await processingService.enqueueEvaluation(userId, entry.id, {
+            forceRerun: body.force_rerun === true,
+            ...(typeof body.priority === "number" ? { priority: body.priority } : {}),
+            ...(typeof body.profile_snapshot_id === "string"
+              ? { profileSnapshotId: body.profile_snapshot_id }
+              : {}),
+            ...(typeof body.taxonomy_snapshot_id === "string"
+              ? { taxonomySnapshotId: body.taxonomy_snapshot_id }
+              : {}),
+          })
+          if (enqueued.outcome === "already_satisfied") result.already_satisfied += 1
+          else if (enqueued.outcome === "failed_requires_retry") result.skipped += 1
+          else {
+            result[enqueued.outcome] += 1
+            result.job_ids.push(enqueued.job.id)
+          }
+        } catch (error) {
+          if (error instanceof ProcessingError) result.skipped += 1
+          else throw error
+        }
+      }
+      return reply.status(202).send({ code: 0, data: result })
+    } catch (error) {
+      if (error instanceof ProcessingError) {
+        return reply.status(400).send({ code: error.code, message: error.message })
+      }
+      throw error
+    }
+  })
+
+  server.get("/ai/summary", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const query = request.query as Record<string, unknown>
+    if (typeof query.id !== "string") {
+      return reply.status(400).send({ code: "invalid_request", message: "id is required" })
+    }
+    const language = typeof query.language === "string" ? query.language : "auto"
+    const target = query.target === "readabilityContent" ? "readabilityContent" : "content"
+    const cached = await dataStore.getEntrySummary(userId, query.id, language, target)
+    if (cached) return { code: 0, data: cached.summary }
+    const entry = await dataStore.getEntry(userId, query.id)
+    if (!entry) {
+      return reply.status(404).send({ code: "entry_not_found", message: "Entry not found" })
+    }
+
+    const cacheKey = `${userId}:${entry.id}:${language}:${target}`
+    let pending = pendingSummaries.get(cacheKey)
+    if (!pending) {
+      pending = (async () => {
+        const readability =
+          target === "readabilityContent" ? await dataStore.getReadability(userId, entry.id) : null
+        const source = readability?.content ?? entry.content ?? entry.description ?? entry.title
+        if (!source)
+          throw new ProcessingError("entry_content_missing", "Entry has no text to summarize")
+        const completion = await (
+          await resolveAIProvider(userId)
+        ).complete({
+          system:
+            "Summarize an RSS entry faithfully and concisely. Do not invent facts. Return only the summary text.",
+          temperature: 0.2,
+          user: JSON.stringify({
+            language,
+            source,
+            title: entry.title,
+            url: entry.url,
+          }),
+        })
+        const summary = completion.content.trim()
+        await dataStore.setEntrySummary(userId, {
+          createdAt: new Date(),
+          entryId: entry.id,
+          language,
+          model: completion.model,
+          summary,
+          target,
+        })
+        return summary
+      })().finally(() => pendingSummaries.delete(cacheKey))
+      pendingSummaries.set(cacheKey, pending)
+    }
+    try {
+      return { code: 0, data: await pending }
+    } catch (error) {
+      const failure =
+        error instanceof ProcessingError
+          ? { code: error.code, message: error.message }
+          : {
+              code: "ai_provider_error",
+              message: error instanceof Error ? error.message : "Summary generation failed",
+            }
+      return reply.status(502).send(failure)
+    }
+  })
+
+  server.post("/ai/translation/batch", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    const ids = Array.isArray(body.ids)
+      ? [...new Set(body.ids.filter((id): id is string => typeof id === "string"))].slice(0, 100)
+      : []
+    const language = typeof body.language === "string" ? body.language : null
+    const allowedFields = new Set(["title", "description", "content", "readabilityContent"])
+    const fields =
+      typeof body.fields === "string"
+        ? [...new Set(body.fields.split(",").filter((field) => allowedFields.has(field)))]
+        : []
+    if (!language || ids.length === 0 || fields.length === 0) {
+      return reply.status(400).send({
+        code: "invalid_request",
+        message: "ids, language, and fields are required",
+      })
+    }
+
+    try {
+      const chunks = await Promise.all(
+        ids.map(async (entryId) => {
+          const entry = await dataStore.getEntry(userId, entryId)
+          if (!entry) return null
+          const cached = await dataStore.getEntryTranslation(userId, entryId, language)
+          const cachedData: Record<string, string> = {}
+          for (const field of fields) {
+            const value =
+              field === "readabilityContent"
+                ? cached?.readabilityContent
+                : cached?.[field as "content" | "description" | "title"]
+            if (value) cachedData[field] = value
+          }
+          if (Object.keys(cachedData).length === fields.length) {
+            return { data: cachedData, id: entryId }
+          }
+
+          const cacheKey = `${userId}:${entryId}:${language}:${fields.join(",")}`
+          let pending = pendingTranslations.get(cacheKey)
+          if (!pending) {
+            pending = (async () => {
+              const readability = fields.includes("readabilityContent")
+                ? await dataStore.getReadability(userId, entryId)
+                : null
+              const source = Object.fromEntries(
+                fields.flatMap((field) => {
+                  const value =
+                    field === "readabilityContent"
+                      ? readability?.content
+                      : entry[field as "content" | "description" | "title"]
+                  return value ? [[field, value]] : []
+                }),
+              )
+              const completion = await (
+                await resolveAIProvider(userId)
+              ).complete({
+                json: true,
+                system:
+                  "Translate the provided RSS entry fields. Preserve HTML structure when present. Return only a JSON object whose keys exactly match the input fields.",
+                temperature: 0.1,
+                user: JSON.stringify({
+                  language,
+                  mode: body.mode === "translation-only" ? "translation-only" : "bilingual",
+                  source,
+                }),
+              })
+              const parsed = JSON.parse(
+                completion.content
+                  .trim()
+                  .replace(/^```(?:json)?\s*/i, "")
+                  .replace(/\s*```$/, ""),
+              ) as Record<string, unknown>
+              const translated: Record<string, string> = {}
+              for (const field of fields) {
+                if (typeof parsed[field] === "string") translated[field] = parsed[field]
+              }
+              if (Object.keys(translated).length === 0) {
+                throw new Error("AI provider returned no translated fields")
+              }
+              await dataStore.setEntryTranslation(userId, {
+                content: translated.content ?? cached?.content ?? null,
+                createdAt: new Date(),
+                description: translated.description ?? cached?.description ?? null,
+                entryId,
+                language,
+                model: completion.model,
+                readabilityContent:
+                  translated.readabilityContent ?? cached?.readabilityContent ?? null,
+                title: translated.title ?? cached?.title ?? null,
+              })
+              return translated
+            })().finally(() => pendingTranslations.delete(cacheKey))
+            pendingTranslations.set(cacheKey, pending)
+          }
+          return { data: await pending, id: entryId }
+        }),
+      )
+      const responseBody = chunks
+        .filter((chunk) => chunk !== null)
+        .map((chunk) => JSON.stringify(chunk))
+        .join("\n")
+      return reply
+        .type("application/x-ndjson; charset=utf-8")
+        .send(`${responseBody}${responseBody ? "\n" : ""}`)
+    } catch (error) {
+      return reply.status(502).send({
+        code: "ai_provider_error",
+        message: error instanceof Error ? error.message : "Translation failed",
+      })
     }
   })
 
@@ -400,7 +1391,7 @@ export const buildServer = async ({
       INVITATION_ENABLED: false,
       INVITATION_INTERVAL_DAYS: 0,
       IS_RSS3_TESTNET: false,
-      MAX_ACTIONS: 0,
+      MAX_ACTIONS: 100,
       MAX_INBOXES: 0,
       MAX_LISTS: 1_000,
       MAX_SUBSCRIPTIONS: 10_000,
@@ -415,6 +1406,48 @@ export const buildServer = async ({
       REFERRAL_RULE_LINK: "",
     },
   }))
+
+  server.get("/actions", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const record = await dataStore.getActionRules(userId)
+    return {
+      code: 0,
+      data: record
+        ? {
+            createdAt: record.createdAt.toISOString(),
+            rules: record.rules,
+            updatedAt: record.updatedAt.toISOString(),
+            userId: record.userId,
+          }
+        : null,
+    }
+  })
+
+  server.put("/actions", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>
+    if (
+      !Array.isArray(body.rules) ||
+      body.rules.length > 100 ||
+      !body.rules.every((rule) => isRecord(rule))
+    ) {
+      return reply.status(400).send({
+        code: "invalid_action_rules",
+        message: "rules must contain at most 100 action objects",
+      })
+    }
+    await dataStore.setActionRules(
+      userId,
+      body.rules.map((rule) => structuredClone(rule as Record<string, unknown>)),
+    )
+    return { code: 0, data: null }
+  })
 
   server.get("/settings", async (request, reply) => {
     const userId = await authenticatedUserId(request.headers)

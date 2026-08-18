@@ -21,10 +21,17 @@ export interface SubscribeInput {
   title?: string | null
 }
 
+export interface ImportedEntriesContext {
+  entries: Awaited<ReturnType<typeof parseFeed>>["entries"]
+  feed: Awaited<ReturnType<typeof parseFeed>>["feed"]
+  userId: string | null
+}
+
 export class FeedImporter {
   constructor(
     private readonly dataStore: DataStore,
     private readonly feedFetcher: FeedFetcher,
+    private readonly onEntriesImported?: (context: ImportedEntriesContext) => Promise<void>,
   ) {}
 
   async preview(url: string) {
@@ -51,6 +58,7 @@ export class FeedImporter {
 
     await this.dataStore.saveFeed(parsed.feed, parsed.entries)
     await this.dataStore.createSubscription(subscription)
+    await this.onEntriesImported?.({ entries: parsed.entries, feed: parsed.feed, userId })
 
     return { ...parsed, subscription }
   }
@@ -62,6 +70,7 @@ export class FeedImporter {
     parsed.feed.etag = fetched.etag
     parsed.feed.lastModified = fetched.lastModified
     await this.dataStore.saveFeed(parsed.feed, parsed.entries)
+    await this.onEntriesImported?.({ entries: parsed.entries, feed: parsed.feed, userId: null })
     return parsed
   }
 }
