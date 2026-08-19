@@ -15,6 +15,7 @@ import type {
 } from "./source-catalog"
 import type { SourceRegistry } from "./source-registry"
 import { SourceRegistryError } from "./source-registry"
+import { SourceScalingError } from "./source-scaling"
 
 export interface RouteTestResult {
   contentBytes: number
@@ -194,6 +195,10 @@ const invalidBody = (reply: FastifyReply, error: z.ZodError) =>
   })
 
 const handleAdminError = (error: unknown, reply: FastifyReply) => {
+  if (error instanceof SourceScalingError) {
+    if (error.retryAfterSeconds) reply.header("retry-after", error.retryAfterSeconds)
+    return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+  }
   if (error instanceof SourceRegistryError) {
     return reply.status(error.statusCode).send({ code: error.code, message: error.message })
   }

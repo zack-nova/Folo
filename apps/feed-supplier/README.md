@@ -75,6 +75,32 @@ curl -fsS -X POST -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
 `{"enabled":true,"intervalMinutes":360}`。创建响应中的 `feedURL` 可以直接粘贴进 Folo 发现输入框订阅；
 页面 Feed 只读取已物化事件，不会在核心轮询时访问目标网页。
 
+## 生产规模化
+
+生产环境必须配置 Redis。`feed-supplier` 用 Redis DB 1 保存可重建的 RSSHub 响应缓存、每路由固定窗口
+计数器，以及全局/每路由并发租约；RSSHub 自身使用 DB 0。两个服务共享 Redis 实例但不共享 key 空间。
+缓存 key、限流 key 和租约 key 都只包含逻辑地址或策略标识的 SHA-256，不保存逻辑 URL、RSSHub
+`ACCESS_KEY` 或路由秘密参数。Redis 使用 `noeviction`，内存耗尽会失败关闭，不能淘汰活动租约后绕过容量
+保护。
+
+默认策略：
+
+- 成功的 2xx RSSHub 响应缓存 60 秒，缓存正文仍受 `RSSHUB_FETCH_MAX_BYTES` 限制。
+- 同一进程内，相同逻辑地址及相同条件请求头的并发 miss 合并为一次上游请求。
+- 每个精确路由实例或目录路由每 60 秒最多 60 次上游尝试；未登记兼容路由按逻辑地址隔离。
+- 全局最多 16 个、同一路由最多 4 个并发上游请求；连接测试同样受保护但不读取响应缓存。
+- 缓存命中不消耗上游限流和并发配额。Redis 不可用时供给端 readiness 失败并拒绝新 RSSHub 请求，
+  不静默降级为每实例内存状态。
+
+这些值可分别通过 `RSSHUB_CACHE_TTL_SECONDS`、`RSSHUB_ROUTE_RATE_LIMIT_MAX`、
+`RSSHUB_ROUTE_RATE_LIMIT_WINDOW_SECONDS`、`RSSHUB_GLOBAL_CONCURRENCY` 和
+`RSSHUB_ROUTE_CONCURRENCY` 调整。普通 HTTP/HTTPS RSS 仍由核心抓取；`pagechange://` 调度不经过这套
+RSSHub 配额，因此不会影响常规 RSS 推送逻辑。
+
+`GET /v1/providers` 暴露缓存状态和进程内累计计数；核心 `/metrics` 转换为 Prometheus 指标，桌面端
+“设置 → 运维”显示同一份摘要。响应头 `x-folo-cache: HIT|MISS` 和可选的
+`x-folo-coalesced: true` 可用于单次请求诊断。
+
 生产需分别复制主 API 与 sources 环境文件：
 
 ```bash

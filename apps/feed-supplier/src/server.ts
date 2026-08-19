@@ -10,9 +10,17 @@ import { MemorySupplierRepository } from "./memory-repository"
 import { PageChangeError, PageChangeService, startPageChangeScheduler } from "./page-change-service"
 import { PageFetcher } from "./page-fetcher"
 import { PostgresSupplierRepository } from "./postgres-repository"
+import { RedisSourceResponseCache } from "./redis-source-response-cache"
 import type { SupplierRepository } from "./repository"
 import { SourceCatalogService } from "./source-catalog"
 import { SourceRegistry, SourceRegistryError } from "./source-registry"
+import type { CachedRssHubResponse, SourceResponseCache } from "./source-scaling"
+import {
+  MemorySourceResponseCache,
+  SourceRequestCoalescer,
+  SourceScalingError,
+  SourceScalingTelemetry,
+} from "./source-scaling"
 
 export interface BuildFeedSupplierOptions {
   config: FeedSupplierConfig
@@ -20,6 +28,7 @@ export interface BuildFeedSupplierOptions {
   logger?: boolean
   pageFetcher?: PageFetcher
   repository?: SupplierRepository
+  responseCache?: SourceResponseCache
 }
 
 const matchesSecret = (received: string | undefined, expected: string): boolean => {
@@ -74,6 +83,7 @@ export const buildFeedSupplier = async ({
   logger = false,
   pageFetcher: providedPageFetcher,
   repository: providedRepository,
+  responseCache: providedResponseCache,
 }: BuildFeedSupplierOptions) => {
   const fetchImplementation = providedFetchImplementation ?? globalThis.fetch
   const repository =
@@ -122,6 +132,17 @@ export const buildFeedSupplier = async ({
       : false,
     requestTimeout: Math.max(config.rssHubFetchTimeoutMs, config.pageFetchTimeoutMs) + 5_000,
   })
+  const responseCache =
+    providedResponseCache ??
+    (config.redisURL
+      ? await RedisSourceResponseCache.connect(
+          config.redisURL,
+          config.redisConnectTimeoutMs,
+          config.rssHubFetchMaxBytes,
+        )
+      : new MemorySourceResponseCache())
+  const requestCoalescer = new SourceRequestCoalescer()
+  const scalingTelemetry = new SourceScalingTelemetry()
   const baseURL = new URL(`${config.rssHubBaseURL}/`)
   let lastPageChangeCycleAt: string | null = null
 
@@ -135,6 +156,7 @@ export const buildFeedSupplier = async ({
   })
   server.addHook("onClose", async () => {
     await stopPageChangeScheduler()
+    await responseCache.close()
     await repository.close()
   })
 
@@ -157,11 +179,12 @@ export const buildFeedSupplier = async ({
 
   const fetchUpstream = async (target: URL, headers: Headers) => {
     let currentURL = target
+    const signal = AbortSignal.timeout(config.rssHubFetchTimeoutMs)
     for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
       const response = await fetchImplementation(currentURL, {
         headers,
         redirect: "manual",
-        signal: AbortSignal.timeout(config.rssHubFetchTimeoutMs),
+        signal,
       })
       if (response.status < 300 || response.status >= 400 || response.status === 304) {
         return response
@@ -178,33 +201,112 @@ export const buildFeedSupplier = async ({
     throw new Error("RSSHub returned too many redirects")
   }
 
-  const testRoute = async (sourceURL: string) => {
+  const scalingOperation = async <T>(operation: () => Promise<T>): Promise<T> => {
     try {
-      const { target, diagnosticURL } = await upstreamURL(sourceURL)
-      const response = await fetchUpstream(
-        target,
-        new Headers({
-          accept:
-            "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
-          "user-agent": "Folo-Feed-Supplier/1.0 (+self-hosted RSSHub)",
-        }),
+      return await operation()
+    } catch (error) {
+      if (error instanceof SourceScalingError) throw error
+      throw new SourceScalingError(
+        "source_scaling_unavailable",
+        "RSSHub scaling coordination is unavailable",
+        503,
+        1,
       )
-      if (!response.ok) {
-        throw new SourceRegistryError(
-          "rsshub_request_failed",
-          `RSSHub request failed with HTTP ${response.status}`,
-          502,
+    }
+  }
+
+  const withScalingCapacity = async <T>(
+    policyKey: string,
+    operation: () => Promise<T>,
+  ): Promise<T> => {
+    const leaseMs = config.rssHubFetchTimeoutMs + 5_000
+    const globalLease = await scalingOperation(() =>
+      responseCache.acquireLease("global", config.rssHubGlobalConcurrency, leaseMs),
+    )
+    if (!globalLease) {
+      scalingTelemetry.recordConcurrencyRejection()
+      throw new SourceScalingError(
+        "source_capacity_exceeded",
+        "Global RSSHub request capacity is busy",
+        503,
+        1,
+      )
+    }
+    let routeLease: string | null = null
+    try {
+      routeLease = await scalingOperation(() =>
+        responseCache.acquireLease(policyKey, config.rssHubRouteConcurrency, leaseMs),
+      )
+      if (!routeLease) {
+        scalingTelemetry.recordConcurrencyRejection()
+        throw new SourceScalingError(
+          "source_route_busy",
+          "RSSHub route concurrency limit exceeded",
+          503,
+          1,
         )
       }
-      const body = await boundedBody(response, config.rssHubFetchMaxBytes)
-      return {
-        contentBytes: Buffer.byteLength(body),
-        contentType: response.headers.get("content-type"),
-        upstreamStatus: response.status,
-        upstreamURL: diagnosticURL,
+      const rateLimit = await scalingOperation(() =>
+        responseCache.consumeRateLimit(
+          policyKey,
+          config.rssHubRouteRateLimitMax,
+          config.rssHubRouteRateLimitWindowSeconds,
+        ),
+      )
+      if (!rateLimit.allowed) {
+        scalingTelemetry.recordRateLimit()
+        throw new SourceScalingError(
+          "source_rate_limited",
+          "RSSHub route request limit exceeded",
+          429,
+          rateLimit.retryAfterSeconds,
+        )
       }
+      const endRequest = scalingTelemetry.beginRequest()
+      try {
+        return await operation()
+      } finally {
+        endRequest()
+      }
+    } finally {
+      await scalingOperation(() =>
+        Promise.all([
+          routeLease ? responseCache.releaseLease(policyKey, routeLease) : Promise.resolve(),
+          responseCache.releaseLease("global", globalLease),
+        ]).then(() => undefined),
+      )
+    }
+  }
+
+  const testRoute = async (sourceURL: string) => {
+    try {
+      const { resolved, target, diagnosticURL } = await upstreamURL(sourceURL)
+      return await withScalingCapacity(resolved.policyKey, async () => {
+        const response = await fetchUpstream(
+          target,
+          new Headers({
+            accept:
+              "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
+            "user-agent": "Folo-Feed-Supplier/1.0 (+self-hosted RSSHub)",
+          }),
+        )
+        if (!response.ok) {
+          throw new SourceRegistryError(
+            "rsshub_request_failed",
+            `RSSHub request failed with HTTP ${response.status}`,
+            502,
+          )
+        }
+        const body = await boundedBody(response, config.rssHubFetchMaxBytes)
+        return {
+          contentBytes: Buffer.byteLength(body),
+          contentType: response.headers.get("content-type"),
+          upstreamStatus: response.status,
+          upstreamURL: diagnosticURL,
+        }
+      })
     } catch (error) {
-      if (error instanceof SourceRegistryError) throw error
+      if (error instanceof SourceRegistryError || error instanceof SourceScalingError) throw error
       throw new SourceRegistryError("rsshub_request_failed", safeUpstreamErrorMessage(error), 502)
     }
   }
@@ -228,7 +330,7 @@ export const buildFeedSupplier = async ({
       repository.isReady(),
       probeUpstream(),
     ])
-    if (persistenceReady && upstreamReady) return { status: "ready" }
+    if (persistenceReady && upstreamReady && responseCache.isReady()) return { status: "ready" }
     return reply.status(503).send({ status: "unavailable" })
   })
 
@@ -261,7 +363,9 @@ export const buildFeedSupplier = async ({
             .catch(() => 0),
         ])
       : [0, 0]
-    const ready = persistenceReady && upstreamReady
+    const scalingReady = responseCache.isReady()
+    const ready = persistenceReady && upstreamReady && scalingReady
+    const scalingSnapshot = scalingTelemetry.snapshot()
     const pageCounts = persistenceReady
       ? await repository.countPageChangeSources(new Date().toISOString()).catch(() => ({
           due: 0,
@@ -272,15 +376,19 @@ export const buildFeedSupplier = async ({
     return {
       providers: [
         {
+          ...scalingSnapshot,
+          cacheStatus: scalingReady ? ("ready" as const) : ("unavailable" as const),
           configured: true,
           catalogRouteCount,
           id: "rsshub" as const,
           managedRouteCount,
           message: ready
             ? null
-            : persistenceReady
-              ? "Configured RSSHub instance is unavailable"
-              : "Source registry persistence is unavailable",
+            : !persistenceReady
+              ? "Source registry persistence is unavailable"
+              : !upstreamReady
+                ? "Configured RSSHub instance is unavailable"
+                : "Source scaling coordination is unavailable",
           persistenceStatus: persistenceReady ? ("ready" as const) : ("unavailable" as const),
           registryMode: registry.mode,
           status: ready ? ("ready" as const) : ("unavailable" as const),
@@ -309,6 +417,10 @@ export const buildFeedSupplier = async ({
     .strict()
 
   const sendCatalogError = (error: unknown, reply: FastifyReply) => {
+    if (error instanceof SourceScalingError) {
+      if (error.retryAfterSeconds) reply.header("retry-after", error.retryAfterSeconds)
+      return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+    }
     if (error instanceof SourceRegistryError) {
       return reply.status(error.statusCode).send({ code: error.code, message: error.message })
     }
@@ -380,7 +492,32 @@ export const buildFeedSupplier = async ({
     }
 
     try {
-      const { target, diagnosticURL } = await sourceRequest
+      const { resolved, target, diagnosticURL } = await sourceRequest
+      const cached = await scalingOperation(() =>
+        responseCache.getResponse(resolved.source.logicalURL),
+      )
+      const sendCached = (response: CachedRssHubResponse, cacheStatus: "HIT" | "MISS") => {
+        reply
+          .header("x-folo-cache", cacheStatus)
+          .header("x-folo-upstream-url", response.upstreamURL)
+        if (response.contentType) reply.header("content-type", response.contentType)
+        if (response.etag) reply.header("etag", response.etag)
+        if (response.lastModified) reply.header("last-modified", response.lastModified)
+        if (
+          (response.etag && request.headers["if-none-match"] === response.etag) ||
+          (!response.etag &&
+            response.lastModified &&
+            request.headers["if-modified-since"] === response.lastModified)
+        ) {
+          return reply.status(304).send()
+        }
+        return reply.status(200).send(response.body)
+      }
+      if (cached) {
+        scalingTelemetry.recordCacheHit()
+        return sendCached(cached, "HIT")
+      }
+      scalingTelemetry.recordCacheMiss()
       const headers = new Headers({
         accept:
           "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
@@ -392,21 +529,65 @@ export const buildFeedSupplier = async ({
       if (request.headers["if-modified-since"]) {
         headers.set("if-modified-since", request.headers["if-modified-since"])
       }
-      const response = await fetchUpstream(target, headers)
+      const { coalesced, value: upstream } = await requestCoalescer.run(
+        [
+          resolved.source.logicalURL,
+          request.headers["if-none-match"] ?? "",
+          request.headers["if-modified-since"] ?? "",
+        ].join("\0"),
+        () =>
+          withScalingCapacity(resolved.policyKey, async () => {
+            const response = await fetchUpstream(target, headers)
+            return {
+              body:
+                response.status === 304 || !response.ok
+                  ? null
+                  : await boundedBody(response, config.rssHubFetchMaxBytes),
+              contentType: response.headers.get("content-type"),
+              etag: response.headers.get("etag"),
+              lastModified: response.headers.get("last-modified"),
+              status: response.status,
+            }
+          }),
+      )
+      if (coalesced) scalingTelemetry.recordCoalescedRequest()
+      reply.header("x-folo-cache", "MISS")
+      if (coalesced) reply.header("x-folo-coalesced", "true")
       reply.header("x-folo-upstream-url", diagnosticURL)
-      for (const header of ["content-type", "etag", "last-modified"] as const) {
-        const value = response.headers.get(header)
-        if (value) reply.header(header, value)
+      if (upstream.status === 304) {
+        if (upstream.etag) reply.header("etag", upstream.etag)
+        if (upstream.lastModified) reply.header("last-modified", upstream.lastModified)
+        return reply.status(304).send()
       }
-      if (response.status === 304) return reply.status(304).send()
-      if (!response.ok) {
+      if (upstream.status < 200 || upstream.status >= 300) {
         return reply.status(502).send({
           code: "rsshub_request_failed",
-          message: `RSSHub request failed with HTTP ${response.status}`,
+          message: `RSSHub request failed with HTTP ${upstream.status}`,
         })
       }
-      return reply.status(200).send(await boundedBody(response, config.rssHubFetchMaxBytes))
+      if (upstream.contentType) reply.header("content-type", upstream.contentType)
+      if (upstream.etag) reply.header("etag", upstream.etag)
+      if (upstream.lastModified) reply.header("last-modified", upstream.lastModified)
+      const cachedResponse: CachedRssHubResponse = {
+        body: upstream.body ?? "",
+        contentType: upstream.contentType,
+        etag: upstream.etag,
+        lastModified: upstream.lastModified,
+        upstreamURL: diagnosticURL,
+      }
+      await scalingOperation(() =>
+        responseCache.setResponse(
+          resolved.source.logicalURL,
+          cachedResponse,
+          config.rssHubCacheTTLSeconds,
+        ),
+      )
+      return sendCached(cachedResponse, "MISS")
     } catch (error) {
+      if (error instanceof SourceScalingError) {
+        if (error.retryAfterSeconds) reply.header("retry-after", error.retryAfterSeconds)
+        return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+      }
       return reply.status(502).send({
         code: "rsshub_request_failed",
         message: safeUpstreamErrorMessage(error),

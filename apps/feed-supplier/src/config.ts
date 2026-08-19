@@ -35,6 +35,19 @@ const postgresURL = z.url().transform((value, context) => {
   return value
 })
 
+const redisURL = z.url().transform((value, context) => {
+  const url = new URL(value)
+  if (url.protocol !== "redis:" && url.protocol !== "rediss:") {
+    context.addIssue({ code: "custom", message: "REDIS_URL must use Redis or Redis TLS" })
+    return z.NEVER
+  }
+  if (url.hash) {
+    context.addIssue({ code: "custom", message: "REDIS_URL must not contain a fragment" })
+    return z.NEVER
+  }
+  return value
+})
+
 const keyId = z
   .string()
   .min(1)
@@ -94,11 +107,18 @@ const supplierEnvironment = z
     PAGE_FETCH_TIMEOUT_MS: integer(15_000, 1_000),
     PAGE_SCHEDULER_POLL_INTERVAL_MS: integer(60_000, 1_000),
     PORT: integer(3001, 1).pipe(z.number().max(65_535)),
+    REDIS_CONNECT_TIMEOUT_MS: integer(5_000, 500).pipe(z.number().max(30_000)),
+    REDIS_URL: redisURL.optional(),
     ROUTE_REGISTRY_MODE: z.enum(["permissive", "managed_only"]).default("permissive"),
     RSSHUB_ACCESS_KEY: z.string().min(16).optional(),
     RSSHUB_BASE_URL: upstreamURL.default("http://localhost:1200"),
+    RSSHUB_CACHE_TTL_SECONDS: integer(60, 1).pipe(z.number().max(3_600)),
     RSSHUB_FETCH_MAX_BYTES: integer(5 * 1024 * 1024, 1024),
     RSSHUB_FETCH_TIMEOUT_MS: integer(30_000, 1_000),
+    RSSHUB_GLOBAL_CONCURRENCY: integer(16, 1).pipe(z.number().max(128)),
+    RSSHUB_ROUTE_CONCURRENCY: integer(4, 1).pipe(z.number().max(32)),
+    RSSHUB_ROUTE_RATE_LIMIT_MAX: integer(60, 1).pipe(z.number().max(10_000)),
+    RSSHUB_ROUTE_RATE_LIMIT_WINDOW_SECONDS: integer(60, 1).pipe(z.number().max(3_600)),
   })
   .superRefine((environment, context) => {
     if (environment.NODE_ENV !== "production") return
@@ -108,6 +128,13 @@ const supplierEnvironment = z
         code: "custom",
         message: "Production requires an independent DATABASE_URL",
         path: ["DATABASE_URL"],
+      })
+    }
+    if (!environment.REDIS_URL) {
+      context.addIssue({
+        code: "custom",
+        message: "Production requires REDIS_URL for source scaling",
+        path: ["REDIS_URL"],
       })
     }
     if (!environment.RSSHUB_ACCESS_KEY) {
@@ -190,11 +217,18 @@ export const loadFeedSupplierConfig = (environment: NodeJS.ProcessEnv) => {
     pageFetchTimeoutMs: parsed.PAGE_FETCH_TIMEOUT_MS,
     pageSchedulerPollIntervalMs: parsed.PAGE_SCHEDULER_POLL_INTERVAL_MS,
     port: parsed.PORT,
+    redisConnectTimeoutMs: parsed.REDIS_CONNECT_TIMEOUT_MS,
+    redisURL: parsed.REDIS_URL,
     registryMode: parsed.ROUTE_REGISTRY_MODE as SourceRegistryMode,
     rssHubAccessKey: parsed.RSSHUB_ACCESS_KEY,
     rssHubBaseURL: parsed.RSSHUB_BASE_URL,
+    rssHubCacheTTLSeconds: parsed.RSSHUB_CACHE_TTL_SECONDS,
     rssHubFetchMaxBytes: parsed.RSSHUB_FETCH_MAX_BYTES,
     rssHubFetchTimeoutMs: parsed.RSSHUB_FETCH_TIMEOUT_MS,
+    rssHubGlobalConcurrency: parsed.RSSHUB_GLOBAL_CONCURRENCY,
+    rssHubRouteConcurrency: parsed.RSSHUB_ROUTE_CONCURRENCY,
+    rssHubRouteRateLimitMax: parsed.RSSHUB_ROUTE_RATE_LIMIT_MAX,
+    rssHubRouteRateLimitWindowSeconds: parsed.RSSHUB_ROUTE_RATE_LIMIT_WINDOW_SECONDS,
   }
 }
 

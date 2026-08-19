@@ -732,6 +732,7 @@ export const buildServer = async ({
       sourceProviderStatuses(),
     ])
     const pageChangeProvider = sourceProviders.find((provider) => provider.id === "page_change")
+    const rssHubProvider = sourceProviders.find((provider) => provider.id === "rsshub")
     const lines = [
       "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
       "# TYPE folo_subscribed_feeds gauge",
@@ -753,6 +754,27 @@ export const buildServer = async ({
         (provider) =>
           `folo_source_provider_ready{provider="${provider.id}"} ${provider.status === "ready" ? 1 : 0}`,
       ),
+      "# HELP folo_source_cache_ready Whether the distributed source response cache is ready.",
+      "# TYPE folo_source_cache_ready gauge",
+      `folo_source_cache_ready ${rssHubProvider?.cacheStatus === "ready" ? 1 : 0}`,
+      "# HELP folo_source_cache_hits_total Source response cache hits since supplier start.",
+      "# TYPE folo_source_cache_hits_total counter",
+      `folo_source_cache_hits_total ${rssHubProvider?.cacheHitCount ?? 0}`,
+      "# HELP folo_source_cache_misses_total Source response cache misses since supplier start.",
+      "# TYPE folo_source_cache_misses_total counter",
+      `folo_source_cache_misses_total ${rssHubProvider?.cacheMissCount ?? 0}`,
+      "# HELP folo_source_requests_coalesced_total Source requests joined to an in-flight request since supplier start.",
+      "# TYPE folo_source_requests_coalesced_total counter",
+      `folo_source_requests_coalesced_total ${rssHubProvider?.coalescedRequestCount ?? 0}`,
+      "# HELP folo_source_requests_rate_limited_total Source requests rejected by route rate limits since supplier start.",
+      "# TYPE folo_source_requests_rate_limited_total counter",
+      `folo_source_requests_rate_limited_total ${rssHubProvider?.rateLimitedRequestCount ?? 0}`,
+      "# HELP folo_source_requests_concurrency_rejected_total Source requests rejected by concurrency limits since supplier start.",
+      "# TYPE folo_source_requests_concurrency_rejected_total counter",
+      `folo_source_requests_concurrency_rejected_total ${rssHubProvider?.concurrencyRejectedRequestCount ?? 0}`,
+      "# HELP folo_source_requests_in_flight Source requests currently holding supplier capacity.",
+      "# TYPE folo_source_requests_in_flight gauge",
+      `folo_source_requests_in_flight ${rssHubProvider?.activeRequestCount ?? 0}`,
       "# HELP folo_page_change_sources_enabled Page change sources currently enabled.",
       "# TYPE folo_page_change_sources_enabled gauge",
       `folo_page_change_sources_enabled ${pageChangeProvider?.enabledSourceCount ?? 0}`,

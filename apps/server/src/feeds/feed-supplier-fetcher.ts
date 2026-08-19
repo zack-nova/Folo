@@ -74,8 +74,14 @@ const sourceCatalogTest = sourceCatalogRender
   .strict()
 const sourceProviderHealth = z
   .object({
+    activeRequestCount: z.number().int().min(0).optional(),
+    cacheHitCount: z.number().int().min(0).optional(),
+    cacheMissCount: z.number().int().min(0).optional(),
+    cacheStatus: z.enum(["ready", "unavailable"]).optional(),
     catalogRouteCount: z.number().int().min(0).optional(),
+    coalescedRequestCount: z.number().int().min(0).optional(),
     configured: z.boolean(),
+    concurrencyRejectedRequestCount: z.number().int().min(0).optional(),
     dueSourceCount: z.number().int().min(0).optional(),
     enabledSourceCount: z.number().int().min(0).optional(),
     id: z.enum(["page_change", "rsshub"]),
@@ -84,6 +90,7 @@ const sourceProviderHealth = z
     message: z.string().max(500).nullable(),
     persistenceStatus: z.enum(["ready", "unavailable"]).optional(),
     registryMode: z.enum(["managed_only", "permissive"]).optional(),
+    rateLimitedRequestCount: z.number().int().min(0).optional(),
     status: z.enum(["ready", "unavailable"]),
   })
   .strict()

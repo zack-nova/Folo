@@ -87,12 +87,19 @@ describe("feed supplier fetcher", () => {
       Response.json({
         providers: [
           {
+            activeRequestCount: 2,
+            cacheHitCount: 12,
+            cacheMissCount: 3,
+            cacheStatus: "ready",
             catalogRouteCount: 2,
+            coalescedRequestCount: 4,
             configured: true,
+            concurrencyRejectedRequestCount: 1,
             id: "rsshub",
             managedRouteCount: 3,
             message: null,
             persistenceStatus: "ready",
+            rateLimitedRequestCount: 2,
             registryMode: "managed_only",
             status: "ready",
           },
@@ -117,9 +124,16 @@ describe("feed supplier fetcher", () => {
 
     await expect(fetcher.getProviderStatuses()).resolves.toEqual([
       expect.objectContaining({
+        activeRequestCount: 2,
+        cacheHitCount: 12,
+        cacheMissCount: 3,
+        cacheStatus: "ready",
         catalogRouteCount: 2,
+        coalescedRequestCount: 4,
+        concurrencyRejectedRequestCount: 1,
         managedRouteCount: 3,
         persistenceStatus: "ready",
+        rateLimitedRequestCount: 2,
         registryMode: "managed_only",
       }),
       expect.objectContaining({

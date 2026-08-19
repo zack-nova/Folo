@@ -26,6 +26,7 @@ export class SourceRegistryError extends Error {
 }
 
 export interface ResolvedRssHubSource {
+  policyKey: string
   route: SourceRouteInstance | null
   secretQuery: Record<string, string>
   source: RssHubSource
@@ -251,7 +252,14 @@ export class SourceRegistry {
     if (route && !route.enabled) {
       throw new SourceRegistryError("source_route_disabled", "RSSHub source route is disabled", 409)
     }
-    if (catalogMatch) return { route: null, secretQuery: catalogMatch.secretQuery, source }
+    if (catalogMatch) {
+      return {
+        policyKey: `catalog:${catalogMatch.route.id}`,
+        route: null,
+        secretQuery: catalogMatch.secretQuery,
+        source,
+      }
+    }
     const secretQuery: Record<string, string> = {}
     for (const [parameter, credentialId] of Object.entries(route?.secretQueryBindings ?? {})) {
       const credential = await this.repository.findCredential(credentialId)
@@ -272,7 +280,12 @@ export class SourceRegistry {
         )
       }
     }
-    return { route, secretQuery, source }
+    return {
+      policyKey: route ? `route:${route.id}` : `source:${source.logicalURL}`,
+      route,
+      secretQuery,
+      source,
+    }
   }
 
   async recordRouteTest(routeId: string, actor: string, succeeded: boolean): Promise<void> {

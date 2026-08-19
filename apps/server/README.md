@@ -118,6 +118,7 @@ docker build -f apps/server/Dockerfile -t folo-server:local .
 - 批量 Entry 投影查询和 10,000 Entry 容量基准，避免时间线逐 Entry 读取后端投影。
 - 独立 feed-supplier、自建 RSSHub 的 `rsshub://` 预览/订阅/刷新闭环，以及 provider 健康状态和告警。
 - Owner 鉴权的自有数据源目录、参数渲染和连接测试代理；供应端管理令牌与凭据不进入浏览器或核心配置。
+- Redis 支撑的 RSSHub 响应缓存、每路由限流、全局/每路由并发隔离、Prometheus 指标和运维页摘要。
 
 FOLO 官方 RSSHub/Trending、AI Chat、Billing、MCP、多人权限和外部通知投递仍未实现；摘要、翻译和
 逐条评估全部由本地后端调用所有者配置的 Provider，不访问 Folo 官方后端。

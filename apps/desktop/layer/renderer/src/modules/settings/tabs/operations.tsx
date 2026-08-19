@@ -285,7 +285,9 @@ const SourceProviders = ({ providers }: { providers: OperationsStatus["source_pr
           <p className="mt-2 text-xs leading-relaxed text-text-secondary">
             {provider.message ?? t(`operations.sources.${provider.id}.${provider.status}`)}
           </p>
-          {(provider.catalogRouteCount !== undefined ||
+          {(provider.activeRequestCount !== undefined ||
+            provider.cacheStatus !== undefined ||
+            provider.catalogRouteCount !== undefined ||
             provider.managedRouteCount !== undefined ||
             provider.enabledSourceCount !== undefined ||
             provider.persistenceStatus !== undefined) && (
@@ -324,6 +326,50 @@ const SourceProviders = ({ providers }: { providers: OperationsStatus["source_pr
                 <div className="flex gap-1.5">
                   <dt>{t("operations.sources.persistence")}</dt>
                   <dd>{t(`operations.sources.status.${provider.persistenceStatus}`)}</dd>
+                </div>
+              )}
+              {provider.cacheStatus && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.cache")}</dt>
+                  <dd>{t(`operations.sources.status.${provider.cacheStatus}`)}</dd>
+                </div>
+              )}
+              {provider.activeRequestCount !== undefined && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.active_requests")}</dt>
+                  <dd className="font-mono tabular-nums">{provider.activeRequestCount}</dd>
+                </div>
+              )}
+              {provider.cacheHitCount !== undefined && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.cache_hits")}</dt>
+                  <dd className="font-mono tabular-nums">{provider.cacheHitCount}</dd>
+                </div>
+              )}
+              {provider.cacheMissCount !== undefined && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.cache_misses")}</dt>
+                  <dd className="font-mono tabular-nums">{provider.cacheMissCount}</dd>
+                </div>
+              )}
+              {provider.coalescedRequestCount !== undefined && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.coalesced")}</dt>
+                  <dd className="font-mono tabular-nums">{provider.coalescedRequestCount}</dd>
+                </div>
+              )}
+              {provider.rateLimitedRequestCount !== undefined && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.rate_limited")}</dt>
+                  <dd className="font-mono tabular-nums">{provider.rateLimitedRequestCount}</dd>
+                </div>
+              )}
+              {provider.concurrencyRejectedRequestCount !== undefined && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.concurrency_rejected")}</dt>
+                  <dd className="font-mono tabular-nums">
+                    {provider.concurrencyRejectedRequestCount}
+                  </dd>
                 </div>
               )}
             </dl>

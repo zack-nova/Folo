@@ -24,10 +24,12 @@ describe("feed supplier configuration", () => {
       DATABASE_URL: "postgresql://feed_supplier:secret@feed-supplier-postgres/feed_supplier",
       INTERNAL_TOKEN: "internal-supplier-token-0000000000000000",
       NODE_ENV: "production",
+      REDIS_URL: "redis://redis:6379/1",
       RSSHUB_ACCESS_KEY: "rsshub-access-key-11111111111111111111",
       RSSHUB_BASE_URL: "http://rsshub:1200",
     }
     expect(loadFeedSupplierConfig(environment)).toMatchObject({ nodeEnvironment: "production" })
+    expect(() => loadFeedSupplierConfig({ ...environment, REDIS_URL: undefined })).toThrow()
     expect(() => loadFeedSupplierConfig({ ...environment, RSSHUB_ACCESS_KEY: undefined })).toThrow()
     expect(() =>
       loadFeedSupplierConfig({

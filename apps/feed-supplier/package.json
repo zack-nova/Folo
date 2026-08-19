@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@follow/feed-source-contracts": "workspace:*",
+    "@redis/client": "6.2.1",
     "fastify": "5.10.0",
     "linkedom": "0.18.13",
     "pg": "8.18.0",

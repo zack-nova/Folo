@@ -7,8 +7,14 @@ export type AutonomousSourceProviderStatus = "disabled" | "ready" | "unavailable
 export type SourceRegistryMode = "managed_only" | "permissive"
 
 export interface AutonomousSourceProviderHealth {
+  activeRequestCount?: number
+  cacheHitCount?: number
+  cacheMissCount?: number
+  cacheStatus?: "ready" | "unavailable"
   catalogRouteCount?: number
+  coalescedRequestCount?: number
   configured: boolean
+  concurrencyRejectedRequestCount?: number
   dueSourceCount?: number
   enabledSourceCount?: number
   id: AutonomousSourceProviderId
@@ -17,6 +23,7 @@ export interface AutonomousSourceProviderHealth {
   message: string | null
   persistenceStatus?: "ready" | "unavailable"
   registryMode?: SourceRegistryMode
+  rateLimitedRequestCount?: number
   status: AutonomousSourceProviderStatus
 }
 

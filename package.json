@@ -44,7 +44,7 @@
     "sources:down": "docker compose -f apps/server/compose.yaml --profile sources down",
     "sources:backup": "bash apps/feed-supplier/scripts/backup.sh",
     "sources:restore:drill": "bash apps/feed-supplier/scripts/restore-drill.sh",
-    "sources:up": "docker compose -f apps/server/compose.yaml --profile sources up -d --wait rsshub feed-supplier",
+    "sources:up": "docker compose -f apps/server/compose.yaml --profile sources up -d --wait redis rsshub feed-supplier",
     "typecheck": "turbo typecheck"
   },
   "devDependencies": {

@@ -52,7 +52,13 @@ export type OperationsStatus = {
     }
   } | null
   source_providers: Array<{
+    activeRequestCount?: number
+    cacheHitCount?: number
+    cacheMissCount?: number
+    cacheStatus?: "ready" | "unavailable"
     catalogRouteCount?: number
+    coalescedRequestCount?: number
+    concurrencyRejectedRequestCount?: number
     configured: boolean
     dueSourceCount?: number
     enabledSourceCount?: number
@@ -61,6 +67,7 @@ export type OperationsStatus = {
     managedRouteCount?: number
     message: string | null
     persistenceStatus?: "ready" | "unavailable"
+    rateLimitedRequestCount?: number
     registryMode?: "managed_only" | "permissive"
     status: "disabled" | "ready" | "unavailable"
   }>

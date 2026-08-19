@@ -187,6 +187,58 @@ describe("stage four operations", () => {
     expect(retry.statusCode).toBe(202)
   })
 
+  it("exports source scaling telemetry for production alerting", async () => {
+    const auth = createAuth({
+      baseURL: "http://localhost:3000",
+      database: memoryAdapter({ account: [], session: [], user: [], verification: [] }),
+      secret: "stage-four-metrics-test-secret-at-least-32-characters",
+      trustedOrigins: ["http://localhost:2233"],
+    })
+    const server = await buildServer({
+      auth,
+      clientOrigins: ["http://localhost:2233"],
+      dataStore: new MemoryDataStore(),
+      feedFetcher: {
+        fetch: async () => {
+          throw new Error("not used")
+        },
+        getProviderStatuses: async () => [
+          {
+            activeRequestCount: 2,
+            cacheHitCount: 12,
+            cacheMissCount: 3,
+            cacheStatus: "ready" as const,
+            coalescedRequestCount: 4,
+            concurrencyRejectedRequestCount: 1,
+            configured: true,
+            id: "rsshub" as const,
+            message: null,
+            rateLimitedRequestCount: 2,
+            status: "ready" as const,
+          },
+          {
+            configured: true,
+            id: "page_change" as const,
+            message: null,
+            status: "ready" as const,
+          },
+        ],
+      },
+    })
+    closeServer = () => server.close()
+
+    const metrics = await server.inject({ method: "GET", url: "/metrics" })
+
+    expect(metrics.statusCode).toBe(200)
+    expect(metrics.body).toContain("folo_source_cache_ready 1")
+    expect(metrics.body).toContain("folo_source_cache_hits_total 12")
+    expect(metrics.body).toContain("folo_source_cache_misses_total 3")
+    expect(metrics.body).toContain("folo_source_requests_coalesced_total 4")
+    expect(metrics.body).toContain("folo_source_requests_rate_limited_total 2")
+    expect(metrics.body).toContain("folo_source_requests_concurrency_rejected_total 1")
+    expect(metrics.body).toContain("folo_source_requests_in_flight 2")
+  })
+
   it("limits global operations status to the established instance owner", async () => {
     const auth = createAuth({
       baseURL: "http://localhost:3000",

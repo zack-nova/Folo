@@ -202,6 +202,54 @@ describe("source registry management", () => {
     expect(response.body).not.toContain("never-return-this-secret")
     await server.close()
   })
+
+  it("applies route protection to administrative connection tests", async () => {
+    const limitedConfig = loadFeedSupplierConfig({
+      INTERNAL_TOKEN: "internal-supplier-token-0000000000000000",
+      NODE_ENV: "test",
+      RSSHUB_BASE_URL: "http://rsshub:1200",
+      RSSHUB_ROUTE_RATE_LIMIT_MAX: "1",
+      RSSHUB_ROUTE_RATE_LIMIT_WINDOW_SECONDS: "60",
+    })
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("<rss><channel><title>Protected test</title></channel></rss>", {
+        headers: { "content-type": "application/rss+xml" },
+      }),
+    )
+    const server = await buildFeedSupplier({ config: limitedConfig, fetchImplementation })
+    const headers = {
+      authorization: `Bearer ${limitedConfig.adminToken}`,
+      "x-folo-actor": "stage-5a5-test",
+    }
+    const created = await server.inject({
+      headers,
+      method: "POST",
+      payload: { name: "protected-test", sourceURL: "rsshub://example/protected-test" },
+      url: "/v1/admin/routes",
+    })
+    const routeId = created.json<{ route: { id: string } }>().route.id
+
+    expect(
+      (
+        await server.inject({
+          headers,
+          method: "POST",
+          url: `/v1/admin/routes/${routeId}/test`,
+        })
+      ).statusCode,
+    ).toBe(200)
+    const limited = await server.inject({
+      headers,
+      method: "POST",
+      url: `/v1/admin/routes/${routeId}/test`,
+    })
+
+    expect(limited.statusCode).toBe(429)
+    expect(limited.json()).toMatchObject({ code: "source_rate_limited" })
+    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+
+    await server.close()
+  })
 })
 
 describe("credential cipher", () => {

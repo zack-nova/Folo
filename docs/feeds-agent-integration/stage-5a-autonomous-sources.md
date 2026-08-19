@@ -91,6 +91,13 @@ folo_source_provider_ready{provider="rsshub"} 0|1
 folo_source_provider_ready{provider="page_change"} 0|1
 folo_page_change_sources_enabled <count>
 folo_page_change_sources_due <count>
+folo_source_cache_ready 0|1
+folo_source_cache_hits_total <count>
+folo_source_cache_misses_total <count>
+folo_source_requests_coalesced_total <count>
+folo_source_requests_rate_limited_total <count>
+folo_source_requests_concurrency_rejected_total <count>
+folo_source_requests_in_flight <count>
 ```
 
 供给端不可用会生成 `source_provider_unavailable` 告警。状态和日志不得返回内部 Bearer Token 或
@@ -188,6 +195,36 @@ POST /v1/catalog/routes/:routeId/test
 `source_route_instances` 仍具有优先级。普通 HTTP/HTTPS RSS、页面变化源和既有 `rsshub://` 实例链路保持
 不变。目录增删改与连接测试写入现有 HMAC 前向哈希链审计，备份恢复演练把目录表列为权威表。
 
+## 5A.5 生产规模化
+
+生产环境增加一个不暴露宿主端口、关闭 RDB/AOF、使用 `noeviction` 的 Redis；内存耗尽时失败关闭，不能
+通过淘汰活动租约绕过容量保护。RSSHub 使用 DB 0 作为其上游路由缓存；
+`feed-supplier` 使用 DB 1 保存以下可重建状态：
+
+- 只缓存成功 2xx 响应的有界 RSSHub 响应缓存，默认 TTL 60 秒；正文上限与
+  `RSSHUB_FETCH_MAX_BYTES` 一致。
+- 以路由策略为单位的固定窗口计数器，默认每 60 秒最多 60 次真实上游尝试。
+- 全局和每路由的带过期时间租约，默认分别为 16 和 4 个并发上游请求。
+
+精确登记路由以 route ID 隔离，目录地址以 catalog route ID 隔离，`permissive` 模式的未登记地址以完整
+逻辑 URL 隔离。Redis key 只包含这些值的 SHA-256；响应诊断 URL 已去除 RSSHub key 和秘密查询参数。
+连接测试使用相同限流和并发保护，但不读取响应缓存，确保测试结果代表真实连接。
+
+缓存命中直接复用正文、ETag、Last-Modified、Content-Type 和脱敏诊断 URL，并在本地完成条件请求 304。
+缓存 miss 时，同一供给进程中只有“逻辑 URL + If-None-Match + If-Modified-Since”完全相同的并发请求才会
+合并，避免把不同条件请求错误归并。多副本之间共享缓存、限流和并发租约，但 miss 合并仍是进程内能力。
+
+生产不允许 Redis 缺失或失联后退回内存实现：启动配置要求 `REDIS_URL`，运行中协调失败返回 503，
+readiness 与 provider 状态变为 unavailable。限流返回 429，容量繁忙返回 503，均携带 `Retry-After`。
+Redis 丢失不会丢失 Feed、Entry、路由、凭据或页面事件；恢复后缓存和计数器自动重建。
+
+普通 HTTP/HTTPS Feed 抓取、退避和推送链路不经过该 Redis；页面变化 worker 也保持独立调度。因此阶段
+5A.5 只约束 RSSHub 上游访问，不改变“一条新 RSS Entry 对应一条常规新消息”的主路径。
+
+桌面端运维页显示缓存状态、命中/未命中、合并、限流、容量拒绝和当前请求数。核心 `/metrics` 暴露相同
+Prometheus 指标。真实数据灰度按既定决定延后，本切片只交付可控灰度所需的保护、部署和观测基础设施，
+不会自动创建来源或访问新的外部站点。
+
 ## 配置与启动
 
 本地最小闭环：
@@ -212,11 +249,21 @@ FEED_SUPPLIER_POSTGRES_PASSWORD=<独立数据库密码>
 FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY=<base64 编码的 32 字节随机 key>
 FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY_ID=primary-2026-08
 FEED_SUPPLIER_AUDIT_HMAC_KEY=<另一个 base64 编码的 32 字节随机 key>
+FEED_SUPPLIER_REDIS_URL=redis://redis:6379/1
+REDIS_CONNECT_TIMEOUT_MS=5000
+RSSHUB_CACHE_TTL_SECONDS=60
+RSSHUB_ROUTE_RATE_LIMIT_MAX=60
+RSSHUB_ROUTE_RATE_LIMIT_WINDOW_SECONDS=60
+RSSHUB_GLOBAL_CONCURRENCY=16
+RSSHUB_ROUTE_CONCURRENCY=4
+SOURCES_REDIS_MAXMEMORY=192mb
+REDIS_IMAGE=redis:8.10.0-alpine
 PAGE_FETCH_TIMEOUT_MS=15000
 PAGE_FETCH_MAX_BYTES=5242880
 PAGE_CONTENT_MAX_BYTES=262144
 PAGE_SCHEDULER_POLL_INTERVAL_MS=60000
 RSSHUB_ACCESS_KEY=<另一独立随机密钥>
+RSSHUB_REDIS_URL=redis://redis:6379/0
 RSSHUB_IMAGE=diygod/rsshub@sha256:<经过验证的镜像摘要>
 ```
 
@@ -234,9 +281,8 @@ docker compose --env-file apps/server/.env.production \
 
 ## 5A 后续切片
 
-5A.4 完成后按以下顺序继续：
-
-1. **5A.5 生产规模化**：Redis 缓存、每路由限流、并发隔离和真实数据灰度。
+5A.5 的工程开发已经完成。真实数据灰度仍按约定延后，恢复时应先选择少量非关键路由，观察缓存命中、
+429/503、上游延迟和错误率，再逐步扩大来源范围。
 
 阶段 5B 不属于上述切片。只有 5A 真实数据灰度稳定后，才评估是否需要 FOLO 官方发现或托管获取。
 
@@ -246,7 +292,8 @@ docker compose --env-file apps/server/.env.production \
 - 5A.2：独立配置库、凭据生命周期、审计、备份恢复已完成。
 - 5A.3：页面来源持久化、空基线首次发布、确认去抖、物化 Feed、调度隔离和自动测试已完成。
 - 5A.4：自有目录持久化、严格参数 schema、连接测试、Owner 代理和前端表单已完成。
-- 5A.5：约 1–2 周工程化，再加真实数据灰度观察时间。
+- 5A.5：Redis 缓存、请求合并、分布式限流/并发隔离、指标、运维 UI 和安全 Compose 已完成；剩余工作是
+  独立安排真实数据灰度观察。
 
 最大风险不是 RSS 代理本身，而是站点凭据安全、反爬变化、调度公平性和页面变化去重。真实数据灰度按既定
 决定延后，不作为 5A.1 自动化验收的一部分。
@@ -288,3 +335,12 @@ docker compose --env-file apps/server/.env.production \
 - 内部令牌不能访问目录管理 API，浏览器只能经实例 Owner 鉴权的核心 API 读取、渲染和测试。
 - 前端支持目录搜索、分类过滤、四种参数类型、连接反馈，并复用普通 Feed 预览/订阅闭环。
 - 目录增删改和测试进入哈希链审计，PostgreSQL 迁移、备份恢复、普通 RSS/RSSHub/页面来源回归全部通过。
+
+## 5A.5 验收标准
+
+- 生产配置缺少 Redis 时拒绝启动；运行中 Redis 失联时 readiness、provider 状态和请求错误一致地失败关闭。
+- 成功 RSSHub 响应跨供给进程复用且不超过正文上限；缓存 key/值不包含访问密钥或秘密查询参数。
+- 同进程相同条件请求只产生一次上游访问，不同校验器不会错误合并。
+- 每路由限流、每路由并发和全局并发在多个供给实例之间共享，连接测试不能绕过保护。
+- 普通 RSS、页面变化、目录、凭据和 AI 流水线回归通过；Redis 清空不影响任何权威数据。
+- Prometheus 与桌面运维页可见缓存、合并、限流、容量拒绝和当前请求数；真实数据灰度不在本次自动执行。

@@ -56,6 +56,8 @@ services:
     depends_on:
       feed-supplier-postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       rsshub:
         condition: service_healthy
     environment:
@@ -72,9 +74,16 @@ services:
       PAGE_FETCH_MAX_BYTES: ${PAGE_FETCH_MAX_BYTES:-5242880}
       PAGE_FETCH_TIMEOUT_MS: ${PAGE_FETCH_TIMEOUT_MS:-15000}
       PAGE_SCHEDULER_POLL_INTERVAL_MS: ${PAGE_SCHEDULER_POLL_INTERVAL_MS:-60000}
+      REDIS_CONNECT_TIMEOUT_MS: ${REDIS_CONNECT_TIMEOUT_MS:-5000}
+      REDIS_URL: ${FEED_SUPPLIER_REDIS_URL:-redis://redis:6379/1}
       ROUTE_REGISTRY_MODE: ${FEED_SUPPLIER_REGISTRY_MODE:-permissive}
       RSSHUB_ACCESS_KEY: ${RSSHUB_ACCESS_KEY:?set RSSHUB_ACCESS_KEY}
       RSSHUB_BASE_URL: http://rsshub:1200
+      RSSHUB_CACHE_TTL_SECONDS: ${RSSHUB_CACHE_TTL_SECONDS:-60}
+      RSSHUB_GLOBAL_CONCURRENCY: ${RSSHUB_GLOBAL_CONCURRENCY:-16}
+      RSSHUB_ROUTE_CONCURRENCY: ${RSSHUB_ROUTE_CONCURRENCY:-4}
+      RSSHUB_ROUTE_RATE_LIMIT_MAX: ${RSSHUB_ROUTE_RATE_LIMIT_MAX:-60}
+      RSSHUB_ROUTE_RATE_LIMIT_WINDOW_SECONDS: ${RSSHUB_ROUTE_RATE_LIMIT_WINDOW_SECONDS:-60}
     healthcheck:
       test:
         [
@@ -159,14 +168,55 @@ services:
     networks:
       - core
 
+  redis:
+    profiles: ["sources"]
+    image: ${REDIS_IMAGE:-redis:8.10.0-alpine}
+    command:
+      [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no",
+        "--maxmemory",
+        "${SOURCES_REDIS_MAXMEMORY:-192mb}",
+        "--maxmemory-policy",
+        "noeviction",
+      ]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    tmpfs:
+      - /data:rw,noexec,nosuid,size=256m
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    networks:
+      - sources
+
   rsshub:
     profiles: ["sources"]
     image: ${RSSHUB_IMAGE:-diygod/rsshub:latest}
+    depends_on:
+      redis:
+        condition: service_healthy
     environment:
       ACCESS_KEY: ${RSSHUB_ACCESS_KEY:?set RSSHUB_ACCESS_KEY}
-      CACHE_TYPE: memory
+      CACHE_TYPE: redis
       NODE_ENV: production
       NO_LOGFILES: "true"
+      REDIS_URL: ${RSSHUB_REDIS_URL:-redis://redis:6379/0}
     healthcheck:
       test:
         [
