@@ -1,4 +1,31 @@
 services:
+  feed-supplier:
+    profiles: ["sources"]
+    build:
+      context: ../..
+      dockerfile: apps/feed-supplier/Dockerfile
+    depends_on:
+      rsshub:
+        condition: service_healthy
+    environment:
+      HOST: 0.0.0.0
+      INTERNAL_TOKEN: local-feed-supplier-token-at-least-32-characters
+      NODE_ENV: development
+      RSSHUB_BASE_URL: http://rsshub:1200
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:3001:3001"
+
   postgres:
     image: postgres:17
     environment:
@@ -14,6 +41,25 @@ services:
       - "54329:5432"
     volumes:
       - folo-postgres:/var/lib/postgresql/data
+
+  rsshub:
+    profiles: ["sources"]
+    image: ${RSSHUB_IMAGE:-diygod/rsshub:latest}
+    environment:
+      CACHE_TYPE: memory
+      NODE_ENV: production
+      NO_LOGFILES: "true"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:1200/').then(r=>{if(r.status>=500)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
 volumes:
   folo-postgres:

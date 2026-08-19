@@ -92,6 +92,19 @@ export class HttpFeedFetcher implements FeedFetcher {
     this.timeoutMs = options.timeoutMs ?? 15_000
   }
 
+  providerFor(): "standard_rss" {
+    return "standard_rss"
+  }
+
+  supports(input: string): boolean {
+    try {
+      const protocol = new URL(input).protocol
+      return protocol === "http:" || protocol === "https:"
+    } catch {
+      return false
+    }
+  }
+
   private async assertSafeURL(url: URL): Promise<void> {
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       throw new Error("Feed URL must use HTTP or HTTPS")

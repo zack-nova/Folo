@@ -23,6 +23,7 @@ try {
   await Promise.all([
     mkdir(resolve(temporaryRoot, "apps/server"), { recursive: true }),
     mkdir(resolve(temporaryRoot, "packages/compat-contracts"), { recursive: true }),
+    mkdir(resolve(temporaryRoot, "packages/feed-source-contracts"), { recursive: true }),
     mkdir(resolve(temporaryRoot, "packages/readability"), { recursive: true }),
     mkdir(resolve(temporaryRoot, "patches"), { recursive: true }),
   ])
@@ -48,6 +49,10 @@ try {
     copyRuntimeManifest(
       resolve(repositoryRoot, "packages/compat-contracts/package.json"),
       resolve(temporaryRoot, "packages/compat-contracts/package.json"),
+    ),
+    copyRuntimeManifest(
+      resolve(repositoryRoot, "packages/feed-source-contracts/package.json"),
+      resolve(temporaryRoot, "packages/feed-source-contracts/package.json"),
     ),
     copyRuntimeManifest(
       resolve(repositoryRoot, "packages/readability/package.json"),

@@ -109,7 +109,7 @@ export function UnifiedDiscoverForm() {
   const capabilityManifest = useCapabilityManifest()
   const organizationEnabled = useCapability("organization.core")
   const opmlEnabled = useCapability("subscriptions.opml")
-  const rsshubEnabled = useCapability("rsshub.hosted")
+  const rsshubEnabled = useCapability("sources.rsshub_self_hosted")
   const inboxEnabled = useCapability("inboxes.core")
   const profilesEnabled = useCapability("profiles.core")
   const isSelfHosted = capabilityManifest !== null

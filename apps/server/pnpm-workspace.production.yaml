@@ -1,6 +1,7 @@
 packages:
   - apps/server
   - packages/compat-contracts
+  - packages/feed-source-contracts
   - packages/readability
 
 ignorePatchFailures: false

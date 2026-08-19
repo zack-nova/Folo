@@ -141,4 +141,38 @@ describe("capability discovery", () => {
     })
     await server.close()
   })
+
+  it("advertises self-hosted RSSHub independently from official hosted adapters", async () => {
+    const auth = createAuth({
+      baseURL: "http://localhost:3000",
+      database: memoryAdapter({ account: [], session: [], user: [], verification: [] }),
+      secret: "stage-five-test-secret-that-is-at-least-32-characters",
+      trustedOrigins: ["http://localhost:2233"],
+    })
+    const server = await buildServer({
+      auth,
+      clientOrigins: ["http://localhost:2233"],
+      feedFetcher: {
+        fetch: async () => {
+          throw new Error("Not used by capability discovery")
+        },
+        supports: (url) => url.startsWith("rsshub://") || url.startsWith("https://"),
+      },
+    })
+
+    const response = await server.inject({ method: "GET", url: "/api/extensions/capabilities" })
+    const data = response.json().data as {
+      capabilities: Array<{ id: string; provider: string }>
+      stage: number
+      unavailable: string[]
+    }
+
+    expect(data.stage).toBe(5)
+    expect(data.capabilities).toContainEqual({
+      id: "sources.rsshub_self_hosted",
+      provider: "local",
+    })
+    expect(data.unavailable).toContain("rsshub.hosted")
+    await server.close()
+  })
 })

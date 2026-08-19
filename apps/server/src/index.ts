@@ -3,7 +3,9 @@ import { loadServerConfig } from "./config"
 import { PostgresDataStore } from "./data/postgres-store"
 import { createPostgresDatabase } from "./db/database"
 import { migrateDatabase } from "./db/migrate"
+import { FeedSupplierFetcher } from "./feeds/feed-supplier-fetcher"
 import { HttpFeedFetcher } from "./feeds/http-fetcher"
+import { RoutingFeedFetcher } from "./feeds/routing-fetcher"
 import { buildServer } from "./server"
 
 const config = loadServerConfig(process.env)
@@ -18,11 +20,21 @@ const auth = createAuth({
 await migrateDatabase({ auth, database: database.db })
 
 const dataStore = new PostgresDataStore(database.db)
-const feedFetcher = new HttpFeedFetcher({
+const standardFeedFetcher = new HttpFeedFetcher({
   allowPrivateAddresses: config.allowPrivateFeeds,
   maxBytes: config.feedFetchMaxBytes,
   timeoutMs: config.feedFetchTimeoutMs,
 })
+const feedFetcher = config.feedSupplierConfig
+  ? new RoutingFeedFetcher(
+      standardFeedFetcher,
+      new FeedSupplierFetcher({
+        ...config.feedSupplierConfig,
+        maxBytes: config.feedFetchMaxBytes,
+        timeoutMs: config.feedFetchTimeoutMs,
+      }),
+    )
+  : standardFeedFetcher
 const server = await buildServer({
   aiEncryptionSecret: config.aiEncryptionSecret,
   aiProviderConfig: config.aiProviderConfig,
@@ -41,6 +53,7 @@ const server = await buildServer({
   processingMaxAttempts: config.processingMaxAttempts,
   processingRetryBaseDelayMs: config.processingRetryBaseDelayMs,
   processingWorkerPollIntervalMs: config.processingWorkerPollIntervalMs,
+  readabilityFetcher: standardFeedFetcher,
   serverURL: config.serverURL,
   trustProxyHops: config.trustProxyHops,
   uploadsDirectory: config.uploadsDirectory,

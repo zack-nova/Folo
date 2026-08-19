@@ -254,6 +254,43 @@ const RuntimeActivity = ({ language, status }: { language: string; status: Opera
   )
 }
 
+const SourceProviders = ({ providers }: { providers: OperationsStatus["source_providers"] }) => {
+  const { t } = useTranslation("settings")
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {providers.map((provider) => (
+        <article
+          key={provider.id}
+          className="rounded-xl border border-fill-secondary p-4"
+          data-testid={`operations-source-provider-${provider.id}`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-text">
+              <i className="i-mgc-rss-2-cute-re size-4 text-text-secondary" aria-hidden />
+              {t(`operations.sources.${provider.id}.title`)}
+            </div>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 text-xs font-medium",
+                provider.status === "ready" && "text-green",
+                provider.status === "unavailable" && "text-red",
+                provider.status === "disabled" && "text-text-tertiary",
+              )}
+            >
+              <span className="size-1.5 rounded-full bg-current" aria-hidden />
+              {t(`operations.sources.status.${provider.status}`)}
+            </span>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+            {provider.message ?? t(`operations.sources.${provider.id}.${provider.status}`)}
+          </p>
+        </article>
+      ))}
+    </div>
+  )
+}
+
 export const SettingOperations = () => {
   const { i18n, t } = useTranslation("settings")
   const statusQuery = useOperationsStatus()
@@ -388,6 +425,14 @@ export const SettingOperations = () => {
             {t("operations.jobs.succeeded", { count: status.stats.processingJobs.succeeded })}
           </span>
         </div>
+      </section>
+
+      <section aria-labelledby="operations-sources-title" className="space-y-3">
+        <SectionHeading
+          title={t("operations.sources.title")}
+          description={t("operations.sources.description")}
+        />
+        <SourceProviders providers={status.source_providers} />
       </section>
 
       <section aria-labelledby="operations-feeds-title" className="space-y-3">

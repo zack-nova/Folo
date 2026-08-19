@@ -7,6 +7,8 @@ import multipart from "@fastify/multipart"
 import rateLimit from "@fastify/rate-limit"
 import { createCapabilityNotImplementedContract } from "@follow/compat-contracts"
 import capabilityManifest from "@follow/compat-contracts/capabilities" with { type: "json" }
+import type { AutonomousSourceProviderHealth } from "@follow/feed-source-contracts"
+import { RSSHUB_SELF_HOSTED_CAPABILITY } from "@follow/feed-source-contracts"
 import { readabilityFromHTML } from "@follow-app/readability"
 import { fromNodeHeaders } from "better-auth/node"
 import Fastify from "fastify"
@@ -566,6 +568,31 @@ export const buildServer = async ({
     server.addHook("onClose", async () => stopFeedScheduler())
   }
 
+  const sourceProviderStatuses = async (): Promise<AutonomousSourceProviderHealth[]> => {
+    if (!feedFetcher?.getProviderStatuses) {
+      return [
+        {
+          configured: false,
+          id: "rsshub",
+          message: null,
+          status: "disabled",
+        },
+      ]
+    }
+    try {
+      return await feedFetcher.getProviderStatuses()
+    } catch (error) {
+      return [
+        {
+          configured: true,
+          id: "rsshub",
+          message: error instanceof Error ? error.message.slice(0, 500) : "Supplier unavailable",
+          status: "unavailable",
+        },
+      ]
+    }
+  }
+
   const acquireRegistrationLock = async () => {
     const previous = registrationTail
     let release = () => {}
@@ -680,7 +707,10 @@ export const buildServer = async ({
         .status(401)
         .send({ status: "unauthorized" })
     }
-    const stats = await dataStore.getOperationalStats(new Date())
+    const [stats, sourceProviders] = await Promise.all([
+      dataStore.getOperationalStats(new Date()),
+      sourceProviderStatuses(),
+    ])
     const lines = [
       "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
       "# TYPE folo_subscribed_feeds gauge",
@@ -695,6 +725,12 @@ export const buildServer = async ({
       "# TYPE folo_processing_jobs gauge",
       ...Object.entries(stats.processingJobs).map(
         ([status, count]) => `folo_processing_jobs{status="${status}"} ${count}`,
+      ),
+      "# HELP folo_source_provider_ready Whether an autonomous source provider is ready.",
+      "# TYPE folo_source_provider_ready gauge",
+      ...sourceProviders.map(
+        (provider) =>
+          `folo_source_provider_ready{provider="${provider.id}"} ${provider.status === "ready" ? 1 : 0}`,
       ),
       "",
     ]
@@ -786,10 +822,13 @@ export const buildServer = async ({
   )
 
   server.get("/api/extensions/capabilities", async () => {
+    const autonomousSourcesEnabled = feedFetcher?.supports?.("rsshub://example/route") === true
     const capabilities = capabilityManifest.capabilities
       .filter(
         (capability) =>
-          capability.provider === "local" && implementedCapabilities.has(capability.id),
+          capability.provider === "local" &&
+          (implementedCapabilities.has(capability.id) ||
+            (capability.id === RSSHUB_SELF_HOSTED_CAPABILITY && autonomousSourcesEnabled)),
       )
       .map((capability) => ({ id: capability.id, provider: "local" as const }))
     const enabled = new Set(capabilities.map((capability) => capability.id))
@@ -798,7 +837,7 @@ export const buildServer = async ({
       code: 0,
       data: {
         compatibilityVersion: capabilityManifest.compatibilityVersion,
-        stage: 4,
+        stage: autonomousSourcesEnabled ? 5 : 4,
         capabilities,
         unavailable: capabilityManifest.capabilities
           .map((capability) => capability.id)
@@ -815,10 +854,11 @@ export const buildServer = async ({
     if ((await dataStore.getOwnerUserId()) !== session.user.id) {
       return reply.status(403).send({ code: "forbidden", message: "Instance owner required" })
     }
-    const [stats, subscribedFeeds, failedProcessingJobs] = await Promise.all([
+    const [stats, subscribedFeeds, failedProcessingJobs, sourceProviders] = await Promise.all([
       dataStore.getOperationalStats(new Date()),
       dataStore.listSubscribedFeeds(),
       dataStore.listFailedProcessingJobs(session.user.id, 50),
+      sourceProviderStatuses(),
     ])
     const feedFailures = subscribedFeeds
       .filter((feed) => feed.consecutiveFailures > 0)
@@ -843,6 +883,14 @@ export const buildServer = async ({
             },
           ]
         : []),
+      ...sourceProviders
+        .filter((provider) => provider.status === "unavailable")
+        .map((provider) => ({
+          code: "source_provider_unavailable" as const,
+          count: 1,
+          provider: provider.id,
+          severity: "warning" as const,
+        })),
     ]
     return {
       code: 0,
@@ -867,6 +915,7 @@ export const buildServer = async ({
               result: lastFeedPollingCycle.result,
             }
           : null,
+        source_providers: sourceProviders,
         stats,
         status: alerts.length > 0 ? ("degraded" as const) : ("healthy" as const),
       },
@@ -924,14 +973,14 @@ export const buildServer = async ({
       return {
         code: 0,
         data: {
-          active_provider: importer?.providerId ?? ("standard_rss" as const),
+          active_provider: importer?.providerFor(feed.url) ?? ("standard_rss" as const),
           consecutive_failures: feed.consecutiveFailures,
           feed_id: feed.id,
           last_error_at: feed.errorAt?.toISOString() ?? null,
           last_error_summary: feed.errorMessage,
           last_success_at: feed.lastSuccessAt?.toISOString() ?? null,
           next_fetch_at: feed.nextFetchAt.toISOString(),
-          preferred_provider: importer?.providerId ?? ("standard_rss" as const),
+          preferred_provider: importer?.providerFor(feed.url) ?? ("standard_rss" as const),
           status: feed.consecutiveFailures > 0 ? ("degraded" as const) : ("healthy" as const),
         },
       }

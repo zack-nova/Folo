@@ -47,6 +47,7 @@ pnpm server:db:down
 - `FEED_POLL_INTERVAL_MS`：已订阅 Feed 的刷新周期，默认 15 分钟。
 - `FEED_POLL_CONCURRENCY`：轮询并发数，默认 4，最大 32。
 - `FEED_RETRY_BASE_DELAY_MS`：单个 Feed 获取失败后的指数退避基数，默认 1 分钟，最长 24 小时。
+- `FEED_SUPPLIER_URL`、`FEED_SUPPLIER_TOKEN`：可选阶段 5A 内部供给服务地址和独立 Bearer Token；必须成对配置。
 - `AI_API_KEY`、`AI_PROVIDER_BASE_URL`、`AI_PROVIDER_MODEL`：可选的环境托管 Provider。也可以登录后通过
   `/api/extensions/ai/provider` 保存 BYOK 配置；数据库只保存 AES-256-GCM 密文和末四位提示。
 - `AI_ENCRYPTION_SECRET`：用于加密数据库 BYOK，默认复用 `BETTER_AUTH_SECRET`。生产环境建议独立设置且必须
@@ -115,8 +116,9 @@ docker build -f apps/server/Dockerfile -t folo-server:local .
 - `/ready`、Prometheus `/metrics`、所有者运行状态与结构化告警，以及生产 Compose/回滚手册。
 - 能力门控的所有者运维前端：运行概览、Feed/AI 失败列表、获取诊断和人工重试。
 - 批量 Entry 投影查询和 10,000 Entry 容量基准，避免时间线逐 Entry 读取后端投影。
+- 独立 feed-supplier、自建 RSSHub 的 `rsshub://` 预览/订阅/刷新闭环，以及 provider 健康状态和告警。
 
-官方 RSSHub/Trending、AI Chat、Billing、MCP、多人权限和外部通知投递仍未实现；摘要、翻译和
+FOLO 官方 RSSHub/Trending、AI Chat、Billing、MCP、多人权限和外部通知投递仍未实现；摘要、翻译和
 逐条评估全部由本地后端调用所有者配置的 Provider，不访问 Folo 官方后端。
 
 阶段二完整接口和状态语义见
@@ -127,6 +129,8 @@ docker build -f apps/server/Dockerfile -t folo-server:local .
 [`stage-4-runtime-stability.md`](../../docs/feeds-agent-integration/stage-4-runtime-stability.md)。
 阶段 4.2 生产验证、安全基线和运维管理前端见
 [`stage-4-2-production-operations.md`](../../docs/feeds-agent-integration/stage-4-2-production-operations.md)。
+阶段 5A 自主数据源、自建 RSSHub 和供给端契约见
+[`stage-5a-autonomous-sources.md`](../../docs/feeds-agent-integration/stage-5a-autonomous-sources.md)。
 
 ## 备份与恢复演练
 

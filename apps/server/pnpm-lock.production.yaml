@@ -35,6 +35,9 @@ importers:
       "@follow/compat-contracts":
         specifier: workspace:*
         version: link:../../packages/compat-contracts
+      "@follow/feed-source-contracts":
+        specifier: workspace:*
+        version: link:../../packages/feed-source-contracts
       better-auth:
         specifier: 1.6.23
         version: 1.6.23(drizzle-orm@0.45.2(kysely@0.29.5)(pg@8.18.0))(pg@8.18.0)
@@ -61,6 +64,8 @@ importers:
         version: 4.4.3
 
   packages/compat-contracts: {}
+
+  packages/feed-source-contracts: {}
 
   packages/readability:
     dependencies:

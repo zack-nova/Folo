@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
 
+import type { AutonomousSourceProviderHealth } from "@follow/feed-source-contracts"
+
 import type {
   DataStore,
   FeedFetchAttemptRecord,
@@ -12,6 +14,7 @@ export interface FetchedFeed {
   body: string
   contentType: string | null
   etag: string | null
+  identityURL?: string
   lastModified: string | null
   url: string
   notModified?: boolean
@@ -22,6 +25,9 @@ export type FeedAcquisitionProviderId = "feed_supplier" | "standard_rss"
 
 export interface FeedFetcher {
   readonly providerId?: FeedAcquisitionProviderId
+  getProviderStatuses?(): Promise<AutonomousSourceProviderHealth[]>
+  providerFor?(url: string): FeedAcquisitionProviderId
+  supports?(url: string): boolean
   fetch(
     url: string,
     options?: { etag?: string | null; lastModified?: string | null },
@@ -76,13 +82,24 @@ export class FeedImporter {
     this.retryMaxDelayMs = options.retryMaxDelayMs ?? 24 * 60 * 60 * 1_000
   }
 
+  providerFor(url: string): FeedAcquisitionProviderId {
+    return this.feedFetcher.providerFor?.(url) ?? this.providerId
+  }
+
   async preview(url: string) {
     const fetched = await this.feedFetcher.fetch(url)
     if (fetched.notModified) throw new Error("Feed preview unexpectedly returned HTTP 304")
-    const parsed = parseFeed(fetched.body, fetched.url)
+    const parsed = parseFeed(fetched.body, fetched.url, new Date(), fetched.identityURL ?? url)
     parsed.feed.etag = fetched.etag
     parsed.feed.lastModified = fetched.lastModified
-    return parsed
+    return {
+      ...parsed,
+      acquisition: {
+        providerId: this.providerFor(url),
+        responseURL: fetched.url,
+        status: fetched.status ?? 200,
+      },
+    }
   }
 
   async subscribe(userId: string, input: SubscribeInput) {
@@ -108,9 +125,9 @@ export class FeedImporter {
       errorSummary: null,
       feedId: parsed.feed.id,
       finishedAt: parsed.feed.fetchedAt,
-      httpStatus: 200,
+      httpStatus: parsed.acquisition.status,
       id: attemptId(),
-      responseUrl: parsed.feed.url,
+      responseUrl: parsed.acquisition.responseURL,
       startedAt: parsed.feed.fetchedAt,
       status: "succeeded",
     })

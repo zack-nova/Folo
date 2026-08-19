@@ -1,7 +1,7 @@
 {
   "schemaVersion": 4,
   "compatibilityVersion": "folo-client-sdk-0.3.95",
-  "extensionContractVersion": "feeds-agent-extensions-v4",
+  "extensionContractVersion": "feeds-agent-extensions-v5",
   "manifestEndpoint": "/api/extensions/capabilities",
   "capabilities": [
     {
@@ -425,6 +425,16 @@
         "aiTask.testRun",
         "aiTask.update"
       ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "sources.rsshub_self_hosted",
+      "title": "Autonomous RSSHub source supplier",
+      "targetStage": 5,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
       "nonSdkRequests": [],
       "protocolRoutes": []
     },

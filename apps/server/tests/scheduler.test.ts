@@ -10,7 +10,7 @@ import { refreshSubscribedFeeds } from "../src/feeds/scheduler"
 const fixturePath = fileURLToPath(new URL("fixtures/phase-one.rss.xml", import.meta.url))
 
 describe("feed polling", () => {
-  it("reserves the external feed_supplier provider boundary without implementing it", () => {
+  it("supports a feed_supplier provider at the importer boundary", () => {
     const importer = new FeedImporter(new MemoryDataStore(), {
       providerId: "feed_supplier",
       fetch: async () => {

@@ -4,4 +4,5 @@
 **/dist
 **/node_modules
 apps/server/.env*
+apps/feed-supplier/.env*
 backups

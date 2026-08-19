@@ -25,8 +25,9 @@ export type FeedFetchDiagnostic = {
 
 export type OperationsStatus = {
   alerts: Array<{
-    code: "feed_acquisition_degraded" | "processing_jobs_failed"
+    code: "feed_acquisition_degraded" | "processing_jobs_failed" | "source_provider_unavailable"
     count: number
+    provider?: "rsshub"
     severity: "warning"
   }>
   failed_processing_jobs: ProcessingJob[]
@@ -50,6 +51,12 @@ export type OperationsStatus = {
       refreshed: number
     }
   } | null
+  source_providers: Array<{
+    configured: boolean
+    id: "rsshub"
+    message: string | null
+    status: "disabled" | "ready" | "unavailable"
+  }>
   stats: {
     feedAcquisitionFailures: number
     feedsDue: number

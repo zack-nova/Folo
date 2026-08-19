@@ -18,10 +18,12 @@ COPY --chown=node:node apps/server/pnpm-lock.production.yaml ./pnpm-lock.yaml
 COPY --chown=node:node patches/@mozilla__readability@0.6.0.patch ./patches/@mozilla__readability@0.6.0.patch
 COPY --chown=node:node apps/server/package.json ./apps/server/package.json
 COPY --chown=node:node packages/compat-contracts/package.json ./packages/compat-contracts/package.json
+COPY --chown=node:node packages/feed-source-contracts/package.json ./packages/feed-source-contracts/package.json
 COPY --chown=node:node packages/readability/package.json ./packages/readability/package.json
 USER node
 RUN cd apps/server && pnpm pkg delete devDependencies \
   && cd ../../packages/compat-contracts && pnpm pkg delete devDependencies \
+  && cd ../feed-source-contracts && pnpm pkg delete devDependencies \
   && cd ../readability && pnpm pkg delete devDependencies
 RUN --mount=type=cache,id=folo-server-pnpm,target=/pnpm/store,uid=1000,gid=1000 \
   pnpm --filter-prod @follow/server... install --frozen-lockfile --prod --ignore-scripts \
@@ -40,6 +42,7 @@ COPY --chown=node:node apps/server/src ./apps/server/src
 COPY --chown=node:node apps/server/drizzle ./apps/server/drizzle
 COPY --chown=node:node packages/compat-contracts/src ./packages/compat-contracts/src
 COPY --chown=node:node packages/compat-contracts/contracts ./packages/compat-contracts/contracts
+COPY --chown=node:node packages/feed-source-contracts/src ./packages/feed-source-contracts/src
 COPY --chown=node:node packages/readability/src ./packages/readability/src
 
 WORKDIR /app/apps/server

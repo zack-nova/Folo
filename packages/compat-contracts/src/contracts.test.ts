@@ -135,7 +135,7 @@ describe("capability manifest", () => {
 
     expect(manifest.schemaVersion).toBe(4)
     expect(manifest.compatibilityVersion).toBe("folo-client-sdk-0.3.95")
-    expect(manifest.extensionContractVersion).toBe("feeds-agent-extensions-v4")
+    expect(manifest.extensionContractVersion).toBe("feeds-agent-extensions-v5")
     expect(manifest.manifestEndpoint).toBe("/api/extensions/capabilities")
     expect(manifest.capabilities).toContainEqual(
       expect.objectContaining({
@@ -151,6 +151,21 @@ describe("capability manifest", () => {
         targetStage: 4,
         provider: "local",
         clientBehavior: "enabled_when_advertised",
+      }),
+    )
+    expect(manifest.capabilities).toContainEqual(
+      expect.objectContaining({
+        id: "sources.rsshub_self_hosted",
+        targetStage: 5,
+        provider: "local",
+        clientBehavior: "enabled_when_advertised",
+      }),
+    )
+    expect(manifest.capabilities).toContainEqual(
+      expect.objectContaining({
+        id: "rsshub.hosted",
+        provider: "unavailable",
+        clientBehavior: "hidden",
       }),
     )
     expect(manifest.capabilities.map((capability) => capability.id)).toHaveLength(

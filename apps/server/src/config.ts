@@ -11,6 +11,22 @@ const boolean = z
   .default("false")
   .transform((value) => value === "true")
 
+const internalServiceURL = z.url().transform((value, context) => {
+  const url = new URL(value)
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    context.addIssue({ code: "custom", message: "Internal service URL must use HTTP or HTTPS" })
+    return z.NEVER
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    context.addIssue({
+      code: "custom",
+      message: "Internal service URL must not contain credentials, a query, or a fragment",
+    })
+    return z.NEVER
+  }
+  return url.toString().replace(/\/$/, "")
+})
+
 const serverEnvironment = z
   .object({
     AI_API_KEY: z.string().min(1).optional(),
@@ -43,6 +59,8 @@ const serverEnvironment = z
     FEED_POLL_INTERVAL_MS: integer(15 * 60 * 1000, 60_000),
     FEED_POLL_CONCURRENCY: integer(4, 1).pipe(z.number().max(32)),
     FEED_RETRY_BASE_DELAY_MS: integer(60_000, 1_000),
+    FEED_SUPPLIER_TOKEN: z.string().min(32).optional(),
+    FEED_SUPPLIER_URL: internalServiceURL.optional(),
     HOST: z.string().default("0.0.0.0"),
     METRICS_TOKEN: z.string().min(32).optional(),
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -55,6 +73,13 @@ const serverEnvironment = z
     UPLOADS_DIRECTORY: z.string().min(1).default("./data/uploads"),
   })
   .superRefine((environment, context) => {
+    if (Boolean(environment.FEED_SUPPLIER_URL) !== Boolean(environment.FEED_SUPPLIER_TOKEN)) {
+      context.addIssue({
+        code: "custom",
+        message: "FEED_SUPPLIER_URL and FEED_SUPPLIER_TOKEN must be configured together",
+        path: [environment.FEED_SUPPLIER_URL ? "FEED_SUPPLIER_TOKEN" : "FEED_SUPPLIER_URL"],
+      })
+    }
     if (environment.NODE_ENV !== "production") return
 
     if (environment.ALLOW_PRIVATE_FEEDS && environment.ALLOW_PUBLIC_REGISTRATION) {
@@ -131,6 +156,28 @@ const serverEnvironment = z
         path: ["METRICS_TOKEN"],
       })
     }
+    if (
+      environment.FEED_SUPPLIER_TOKEN &&
+      (environment.FEED_SUPPLIER_TOKEN === environment.BETTER_AUTH_SECRET ||
+        environment.FEED_SUPPLIER_TOKEN === environment.AI_ENCRYPTION_SECRET ||
+        environment.FEED_SUPPLIER_TOKEN === environment.METRICS_TOKEN)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "FEED_SUPPLIER_TOKEN must differ from authentication, AI, and metrics secrets",
+        path: ["FEED_SUPPLIER_TOKEN"],
+      })
+    }
+    if (
+      environment.FEED_SUPPLIER_TOKEN &&
+      /replace-with|development|example/i.test(environment.FEED_SUPPLIER_TOKEN)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "FEED_SUPPLIER_TOKEN still looks like a placeholder",
+        path: ["FEED_SUPPLIER_TOKEN"],
+      })
+    }
   })
 
 export const loadServerConfig = (environment: NodeJS.ProcessEnv) => {
@@ -157,6 +204,10 @@ export const loadServerConfig = (environment: NodeJS.ProcessEnv) => {
     feedPollConcurrency: parsed.FEED_POLL_CONCURRENCY,
     feedPollIntervalMs: parsed.FEED_POLL_INTERVAL_MS,
     feedRetryBaseDelayMs: parsed.FEED_RETRY_BASE_DELAY_MS,
+    feedSupplierConfig:
+      parsed.FEED_SUPPLIER_URL && parsed.FEED_SUPPLIER_TOKEN
+        ? { baseURL: parsed.FEED_SUPPLIER_URL, token: parsed.FEED_SUPPLIER_TOKEN }
+        : undefined,
     host: parsed.HOST,
     metricsToken: parsed.METRICS_TOKEN,
     nodeEnvironment: parsed.NODE_ENV,

@@ -22,6 +22,7 @@
     "@fastify/rate-limit": "11.2.0",
     "@follow-app/readability": "workspace:*",
     "@follow/compat-contracts": "workspace:*",
+    "@follow/feed-source-contracts": "workspace:*",
     "better-auth": "1.6.23",
     "drizzle-orm": "0.45.2",
     "fast-xml-parser": "5.10.1",

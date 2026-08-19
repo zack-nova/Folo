@@ -14,6 +14,14 @@ describe("operations client", () => {
               feed_failures: [],
               last_cleanup: null,
               last_feed_polling_cycle: null,
+              source_providers: [
+                {
+                  configured: false,
+                  id: "rsshub",
+                  message: null,
+                  status: "disabled",
+                },
+              ],
               stats: {
                 feedAcquisitionFailures: 0,
                 feedsDue: 0,

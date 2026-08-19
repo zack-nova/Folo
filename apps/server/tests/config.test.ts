@@ -21,6 +21,8 @@ describe("server configuration", () => {
         BETTER_AUTH_SECRET: "a-production-secret-that-is-at-least-32-characters",
         CLIENT_ORIGINS: "http://localhost:2233,https://reader.example.com",
         DATABASE_URL: "postgres://folo:folo@localhost:54329/folo",
+        FEED_SUPPLIER_TOKEN: "internal-feed-supplier-token-000000000000",
+        FEED_SUPPLIER_URL: "http://feed-supplier:3001/",
       }),
     ).toMatchObject({
       allowPrivateFeeds: true,
@@ -32,8 +34,28 @@ describe("server configuration", () => {
         timeoutMs: 60_000,
       },
       clientOrigins: ["http://localhost:2233", "https://reader.example.com"],
+      feedSupplierConfig: {
+        baseURL: "http://feed-supplier:3001",
+        token: "internal-feed-supplier-token-000000000000",
+      },
       port: 3000,
     })
+  })
+
+  it("requires the feed supplier URL and token together", () => {
+    const environment = {
+      BETTER_AUTH_SECRET: "a-local-test-secret-that-is-at-least-32-characters",
+      DATABASE_URL: "postgres://folo:folo@localhost:54329/folo",
+    }
+    expect(() =>
+      loadServerConfig({ ...environment, FEED_SUPPLIER_URL: "http://feed-supplier:3001" }),
+    ).toThrow()
+    expect(() =>
+      loadServerConfig({
+        ...environment,
+        FEED_SUPPLIER_TOKEN: "internal-feed-supplier-token-000000000000",
+      }),
+    ).toThrow()
   })
 
   it("enforces production transport, metric, and key-separation requirements", () => {
