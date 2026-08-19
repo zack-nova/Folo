@@ -1,8 +1,10 @@
-import { createHash, randomUUID } from "node:crypto"
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 
 import cors from "@fastify/cors"
+import helmet from "@fastify/helmet"
 import multipart from "@fastify/multipart"
+import rateLimit from "@fastify/rate-limit"
 import { createCapabilityNotImplementedContract } from "@follow/compat-contracts"
 import capabilityManifest from "@follow/compat-contracts/capabilities" with { type: "json" }
 import { readabilityFromHTML } from "@follow-app/readability"
@@ -57,8 +59,10 @@ export interface BuildServerOptions {
     model: string
     timeoutMs?: number
   }
+  apiRateLimitMax?: number
   allowPublicRegistration?: boolean
   auth: AppAuth
+  authRateLimitMax?: number
   clientOrigins: string[]
   dataStore?: DataStore
   feedFetcher?: FeedFetcher
@@ -67,10 +71,12 @@ export interface BuildServerOptions {
   feedRetryBaseDelayMs?: number
   readabilityFetcher?: FeedFetcher
   logger?: boolean
+  metricsToken?: string
   processingMaxAttempts?: number
   processingRetryBaseDelayMs?: number
   processingWorkerPollIntervalMs?: number
   serverURL?: string
+  trustProxyHops?: number
   uploadsDirectory?: string
 }
 
@@ -319,6 +325,17 @@ const avatarMimeTypes = {
 const limitFromUnknown = (value: unknown, defaultValue: number, maximum: number): number =>
   Math.min(Math.max(Math.trunc(numberFromUnknown(value) ?? defaultValue), 1), maximum)
 
+const matchesSecret = (received: string | undefined, expected: string | undefined): boolean => {
+  if (!expected) return true
+  if (!received) return false
+  const receivedBuffer = Buffer.from(received)
+  const expectedBuffer = Buffer.from(expected)
+  return (
+    receivedBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(receivedBuffer, expectedBuffer)
+  )
+}
+
 const settingsTabs = ["general", "appearance", "integration", "ai"] as const
 const isSettingsTab = (value: string): value is SettingsTab =>
   settingsTabs.includes(value as SettingsTab)
@@ -349,8 +366,10 @@ export const buildServer = async ({
   aiProvider,
   aiProviderFetch,
   aiProviderConfig,
+  apiRateLimitMax = 600,
   allowPublicRegistration = false,
   auth,
+  authRateLimitMax = 30,
   clientOrigins,
   dataStore = new MemoryDataStore(),
   feedFetcher,
@@ -359,13 +378,33 @@ export const buildServer = async ({
   feedRetryBaseDelayMs,
   readabilityFetcher = feedFetcher,
   logger = false,
+  metricsToken,
   processingMaxAttempts,
   processingRetryBaseDelayMs,
   processingWorkerPollIntervalMs,
   serverURL = "http://localhost:3000",
+  trustProxyHops = 0,
   uploadsDirectory = "./data/uploads",
 }: BuildServerOptions) => {
-  const server = Fastify({ logger, routerOptions: { ignoreTrailingSlash: true } })
+  const server = Fastify({
+    bodyLimit: 1024 * 1024,
+    logger: logger
+      ? {
+          redact: {
+            censor: "[Redacted]",
+            paths: [
+              "req.headers.authorization",
+              "req.headers.cookie",
+              "req.headers['x-api-key']",
+              "res.headers['set-cookie']",
+            ],
+          },
+        }
+      : false,
+    requestTimeout: 120_000,
+    routerOptions: { ignoreTrailingSlash: true, maxParamLength: 512 },
+    trustProxy: trustProxyHops,
+  })
   const pendingReadability = new Map<string, Promise<string | null>>()
   const pendingSummaries = new Map<string, Promise<string>>()
   const pendingTranslations = new Map<string, Promise<Record<string, string>>>()
@@ -539,10 +578,10 @@ export const buildServer = async ({
 
   if (!allowPublicRegistration && !(await dataStore.getOwnerUserId())) {
     const context = await auth.$context
-    const existingUsers = await context.adapter.findMany<{ id: string }>({
+    const existingUsers = await context.adapter.findMany<{ createdAt: Date; id: string }>({
       limit: 1,
       model: "user",
-      select: ["id"],
+      select: ["createdAt", "id"],
       sortBy: { direction: "asc", field: "createdAt" },
     })
     const existingUser = existingUsers.at(0)
@@ -575,10 +614,41 @@ export const buildServer = async ({
     boostPoints: null,
   })
 
+  await server.register(helmet, {
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: false,
+  })
+  await server.register(rateLimit, {
+    allowList: (request) =>
+      ["/health", "/ready", "/metrics"].includes(request.routeOptions.url ?? ""),
+    errorResponseBuilder: (_request, context) => ({
+      code: "rate_limit_exceeded",
+      error: "Too Many Requests",
+      message: `Too many requests; retry in ${context.after}`,
+      statusCode: 429,
+    }),
+    max: (request) =>
+      request.method !== "GET" && request.url.startsWith("/better-auth/")
+        ? authRateLimitMax
+        : apiRateLimitMax,
+    timeWindow: "1 minute",
+  })
   await server.register(cors, {
     credentials: true,
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     origin: clientOrigins,
+  })
+  const allowedOrigins = new Set(clientOrigins)
+  server.addHook("onRequest", async (request, reply) => {
+    if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return
+    const origin = request.headers.origin
+    const fetchSite = request.headers["sec-fetch-site"]
+    if ((origin && !allowedOrigins.has(origin)) || fetchSite === "cross-site") {
+      return reply.status(403).send({
+        code: "origin_not_allowed",
+        message: "Cross-origin state-changing requests are not allowed",
+      })
+    }
   })
   await server.register(multipart, {
     limits: { fields: 1, fileSize: 1024 * 1024, files: 1, parts: 2 },
@@ -601,7 +671,15 @@ export const buildServer = async ({
     }
   })
 
-  server.get("/metrics", async (_request, reply) => {
+  server.get("/metrics", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined
+    if (!matchesSecret(token, metricsToken)) {
+      return reply
+        .header("www-authenticate", 'Bearer realm="folo-metrics"')
+        .status(401)
+        .send({ status: "unauthorized" })
+    }
     const stats = await dataStore.getOperationalStats(new Date())
     const lines = [
       "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
@@ -737,7 +815,15 @@ export const buildServer = async ({
     if ((await dataStore.getOwnerUserId()) !== session.user.id) {
       return reply.status(403).send({ code: "forbidden", message: "Instance owner required" })
     }
-    const stats = await dataStore.getOperationalStats(new Date())
+    const [stats, subscribedFeeds, failedProcessingJobs] = await Promise.all([
+      dataStore.getOperationalStats(new Date()),
+      dataStore.listSubscribedFeeds(),
+      dataStore.listFailedProcessingJobs(session.user.id, 50),
+    ])
+    const feedFailures = subscribedFeeds
+      .filter((feed) => feed.consecutiveFailures > 0)
+      .sort((left, right) => (right.errorAt?.getTime() ?? 0) - (left.errorAt?.getTime() ?? 0))
+      .slice(0, 50)
     const alerts = [
       ...(stats.feedAcquisitionFailures > 0
         ? [
@@ -762,6 +848,16 @@ export const buildServer = async ({
       code: 0,
       data: {
         alerts,
+        failed_processing_jobs: failedProcessingJobs.map(apiProcessingJob),
+        feed_failures: feedFailures.map((feed) => ({
+          consecutive_failures: feed.consecutiveFailures,
+          feed_id: feed.id,
+          last_error_at: feed.errorAt?.toISOString() ?? null,
+          last_error_summary: feed.errorMessage,
+          next_fetch_at: feed.nextFetchAt.toISOString(),
+          title: feed.title,
+          url: feed.url,
+        })),
         last_cleanup: lastCleanup
           ? { at: lastCleanup.at.toISOString(), report: lastCleanup.report }
           : null,
@@ -776,6 +872,40 @@ export const buildServer = async ({
       },
     }
   })
+
+  server.post<{ Params: { feedId: string } }>(
+    "/api/extensions/operations/feeds/:feedId/retry",
+    async (request, reply) => {
+      const session = await authenticatedSession(request.headers)
+      if (!session) {
+        return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+      }
+      if ((await dataStore.getOwnerUserId()) !== session.user.id) {
+        return reply.status(403).send({ code: "forbidden", message: "Instance owner required" })
+      }
+      if (!importer) {
+        return reply.status(503).send({
+          code: "feed_fetcher_unavailable",
+          message: "Feed fetcher is not configured",
+        })
+      }
+      const subscription = await subscriptionForFeed(session.user.id, request.params.feedId)
+      const feed = subscription ? await dataStore.getFeed(subscription.feedId) : null
+      if (!feed) {
+        return reply.status(404).send({ code: "feed_not_found", message: "Feed not found" })
+      }
+      try {
+        await importer.refresh(feed)
+        return reply.status(202).send({ code: 0, data: null })
+      } catch (error) {
+        server.log.warn({ error, feedId: feed.id }, "Owner feed retry failed")
+        return reply.status(502).send({
+          code: "feed_refresh_failed",
+          message: error instanceof Error ? error.message.slice(0, 500) : "Feed refresh failed",
+        })
+      }
+    },
+  )
 
   server.get<{ Params: { feedId: string } }>(
     "/api/extensions/subscriptions/:feedId/acquisition",

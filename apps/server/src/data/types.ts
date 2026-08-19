@@ -345,6 +345,7 @@ export interface DataStore {
   enqueueProcessingJob(job: ProcessingJobRecord): Promise<EnqueueProcessingJobResult>
   claimNextProcessingJob(now: Date): Promise<ProcessingJobRecord | null>
   getProcessingJob(userId: string, jobId: string): Promise<ProcessingJobRecord | null>
+  listFailedProcessingJobs(userId: string, limit: number): Promise<ProcessingJobRecord[]>
   listProcessingAttempts(userId: string, jobId: string): Promise<ProcessingAttemptRecord[]>
   getEntryProcessingJobs(userId: string, entryId: string): Promise<ProcessingJobRecord[]>
   getEntryProjections(

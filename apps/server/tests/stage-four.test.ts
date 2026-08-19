@@ -159,10 +159,26 @@ describe("stage four operations", () => {
       code: 0,
       data: {
         alerts: [{ code: "feed_acquisition_degraded", count: 1, severity: "warning" }],
+        failed_processing_jobs: [],
+        feed_failures: [
+          {
+            consecutive_failures: 1,
+            feed_id: feedId,
+            last_error_summary: "upstream unavailable",
+          },
+        ],
         stats: { feedAcquisitionFailures: 1, subscribedFeeds: 1 },
         status: "degraded",
       },
     })
+
+    shouldFail = false
+    const retry = await server.inject({
+      method: "POST",
+      url: `/api/extensions/operations/feeds/${feedId}/retry`,
+      headers: { cookie: cookie!, origin: "http://localhost:2233" },
+    })
+    expect(retry.statusCode).toBe(202)
   })
 
   it("limits global operations status to the established instance owner", async () => {

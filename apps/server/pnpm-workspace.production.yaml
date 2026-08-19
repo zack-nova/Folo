@@ -1,0 +1,12 @@
+packages:
+  - apps/server
+  - packages/compat-contracts
+  - packages/readability
+
+ignorePatchFailures: false
+
+overrides:
+  drizzle-orm: 0.45.2
+
+patchedDependencies:
+  "@mozilla/readability@0.6.0": patches/@mozilla__readability@0.6.0.patch

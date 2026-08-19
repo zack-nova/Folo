@@ -10,6 +10,7 @@ next-env.d.ts
 .eslintcache
 .env.*
 !.env.example
+!.env.production.example
 
 # Sentry Config File
 .env.sentry-build-plugin

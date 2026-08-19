@@ -1,0 +1,4 @@
+auto-install-peers=false
+node-linker=isolated
+save-exact=true
+strict-peer-dependencies=false

@@ -35,4 +35,85 @@ describe("server configuration", () => {
       port: 3000,
     })
   })
+
+  it("enforces production transport, metric, and key-separation requirements", () => {
+    const productionEnvironment = {
+      AI_ENCRYPTION_SECRET: "independent-production-ai-secret-000000000000",
+      BETTER_AUTH_SECRET: "strong-production-auth-secret-111111111111111",
+      CLIENT_ORIGINS: "https://reader.example.com",
+      DATABASE_URL: "postgres://folo:strong-password@postgres:5432/folo",
+      METRICS_TOKEN: "strong-production-metrics-token-22222222222",
+      NODE_ENV: "production",
+      SERVER_URL: "https://api.reader.example.com",
+      TRUST_PROXY_HOPS: "1",
+    }
+
+    expect(loadServerConfig(productionEnvironment)).toMatchObject({
+      metricsToken: productionEnvironment.METRICS_TOKEN,
+      nodeEnvironment: "production",
+      trustProxyHops: 1,
+    })
+    expect(() =>
+      loadServerConfig({
+        ...productionEnvironment,
+        AI_ENCRYPTION_SECRET: productionEnvironment.BETTER_AUTH_SECRET,
+      }),
+    ).toThrow()
+    expect(() =>
+      loadServerConfig({
+        ...productionEnvironment,
+        AI_ENCRYPTION_SECRET: "replace-with-a-different-random-secret-of-at-least-32-characters",
+      }),
+    ).toThrow()
+    expect(() =>
+      loadServerConfig({
+        ...productionEnvironment,
+        METRICS_TOKEN: undefined,
+      }),
+    ).toThrow()
+    expect(() =>
+      loadServerConfig({
+        ...productionEnvironment,
+        METRICS_TOKEN: productionEnvironment.BETTER_AUTH_SECRET,
+      }),
+    ).toThrow()
+    expect(() =>
+      loadServerConfig({
+        ...productionEnvironment,
+        METRICS_TOKEN: "replace-with-a-third-random-secret-of-at-least-32-characters",
+      }),
+    ).toThrow()
+    expect(() =>
+      loadServerConfig({
+        ...productionEnvironment,
+        SERVER_URL: "http://api.reader.example.com",
+      }),
+    ).toThrow()
+  })
+
+  it("rejects public registration combined with private-network feed access", () => {
+    expect(() =>
+      loadServerConfig({
+        AI_ENCRYPTION_SECRET: "separate-private-feed-ai-secret-000000000000",
+        ALLOW_PRIVATE_FEEDS: "true",
+        ALLOW_PUBLIC_REGISTRATION: "true",
+        BETTER_AUTH_SECRET: "private-feed-auth-secret-111111111111111111",
+        CLIENT_ORIGINS: "https://reader.example.com",
+        DATABASE_URL: "postgres://folo:folo@localhost:54329/folo",
+        METRICS_TOKEN: "private-feed-metrics-secret-222222222222222",
+        NODE_ENV: "production",
+        SERVER_URL: "https://api.reader.example.com",
+      }),
+    ).toThrow()
+
+    expect(() =>
+      loadServerConfig({
+        ALLOW_PRIVATE_FEEDS: "true",
+        ALLOW_PUBLIC_REGISTRATION: "true",
+        BETTER_AUTH_SECRET: "a-local-test-secret-that-is-at-least-32-characters",
+        DATABASE_URL: "postgres://folo:folo@localhost:54329/folo",
+        NODE_ENV: "test",
+      }),
+    ).not.toThrow()
+  })
 })

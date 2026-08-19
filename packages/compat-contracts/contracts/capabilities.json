@@ -161,7 +161,9 @@
       "provider": "local",
       "clientBehavior": "enabled_when_advertised",
       "sdkApis": [],
-      "nonSdkRequests": [],
+      "nonSdkRequests": [
+        "GET /api/extensions/subscriptions/{expression}/acquisition/diagnostics?limit=20"
+      ],
       "protocolRoutes": [
         "GET /api/extensions/subscriptions/{feedId}/acquisition",
         "GET /api/extensions/subscriptions/{feedId}/acquisition/diagnostics"
@@ -190,8 +192,14 @@
       "provider": "local",
       "clientBehavior": "enabled_when_advertised",
       "sdkApis": [],
-      "nonSdkRequests": [],
-      "protocolRoutes": ["GET /api/extensions/operations/status"]
+      "nonSdkRequests": [
+        "GET /api/extensions/operations/status",
+        "POST /api/extensions/operations/feeds/{expression}/retry"
+      ],
+      "protocolRoutes": [
+        "GET /api/extensions/operations/status",
+        "POST /api/extensions/operations/feeds/{feedId}/retry"
+      ]
     },
     {
       "id": "entries.social_and_media",
@@ -532,6 +540,7 @@
     "POST /api/extensions/entries/{entryId}/evaluation/{evaluationId}/select",
     "GET /api/extensions/entries/{entryId}/processing-status",
     "GET /api/extensions/operations/status",
+    "POST /api/extensions/operations/feeds/{feedId}/retry",
     "POST /api/extensions/entries/projections",
     "POST /api/extensions/processing/jobs",
     "GET /api/extensions/processing/jobs/{jobId}",

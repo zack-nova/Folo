@@ -7,11 +7,13 @@ services:
       postgres:
         condition: service_healthy
     env_file:
-      - .env.production
+      - ${FOLO_ENV_FILE:-.env.production}
     environment:
       DATABASE_URL: postgresql://folo:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/folo
       HOST: 0.0.0.0
+      NODE_ENV: production
       UPLOADS_DIRECTORY: /data/uploads
+    init: true
     healthcheck:
       test:
         [
@@ -25,10 +27,24 @@ services:
       retries: 3
       start_period: 30s
     ports:
-      - "3000:3000"
+      - "${FOLO_BIND_ADDRESS:-127.0.0.1}:${FOLO_PORT:-3000}:3000"
+    read_only: true
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    stop_grace_period: 30s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     volumes:
       - folo-uploads:/data/uploads
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
 
   postgres:
     image: postgres:17
@@ -42,8 +58,17 @@ services:
       timeout: 5s
       retries: 20
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    shm_size: 256mb
+    stop_grace_period: 60s
     volumes:
       - folo-postgres:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
 
 volumes:
   folo-postgres:

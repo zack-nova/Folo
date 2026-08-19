@@ -427,6 +427,14 @@ export class MemoryDataStore implements DataStore {
     return job?.userId === userId ? structuredClone(job) : null
   }
 
+  async listFailedProcessingJobs(userId: string, limit: number): Promise<ProcessingJobRecord[]> {
+    return [...this.processingJobs.values()]
+      .filter((job) => job.userId === userId && job.status === "failed")
+      .sort((left, right) => (right.finishedAt?.getTime() ?? 0) - (left.finishedAt?.getTime() ?? 0))
+      .slice(0, Math.min(Math.max(limit, 1), 100))
+      .map((job) => structuredClone(job))
+  }
+
   async listProcessingAttempts(userId: string, jobId: string): Promise<ProcessingAttemptRecord[]> {
     const job = await this.getProcessingJob(userId, jobId)
     if (!job) return []

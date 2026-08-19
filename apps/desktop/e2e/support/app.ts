@@ -551,7 +551,7 @@ const returnToMainShell = async (page: Page) => {
   await closeVisibleDialog(page)
 }
 
-type SettingsTab = "ai" | "feeds" | "general"
+type SettingsTab = "ai" | "feeds" | "general" | "operations"
 
 const waitForSettingsTabContent = async (page: Page, tab: SettingsTab) => {
   if (tab === "general") {
@@ -565,6 +565,11 @@ const waitForSettingsTabContent = async (page: Page, tab: SettingsTab) => {
         timeout: 15_000,
       })
       .toBeGreaterThan(0)
+    return
+  }
+
+  if (tab === "operations") {
+    await expect(page.getByTestId("operations-settings")).toBeVisible({ timeout: 15_000 })
     return
   }
 

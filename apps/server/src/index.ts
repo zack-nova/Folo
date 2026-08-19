@@ -26,8 +26,10 @@ const feedFetcher = new HttpFeedFetcher({
 const server = await buildServer({
   aiEncryptionSecret: config.aiEncryptionSecret,
   aiProviderConfig: config.aiProviderConfig,
+  apiRateLimitMax: config.apiRateLimitMax,
   allowPublicRegistration: config.allowPublicRegistration,
   auth,
+  authRateLimitMax: config.authRateLimitMax,
   clientOrigins: config.clientOrigins,
   dataStore,
   feedFetcher,
@@ -35,10 +37,12 @@ const server = await buildServer({
   feedPollIntervalMs: config.feedPollIntervalMs,
   feedRetryBaseDelayMs: config.feedRetryBaseDelayMs,
   logger: true,
+  metricsToken: config.metricsToken,
   processingMaxAttempts: config.processingMaxAttempts,
   processingRetryBaseDelayMs: config.processingRetryBaseDelayMs,
   processingWorkerPollIntervalMs: config.processingWorkerPollIntervalMs,
   serverURL: config.serverURL,
+  trustProxyHops: config.trustProxyHops,
   uploadsDirectory: config.uploadsDirectory,
 })
 

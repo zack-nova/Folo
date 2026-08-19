@@ -9,14 +9,17 @@
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate-cli.ts",
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
     "start": "tsx --env-file-if-exists=.env src/index.ts",
+    "prod:lock:check": "tsx scripts/update-production-lockfile.ts --check",
+    "prod:lock:update": "tsx scripts/update-production-lockfile.ts",
     "bench": "vitest bench --run",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",
+    "@fastify/helmet": "13.1.0",
     "@fastify/multipart": "10.1.1",
-    "@follow-app/client-sdk": "catalog:",
+    "@fastify/rate-limit": "11.2.0",
     "@follow-app/readability": "workspace:*",
     "@follow/compat-contracts": "workspace:*",
     "better-auth": "1.6.23",
@@ -25,13 +28,14 @@
     "fastify": "5.10.0",
     "pathe": "2.0.3",
     "pg": "8.18.0",
+    "tsx": "4.23.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@follow-app/client-sdk": "catalog:",
     "@follow/configs": "workspace:*",
     "@types/pg": "8.21.0",
     "drizzle-kit": "0.31.10",
-    "tsx": "4.23.0",
     "typescript": "catalog:",
     "vitest": "4.1.10"
   }

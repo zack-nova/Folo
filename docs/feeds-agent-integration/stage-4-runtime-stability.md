@@ -65,12 +65,19 @@ pnpm server:restore:drill backups/folo-2026-08-18.dump
 
 ## 生产部署与回滚
 
-1. 复制 `.env.example` 为 `apps/server/.env.production`，生成独立强随机
-   `BETTER_AUTH_SECRET`、`AI_ENCRYPTION_SECRET` 和 `POSTGRES_PASSWORD`。
+1. 复制 `apps/server/.env.production.example` 为 `apps/server/.env.production`，生成独立强随机
+   `BETTER_AUTH_SECRET`、`AI_ENCRYPTION_SECRET`、`METRICS_TOKEN` 和 URL-safe `POSTGRES_PASSWORD`。
 2. 先执行备份与恢复演练。
-3. 运行 `POSTGRES_PASSWORD=... docker compose -f apps/server/compose.production.yaml up -d --build`。
+3. 运行
+   `docker compose --env-file apps/server/.env.production -f apps/server/compose.production.yaml up -d --build`；
+   `--env-file` 同时为 Compose 插值和容器加载 `POSTGRES_PASSWORD`。
 4. 检查 `/ready`、`/metrics`、能力 manifest 和一条真实 Feed 的手动刷新。
 5. 保留部署镜像 digest、迁移前 backup、上传卷快照和配置版本。
+
+生产模式会拒绝 HTTP 公网 URL、复用的认证/AI 加密密钥、缺少指标令牌以及“公开注册 + 私网 Feed”组合。
+Compose 默认只绑定 `127.0.0.1:3000`，应由一跳可信反向代理终止 TLS；API 容器使用只读根文件系统、
+移除 capabilities、禁止提权并限制进程数。只有临时、明确接受风险的部署才能设置
+`ALLOW_INSECURE_HTTP=true`。
 
 生产 Compose 的备份与演练要显式选择生产编排文件：
 

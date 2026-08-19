@@ -619,6 +619,15 @@ export class PostgresDataStore implements DataStore {
     return (job as ProcessingJobRecord | undefined) ?? null
   }
 
+  async listFailedProcessingJobs(userId: string, limit: number): Promise<ProcessingJobRecord[]> {
+    return (await this.database
+      .select()
+      .from(processingJobs)
+      .where(and(eq(processingJobs.userId, userId), eq(processingJobs.status, "failed")))
+      .orderBy(desc(processingJobs.finishedAt))
+      .limit(Math.min(Math.max(limit, 1), 100))) as ProcessingJobRecord[]
+  }
+
   async listProcessingAttempts(userId: string, jobId: string): Promise<ProcessingAttemptRecord[]> {
     const job = await this.getProcessingJob(userId, jobId)
     if (!job) return []
