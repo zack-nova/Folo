@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto"
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto"
 
 import type { SourceAuditAction, SourceAuditEvent } from "@follow/feed-source-contracts"
 
@@ -13,6 +13,22 @@ export interface AuditEventDraft {
   resourceId: string | null
   resourceType: SourceAuditEvent["resourceType"]
 }
+
+export const createAuditDraft = (
+  actor: string,
+  action: AuditEventDraft["action"],
+  resourceType: AuditEventDraft["resourceType"],
+  resourceId: string | null,
+  details: AuditEventDraft["details"],
+): AuditEventDraft => ({
+  action,
+  actor,
+  details,
+  id: randomUUID(),
+  occurredAt: new Date().toISOString(),
+  resourceId,
+  resourceType,
+})
 
 const stableValue = (value: unknown): string => {
   if (value === null || typeof value === "boolean" || typeof value === "number") {

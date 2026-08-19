@@ -163,6 +163,14 @@ describe("capability manifest", () => {
     )
     expect(manifest.capabilities).toContainEqual(
       expect.objectContaining({
+        id: "sources.page_change",
+        targetStage: 5,
+        provider: "local",
+        clientBehavior: "enabled_when_advertised",
+      }),
+    )
+    expect(manifest.capabilities).toContainEqual(
+      expect.objectContaining({
         id: "rsshub.hosted",
         provider: "unavailable",
         clientBehavior: "hidden",

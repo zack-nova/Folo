@@ -1,5 +1,9 @@
 # Feeds Agent
 
+> Folo 融合覆盖说明：下文旧 Feeds Agent 设计中关于 `track_page_change` 更新同一内容条目或创建
+> “原始内容版本”的描述已被 ADR-0024 与 ADR-0027 取代。当前实现由 `feed_supplier` 保存页面观测状态；
+> 第一次非空观测和后续确认变化分别发布具有新 GUID 的不可变 Feed Entry，信息流核心不保存页面内容版本。
+
 Feeds Agent helps an individual manage personal information sources, keep collection channels working, collect content through available backends, and browse collected content from local storage. The first frontend product surface is **个人信息流** / **Personal Feeds**.
 
 ## Language

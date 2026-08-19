@@ -1,5 +1,5 @@
 import type { AutonomousSourceProviderHealth } from "@follow/feed-source-contracts"
-import { parseRssHubSource } from "@follow/feed-source-contracts"
+import { parsePageChangeSource, parseRssHubSource } from "@follow/feed-source-contracts"
 
 import type { FeedFetcher, FetchedFeed } from "./importer"
 
@@ -66,7 +66,8 @@ export class FeedSupplierFetcher implements FeedFetcher {
 
   supports(input: string): boolean {
     try {
-      return new URL(input).protocol === "rsshub:"
+      const protocol = new URL(input).protocol
+      return protocol === "pagechange:" || protocol === "rsshub:"
     } catch {
       return false
     }
@@ -81,12 +82,12 @@ export class FeedSupplierFetcher implements FeedFetcher {
       if (!response.ok) throw new Error(`Supplier returned HTTP ${response.status}`)
       const payload = (await response.json()) as { providers?: unknown }
       if (!Array.isArray(payload.providers)) throw new Error("Supplier status is invalid")
-      const provider = payload.providers.find(
+      const providers = payload.providers.filter(
         (item): item is AutonomousSourceProviderHealth =>
           Boolean(item) &&
           typeof item === "object" &&
           "id" in item &&
-          item.id === "rsshub" &&
+          (item.id === "rsshub" || item.id === "page_change") &&
           "status" in item &&
           (item.status === "ready" || item.status === "unavailable") &&
           (!("managedRouteCount" in item) ||
@@ -98,13 +99,24 @@ export class FeedSupplierFetcher implements FeedFetcher {
             item.registryMode === "permissive" ||
             item.registryMode === "managed_only"),
       )
-      if (!provider) throw new Error("Supplier did not report RSSHub status")
-      return [provider]
+      if (!providers.some((provider) => provider.id === "rsshub")) {
+        throw new Error("Supplier did not report RSSHub status")
+      }
+      if (!providers.some((provider) => provider.id === "page_change")) {
+        throw new Error("Supplier did not report page change status")
+      }
+      return providers
     } catch (error) {
       return [
         {
           configured: true,
           id: "rsshub",
+          message: error instanceof Error ? error.message.slice(0, 500) : "Supplier unavailable",
+          status: "unavailable",
+        },
+        {
+          configured: true,
+          id: "page_change",
           message: error instanceof Error ? error.message.slice(0, 500) : "Supplier unavailable",
           status: "unavailable",
         },
@@ -116,8 +128,13 @@ export class FeedSupplierFetcher implements FeedFetcher {
     input: string,
     options: { etag?: string | null; lastModified?: string | null } = {},
   ): Promise<FetchedFeed> {
-    const source = parseRssHubSource(input)
-    const requestURL = new URL("v1/feeds/rsshub", this.baseURL)
+    const protocol = new URL(input).protocol
+    const source =
+      protocol === "pagechange:" ? parsePageChangeSource(input) : parseRssHubSource(input)
+    const requestURL = new URL(
+      protocol === "pagechange:" ? "v1/feeds/page-change" : "v1/feeds/rsshub",
+      this.baseURL,
+    )
     requestURL.searchParams.set("url", source.logicalURL)
     const headers = new Headers({ authorization: `Bearer ${this.token}` })
     if (options.etag) headers.set("if-none-match", options.etag)

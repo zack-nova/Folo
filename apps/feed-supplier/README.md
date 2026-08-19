@@ -1,8 +1,8 @@
 # Folo Feed Supplier
 
-阶段 5A 的独立数据源供给服务。它把 `rsshub://` 逻辑地址转换为自建 RSSHub 的标准 RSS/Atom，并通过
-内部 Bearer Token 只向 Folo 主后端开放。5A.2 使用独立 PostgreSQL 保存路由实例、AES-256-GCM 密文和
-HMAC 哈希链审计；数据库和密钥都不进入 Folo 核心。
+阶段 5A 的独立数据源供给服务。它把 `rsshub://` 路由转换为自建 RSSHub 的标准 Feed，并把
+`pagechange://` 页面来源的确认变化物化为新 GUID RSS Entry。5A.2/5A.3 使用独立 PostgreSQL 保存路由、
+密文凭据、页面观测状态、不可变事件和 HMAC 哈希链审计；数据库和密钥都不进入 Folo 核心。
 
 本地通常直接运行仓库根目录的 `pnpm dev:self-hosted:sources`。单独开发时：
 
@@ -25,12 +25,36 @@ POST   /v1/admin/routes
 PATCH  /v1/admin/routes/:routeId
 DELETE /v1/admin/routes/:routeId
 POST   /v1/admin/routes/:routeId/test
+GET    /v1/admin/page-sources
+POST   /v1/admin/page-sources
+GET    /v1/admin/page-sources/:sourceId
+PATCH  /v1/admin/page-sources/:sourceId
+DELETE /v1/admin/page-sources/:sourceId
+POST   /v1/admin/page-sources/:sourceId/test
+POST   /v1/admin/page-sources/:sourceId/check
+GET    /v1/admin/page-sources/:sourceId/events
 GET    /v1/admin/audit
 GET    /v1/admin/audit/verify
 ```
 
 凭据值只允许写入，不允许读回。路由通过 `secretQueryBindings` 将上游查询参数绑定到凭据 ID，诊断 URL、
 响应和审计都不会包含明文。RSSHub 的基础 `ACCESS_KEY` 仍是部署密钥，不属于业务凭据库。
+
+创建一个默认不定时抓取的页面来源，并执行第一次真实观测：
+
+```bash
+curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"name":"Example status","targetURL":"https://example.com/status","contentSelector":"main"}' \
+  http://127.0.0.1:3001/v1/admin/page-sources
+
+curl -fsS -X POST -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
+  http://127.0.0.1:3001/v1/admin/page-sources/<source-id>/check
+```
+
+第一次非空观测会立即发布消息。后续不同指纹默认等待五分钟再次确认。要启用定时检测，把来源更新为
+`{"enabled":true,"intervalMinutes":360}`。创建响应中的 `feedURL` 可以直接粘贴进 Folo 发现输入框订阅；
+页面 Feed 只读取已物化事件，不会在核心轮询时访问目标网页。
 
 生产需分别复制主 API 与 sources 环境文件：
 

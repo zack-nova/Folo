@@ -1,4 +1,5 @@
 import type {
+  PageChangeEvent,
   SourceAuditEvent,
   SourceAuditVerification,
   SourceRouteInstance,
@@ -6,6 +7,7 @@ import type {
 
 import type { AuditEventDraft } from "./audit"
 import { auditEventHash, auditHashesMatch } from "./audit"
+import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
 import type { StoredCredential, SupplierRepository } from "./repository"
 import { RepositoryConflictError } from "./repository"
 
@@ -21,9 +23,18 @@ const cloneRoute = (route: SourceRouteInstance): SourceRouteInstance => ({
   secretQueryBindings: { ...route.secretQueryBindings },
 })
 
+const clonePageSource = (source: StoredPageChangeSource): StoredPageChangeSource => ({
+  ...source,
+  ignoreSelectors: [...source.ignoreSelectors],
+})
+
+const clonePageEvent = (event: PageChangeEvent): PageChangeEvent => ({ ...event })
+
 export class MemorySupplierRepository implements SupplierRepository {
   private readonly auditEvents: SourceAuditEvent[] = []
   private readonly credentials = new Map<string, StoredCredential>()
+  private readonly pageEvents = new Map<string, PageChangeEvent[]>()
+  private readonly pageSources = new Map<string, StoredPageChangeSource>()
   private readonly routes = new Map<string, SourceRouteInstance>()
 
   constructor(private readonly auditKey: Buffer) {}
@@ -38,6 +49,107 @@ export class MemorySupplierRepository implements SupplierRepository {
 
   async countManagedRoutes(): Promise<number> {
     return [...this.routes.values()].filter((route) => !route.deletedAt).length
+  }
+
+  async countPageChangeSources(now: string): Promise<PageChangeProviderCounts> {
+    const sources = [...this.pageSources.values()].filter((source) => !source.deletedAt)
+    return {
+      due: sources.filter(
+        (source) => source.enabled && source.nextCheckAt && source.nextCheckAt <= now,
+      ).length,
+      enabled: sources.filter((source) => source.enabled).length,
+      total: sources.length,
+    }
+  }
+
+  async listPageChangeSources(): Promise<StoredPageChangeSource[]> {
+    return [...this.pageSources.values()]
+      .filter((source) => !source.deletedAt)
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map(clonePageSource)
+  }
+
+  async findPageChangeSource(id: string): Promise<StoredPageChangeSource | null> {
+    const source = this.pageSources.get(id)
+    return source && !source.deletedAt ? clonePageSource(source) : null
+  }
+
+  async createPageChangeSource(
+    source: StoredPageChangeSource,
+    audit: AuditEventDraft,
+  ): Promise<StoredPageChangeSource> {
+    this.assertUniquePageSourceName(source.name, source.id)
+    this.pageSources.set(source.id, clonePageSource(source))
+    this.appendAudit(audit)
+    return clonePageSource(source)
+  }
+
+  async updatePageChangeSource(
+    source: StoredPageChangeSource,
+    audit: AuditEventDraft,
+  ): Promise<StoredPageChangeSource | null> {
+    const current = this.pageSources.get(source.id)
+    if (!current || current.deletedAt) return null
+    this.assertUniquePageSourceName(source.name, source.id)
+    this.pageSources.set(source.id, clonePageSource(source))
+    this.appendAudit(audit)
+    return clonePageSource(source)
+  }
+
+  async softDeletePageChangeSource(
+    id: string,
+    deletedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredPageChangeSource | null> {
+    const source = this.pageSources.get(id)
+    if (!source || source.deletedAt) return null
+    const updated = {
+      ...source,
+      deletedAt,
+      enabled: false,
+      nextCheckAt: null,
+      updatedAt: deletedAt,
+    }
+    this.pageSources.set(id, clonePageSource(updated))
+    this.appendAudit(audit)
+    return clonePageSource(updated)
+  }
+
+  async listDuePageChangeSources(now: string, limit: number): Promise<StoredPageChangeSource[]> {
+    return [...this.pageSources.values()]
+      .filter(
+        (source) =>
+          !source.deletedAt && source.enabled && source.nextCheckAt && source.nextCheckAt <= now,
+      )
+      .sort((left, right) => left.nextCheckAt!.localeCompare(right.nextCheckAt!))
+      .slice(0, limit)
+      .map(clonePageSource)
+  }
+
+  async savePageChangeObservation(
+    source: StoredPageChangeSource,
+    event: PageChangeEvent | null,
+  ): Promise<StoredPageChangeSource> {
+    const current = this.pageSources.get(source.id)
+    if (!current || current.deletedAt) throw new Error("Page change source was not found")
+    const events = this.pageEvents.get(source.id) ?? []
+    if (event) {
+      if (events.some((candidate) => candidate.id === event.id || candidate.guid === event.guid)) {
+        throw new RepositoryConflictError("Page change event already exists")
+      }
+      events.push(clonePageEvent(event))
+      this.pageEvents.set(source.id, events)
+    }
+    const updated = { ...source, eventCount: source.eventCount + (event ? 1 : 0) }
+    this.pageSources.set(source.id, clonePageSource(updated))
+    return clonePageSource(updated)
+  }
+
+  async listPageChangeEvents(sourceId: string, limit: number): Promise<PageChangeEvent[]> {
+    return [...(this.pageEvents.get(sourceId) ?? [])]
+      .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt))
+      .slice(0, limit)
+      .map(clonePageEvent)
   }
 
   async listCredentials(): Promise<StoredCredential[]> {
@@ -202,5 +314,16 @@ export class MemorySupplierRepository implements SupplierRepository {
     )
     if (duplicate)
       throw new RepositoryConflictError("An active route already uses this name or URL")
+  }
+
+  private assertUniquePageSourceName(name: string, id: string): void {
+    const normalizedName = name.toLocaleLowerCase()
+    const duplicate = [...this.pageSources.values()].some(
+      (source) =>
+        source.id !== id && !source.deletedAt && source.name.toLocaleLowerCase() === normalizedName,
+    )
+    if (duplicate) {
+      throw new RepositoryConflictError("An active page source already uses this name")
+    }
   }
 }

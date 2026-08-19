@@ -8,7 +8,10 @@ import rateLimit from "@fastify/rate-limit"
 import { createCapabilityNotImplementedContract } from "@follow/compat-contracts"
 import capabilityManifest from "@follow/compat-contracts/capabilities" with { type: "json" }
 import type { AutonomousSourceProviderHealth } from "@follow/feed-source-contracts"
-import { RSSHUB_SELF_HOSTED_CAPABILITY } from "@follow/feed-source-contracts"
+import {
+  PAGE_CHANGE_CAPABILITY,
+  RSSHUB_SELF_HOSTED_CAPABILITY,
+} from "@follow/feed-source-contracts"
 import { readabilityFromHTML } from "@follow-app/readability"
 import { fromNodeHeaders } from "better-auth/node"
 import Fastify from "fastify"
@@ -577,6 +580,12 @@ export const buildServer = async ({
           message: null,
           status: "disabled",
         },
+        {
+          configured: false,
+          id: "page_change",
+          message: null,
+          status: "disabled",
+        },
       ]
     }
     try {
@@ -586,6 +595,12 @@ export const buildServer = async ({
         {
           configured: true,
           id: "rsshub",
+          message: error instanceof Error ? error.message.slice(0, 500) : "Supplier unavailable",
+          status: "unavailable",
+        },
+        {
+          configured: true,
+          id: "page_change",
           message: error instanceof Error ? error.message.slice(0, 500) : "Supplier unavailable",
           status: "unavailable",
         },
@@ -711,6 +726,7 @@ export const buildServer = async ({
       dataStore.getOperationalStats(new Date()),
       sourceProviderStatuses(),
     ])
+    const pageChangeProvider = sourceProviders.find((provider) => provider.id === "page_change")
     const lines = [
       "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
       "# TYPE folo_subscribed_feeds gauge",
@@ -732,6 +748,12 @@ export const buildServer = async ({
         (provider) =>
           `folo_source_provider_ready{provider="${provider.id}"} ${provider.status === "ready" ? 1 : 0}`,
       ),
+      "# HELP folo_page_change_sources_enabled Page change sources currently enabled.",
+      "# TYPE folo_page_change_sources_enabled gauge",
+      `folo_page_change_sources_enabled ${pageChangeProvider?.enabledSourceCount ?? 0}`,
+      "# HELP folo_page_change_sources_due Page change sources currently due for observation.",
+      "# TYPE folo_page_change_sources_due gauge",
+      `folo_page_change_sources_due ${pageChangeProvider?.dueSourceCount ?? 0}`,
       "",
     ]
     return reply.type("text/plain; version=0.0.4; charset=utf-8").send(lines.join("\n"))
@@ -822,13 +844,17 @@ export const buildServer = async ({
   )
 
   server.get("/api/extensions/capabilities", async () => {
-    const autonomousSourcesEnabled = feedFetcher?.supports?.("rsshub://example/route") === true
+    const rssHubSourcesEnabled = feedFetcher?.supports?.("rsshub://example/route") === true
+    const pageChangeSourcesEnabled =
+      feedFetcher?.supports?.("pagechange://8bd44f7a-84d2-4b0c-b052-3cdacbfc3919") === true
+    const autonomousSourcesEnabled = rssHubSourcesEnabled || pageChangeSourcesEnabled
     const capabilities = capabilityManifest.capabilities
       .filter(
         (capability) =>
           capability.provider === "local" &&
           (implementedCapabilities.has(capability.id) ||
-            (capability.id === RSSHUB_SELF_HOSTED_CAPABILITY && autonomousSourcesEnabled)),
+            (capability.id === RSSHUB_SELF_HOSTED_CAPABILITY && rssHubSourcesEnabled) ||
+            (capability.id === PAGE_CHANGE_CAPABILITY && pageChangeSourcesEnabled)),
       )
       .map((capability) => ({ id: capability.id, provider: "local" as const }))
     const enabled = new Set(capabilities.map((capability) => capability.id))

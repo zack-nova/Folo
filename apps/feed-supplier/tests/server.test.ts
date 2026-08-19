@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { loadFeedSupplierConfig } from "../src/config"
+import { PageFetcher } from "../src/page-fetcher"
 import { buildFeedSupplier } from "../src/server"
 
 const config = loadFeedSupplierConfig({
@@ -56,6 +57,74 @@ describe("feed supplier", () => {
 
     expect(response.statusCode).toBe(400)
     expect(fetchImplementation).not.toHaveBeenCalled()
+    await server.close()
+  })
+
+  it("separates page source administration from materialized feed reads", async () => {
+    const pageFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("<html><head><title>Price</title></head><main>$42</main></html>", {
+        headers: { "content-type": "text/html", etag: '"price-42"' },
+      }),
+    )
+    const pageFetcher = new PageFetcher({
+      fetchImplementation: pageFetch,
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      maxBytes: 1024 * 1024,
+      maxContentBytes: 256 * 1024,
+      timeoutMs: 5_000,
+    })
+    const server = await buildFeedSupplier({ config, pageFetcher })
+    const internalHeaders = { authorization: `Bearer ${config.internalToken}` }
+    const adminHeaders = { authorization: `Bearer ${config.adminToken}` }
+
+    const denied = await server.inject({
+      headers: internalHeaders,
+      method: "GET",
+      url: "/v1/admin/page-sources",
+    })
+    expect(denied.statusCode).toBe(401)
+
+    const created = await server.inject({
+      headers: adminHeaders,
+      method: "POST",
+      payload: {
+        contentSelector: "main",
+        name: "Public price",
+        targetURL: "https://example.com/price",
+      },
+      url: "/v1/admin/page-sources",
+    })
+    expect(created.statusCode).toBe(201)
+    const source = created.json<{ source: { feedURL: string; id: string } }>().source
+
+    const checked = await server.inject({
+      headers: adminHeaders,
+      method: "POST",
+      url: `/v1/admin/page-sources/${source.id}/check`,
+    })
+    expect(checked.json()).toMatchObject({ status: "initial_published" })
+
+    const feedURL = `/v1/feeds/page-change?url=${encodeURIComponent(source.feedURL)}`
+    const feed = await server.inject({ headers: internalHeaders, method: "GET", url: feedURL })
+    expect(feed.statusCode).toBe(200)
+    expect(feed.headers["content-type"]).toContain("application/rss+xml")
+    expect(feed.body).toContain("$42")
+    const notModified = await server.inject({
+      headers: { ...internalHeaders, "if-none-match": feed.headers.etag! },
+      method: "GET",
+      url: feedURL,
+    })
+    expect(notModified.statusCode).toBe(304)
+
+    const forbiddenSecret = await server.inject({
+      headers: adminHeaders,
+      method: "PATCH",
+      payload: { targetURL: "https://example.com/price?token=must-not-leak" },
+      url: `/v1/admin/page-sources/${source.id}`,
+    })
+    expect(forbiddenSecret.statusCode).toBe(400)
+    expect(forbiddenSecret.body).not.toContain("must-not-leak")
+
     await server.close()
   })
 })

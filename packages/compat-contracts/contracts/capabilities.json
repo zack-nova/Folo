@@ -439,6 +439,16 @@
       "protocolRoutes": []
     },
     {
+      "id": "sources.page_change",
+      "title": "Autonomous page change sources",
+      "targetStage": 5,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
       "id": "rsshub.hosted",
       "title": "Hosted RSSHub discovery and routes",
       "targetStage": 5,

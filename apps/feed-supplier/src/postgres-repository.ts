@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 
 import type {
+  PageChangeEvent,
   SourceAuditAction,
   SourceAuditEvent,
   SourceAuditVerification,
@@ -11,6 +12,7 @@ import { Pool } from "pg"
 
 import type { AuditDetails, AuditEventDraft } from "./audit"
 import { auditEventHash, auditHashesMatch } from "./audit"
+import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
 import type { StoredCredential, SupplierRepository } from "./repository"
 import { RepositoryConflictError } from "./repository"
 
@@ -49,6 +51,48 @@ interface AuditRow extends QueryResultRow {
   resource_id: string | null
   resource_type: SourceAuditEvent["resourceType"]
   sequence: string
+}
+
+interface PageSourceRow extends QueryResultRow {
+  baseline_content: string | null
+  baseline_fingerprint: string | null
+  baseline_observed_at: Date | string | null
+  confirm_delay_seconds: number
+  consecutive_failures: number
+  content_selector: string | null
+  created_at: Date | string
+  deleted_at: Date | string | null
+  enabled: boolean
+  etag: string | null
+  event_count: number | string
+  id: string
+  ignore_selectors: unknown
+  interval_minutes: number | null
+  last_attempt_at: Date | string | null
+  last_error_code: string | null
+  last_error_summary: string | null
+  last_modified: string | null
+  last_success_at: Date | string | null
+  name: string
+  next_check_at: Date | string | null
+  pending_confirm_after: Date | string | null
+  pending_content: string | null
+  pending_fingerprint: string | null
+  pending_first_observed_at: Date | string | null
+  target_url: string
+  updated_at: Date | string
+}
+
+interface PageEventRow extends QueryResultRow {
+  after_fingerprint: string
+  before_fingerprint: string | null
+  content: string
+  diff: string | null
+  guid: string
+  id: string
+  published_at: Date | string
+  source_id: string
+  title: string
 }
 
 const isoTimestamp = (value: Date | string): string =>
@@ -103,6 +147,63 @@ const auditFromRow = (row: AuditRow): SourceAuditEvent => ({
   sequence: Number(row.sequence),
 })
 
+const optionalTimestamp = (value: Date | string | null): string | null =>
+  value ? isoTimestamp(value) : null
+
+const parseIgnoreSelectors = (value: unknown): string[] => {
+  if (!Array.isArray(value) || value.some((selector) => typeof selector !== "string")) {
+    throw new Error("Persisted page ignore selectors are invalid")
+  }
+  return [...value]
+}
+
+const pageSourceFromRow = (row: PageSourceRow): StoredPageChangeSource => ({
+  baselineContent: row.baseline_content,
+  baselineFingerprint: row.baseline_fingerprint?.trim() ?? null,
+  baselineObservedAt: optionalTimestamp(row.baseline_observed_at),
+  confirmDelaySeconds: row.confirm_delay_seconds,
+  consecutiveFailures: row.consecutive_failures,
+  contentSelector: row.content_selector,
+  createdAt: isoTimestamp(row.created_at),
+  deletedAt: optionalTimestamp(row.deleted_at),
+  enabled: row.enabled,
+  etag: row.etag,
+  eventCount: Number(row.event_count),
+  feedURL: `pagechange://${row.id}`,
+  id: row.id,
+  ignoreSelectors: parseIgnoreSelectors(row.ignore_selectors),
+  intervalMinutes: row.interval_minutes,
+  lastAttemptAt: optionalTimestamp(row.last_attempt_at),
+  lastErrorCode: row.last_error_code,
+  lastErrorSummary: row.last_error_summary,
+  lastModified: row.last_modified,
+  lastSuccessAt: optionalTimestamp(row.last_success_at),
+  name: row.name,
+  nextCheckAt: optionalTimestamp(row.next_check_at),
+  pendingConfirmAfter: optionalTimestamp(row.pending_confirm_after),
+  pendingContent: row.pending_content,
+  pendingFingerprint: row.pending_fingerprint?.trim() ?? null,
+  pendingFirstObservedAt: optionalTimestamp(row.pending_first_observed_at),
+  targetURL: row.target_url,
+  updatedAt: isoTimestamp(row.updated_at),
+})
+
+const pageEventFromRow = (row: PageEventRow): PageChangeEvent => ({
+  afterFingerprint: row.after_fingerprint.trim(),
+  beforeFingerprint: row.before_fingerprint?.trim() ?? null,
+  content: row.content,
+  diff: row.diff,
+  guid: row.guid,
+  id: row.id,
+  publishedAt: isoTimestamp(row.published_at),
+  sourceId: row.source_id,
+  title: row.title,
+})
+
+const pageSourceSelect = `select source.*,
+  (select count(*) from page_change_events event where event.source_id = source.id)::text as event_count
+  from page_change_sources source`
+
 const isUniqueViolation = (error: unknown): boolean =>
   Boolean(error && typeof error === "object" && "code" in error && error.code === "23505")
 
@@ -126,9 +227,11 @@ export class PostgresSupplierRepository implements SupplierRepository {
   }
 
   async initialize(): Promise<void> {
-    const migration = await readFile(
-      new URL("../migrations/001_source_registry.sql", import.meta.url),
-      "utf8",
+    const migrations = await Promise.all(
+      ["001_source_registry.sql", "002_page_change_sources.sql"].map(async (filename, index) => ({
+        sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
+        version: index + 1,
+      })),
     )
     await this.withTransaction(async (client) => {
       await client.query("select pg_advisory_xact_lock($1)", [1_931_505_202])
@@ -138,13 +241,17 @@ export class PostgresSupplierRepository implements SupplierRepository {
           applied_at timestamptz not null default now()
         )
       `)
-      const applied = await client.query<{ version: number }>(
-        "select version from feed_supplier_schema_migrations where version = $1",
-        [1],
-      )
-      if (applied.rowCount === 0) {
-        await client.query(migration)
-        await client.query("insert into feed_supplier_schema_migrations (version) values ($1)", [1])
+      for (const migration of migrations) {
+        const applied = await client.query<{ version: number }>(
+          "select version from feed_supplier_schema_migrations where version = $1",
+          [migration.version],
+        )
+        if (applied.rowCount === 0) {
+          await client.query(migration.sql)
+          await client.query("insert into feed_supplier_schema_migrations (version) values ($1)", [
+            migration.version,
+          ])
+        }
       }
     })
   }
@@ -167,6 +274,220 @@ export class PostgresSupplierRepository implements SupplierRepository {
       "select count(*)::text as count from source_route_instances where deleted_at is null",
     )
     return Number(result.rows[0]?.count ?? 0)
+  }
+
+  async countPageChangeSources(now: string): Promise<PageChangeProviderCounts> {
+    const result = await this.pool.query<{ due: string; enabled: string; total: string }>(
+      `select
+         count(*) filter (where enabled = true and next_check_at <= $1)::text as due,
+         count(*) filter (where enabled = true)::text as enabled,
+         count(*)::text as total
+       from page_change_sources where deleted_at is null`,
+      [now],
+    )
+    return {
+      due: Number(result.rows[0]?.due ?? 0),
+      enabled: Number(result.rows[0]?.enabled ?? 0),
+      total: Number(result.rows[0]?.total ?? 0),
+    }
+  }
+
+  async listPageChangeSources(): Promise<StoredPageChangeSource[]> {
+    const result = await this.pool.query<PageSourceRow>(
+      `${pageSourceSelect} where source.deleted_at is null order by lower(source.name), source.created_at`,
+    )
+    return result.rows.map(pageSourceFromRow)
+  }
+
+  async findPageChangeSource(id: string): Promise<StoredPageChangeSource | null> {
+    const result = await this.pool.query<PageSourceRow>(
+      `${pageSourceSelect} where source.id = $1 and source.deleted_at is null limit 1`,
+      [id],
+    )
+    return result.rows[0] ? pageSourceFromRow(result.rows[0]) : null
+  }
+
+  async createPageChangeSource(
+    source: StoredPageChangeSource,
+    audit: AuditEventDraft,
+  ): Promise<StoredPageChangeSource> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        const result = await client.query<PageSourceRow>(
+          `insert into page_change_sources
+            (id, name, target_url, enabled, interval_minutes, confirm_delay_seconds,
+             content_selector, ignore_selectors, etag, last_modified, baseline_fingerprint,
+             baseline_content, baseline_observed_at, pending_fingerprint, pending_content,
+             pending_first_observed_at, pending_confirm_after, next_check_at, last_attempt_at,
+             last_success_at, last_error_code, last_error_summary, consecutive_failures,
+             deleted_at, created_at, updated_at)
+           values (${Array.from({ length: 26 }, (_, index) => `$${index + 1}`).join(", ")})
+           returning *`,
+          this.pageSourceParameters(source),
+        )
+        return pageSourceFromRow({ ...result.rows[0]!, event_count: 0 })
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new RepositoryConflictError("An active page source already uses this name")
+      }
+      throw error
+    }
+  }
+
+  async updatePageChangeSource(
+    source: StoredPageChangeSource,
+    audit: AuditEventDraft,
+  ): Promise<StoredPageChangeSource | null> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        const values = this.pageSourceParameters(source)
+        const assignments = [
+          "name",
+          "target_url",
+          "enabled",
+          "interval_minutes",
+          "confirm_delay_seconds",
+          "content_selector",
+          "ignore_selectors",
+          "etag",
+          "last_modified",
+          "baseline_fingerprint",
+          "baseline_content",
+          "baseline_observed_at",
+          "pending_fingerprint",
+          "pending_content",
+          "pending_first_observed_at",
+          "pending_confirm_after",
+          "next_check_at",
+          "last_attempt_at",
+          "last_success_at",
+          "last_error_code",
+          "last_error_summary",
+          "consecutive_failures",
+          "deleted_at",
+          "created_at",
+          "updated_at",
+        ]
+        const result = await client.query<PageSourceRow>(
+          `update page_change_sources set ${assignments
+            .map((column, index) => `${column} = $${index + 2}`)
+            .join(", ")}
+           where id = $1 and deleted_at is null returning *`,
+          values,
+        )
+        return result.rows[0]
+          ? pageSourceFromRow({ ...result.rows[0], event_count: source.eventCount })
+          : null
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new RepositoryConflictError("An active page source already uses this name")
+      }
+      throw error
+    }
+  }
+
+  async softDeletePageChangeSource(
+    id: string,
+    deletedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredPageChangeSource | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<PageSourceRow>(
+        `update page_change_sources
+         set enabled = false, next_check_at = null, deleted_at = $2, updated_at = $2
+         where id = $1 and deleted_at is null returning *`,
+        [id, deletedAt],
+      )
+      if (!result.rows[0]) return null
+      const count = await client.query<{ count: string }>(
+        "select count(*)::text as count from page_change_events where source_id = $1",
+        [id],
+      )
+      return pageSourceFromRow({ ...result.rows[0], event_count: count.rows[0]?.count ?? 0 })
+    })
+  }
+
+  async listDuePageChangeSources(now: string, limit: number): Promise<StoredPageChangeSource[]> {
+    const result = await this.pool.query<PageSourceRow>(
+      `${pageSourceSelect}
+       where source.deleted_at is null and source.enabled = true
+         and source.next_check_at is not null and source.next_check_at <= $1
+       order by source.next_check_at asc limit $2`,
+      [now, limit],
+    )
+    return result.rows.map(pageSourceFromRow)
+  }
+
+  async savePageChangeObservation(
+    source: StoredPageChangeSource,
+    event: PageChangeEvent | null,
+  ): Promise<StoredPageChangeSource> {
+    return this.withTransaction(async (client) => {
+      const result = await client.query<PageSourceRow>(
+        `update page_change_sources set
+           etag = $2, last_modified = $3, baseline_fingerprint = $4,
+           baseline_content = $5, baseline_observed_at = $6, pending_fingerprint = $7,
+           pending_content = $8, pending_first_observed_at = $9, pending_confirm_after = $10,
+           next_check_at = $11, last_attempt_at = $12, last_success_at = $13,
+           last_error_code = $14, last_error_summary = $15, consecutive_failures = $16,
+           updated_at = $17
+         where id = $1 and deleted_at is null returning *`,
+        [
+          source.id,
+          source.etag,
+          source.lastModified,
+          source.baselineFingerprint,
+          source.baselineContent,
+          source.baselineObservedAt,
+          source.pendingFingerprint,
+          source.pendingContent,
+          source.pendingFirstObservedAt,
+          source.pendingConfirmAfter,
+          source.nextCheckAt,
+          source.lastAttemptAt,
+          source.lastSuccessAt,
+          source.lastErrorCode,
+          source.lastErrorSummary,
+          source.consecutiveFailures,
+          source.updatedAt,
+        ],
+      )
+      if (!result.rows[0]) throw new Error("Page change source was not found")
+      if (event) {
+        await client.query(
+          `insert into page_change_events
+            (id, source_id, guid, before_fingerprint, after_fingerprint, title, content, diff,
+             published_at, created_at)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
+          [
+            event.id,
+            event.sourceId,
+            event.guid,
+            event.beforeFingerprint,
+            event.afterFingerprint,
+            event.title,
+            event.content,
+            event.diff,
+            event.publishedAt,
+          ],
+        )
+      }
+      return pageSourceFromRow({
+        ...result.rows[0],
+        event_count: source.eventCount + (event ? 1 : 0),
+      })
+    })
+  }
+
+  async listPageChangeEvents(sourceId: string, limit: number): Promise<PageChangeEvent[]> {
+    const result = await this.pool.query<PageEventRow>(
+      `select * from page_change_events where source_id = $1
+       order by published_at desc, id desc limit $2`,
+      [sourceId, limit],
+    )
+    return result.rows.map(pageEventFromRow)
   }
 
   async listCredentials(): Promise<StoredCredential[]> {
@@ -471,6 +792,37 @@ export class PostgresSupplierRepository implements SupplierRepository {
       route.deletedAt,
       route.createdAt,
       route.updatedAt,
+    ]
+  }
+
+  private pageSourceParameters(source: StoredPageChangeSource): unknown[] {
+    return [
+      source.id,
+      source.name,
+      source.targetURL,
+      source.enabled,
+      source.intervalMinutes,
+      source.confirmDelaySeconds,
+      source.contentSelector,
+      JSON.stringify(source.ignoreSelectors),
+      source.etag,
+      source.lastModified,
+      source.baselineFingerprint,
+      source.baselineContent,
+      source.baselineObservedAt,
+      source.pendingFingerprint,
+      source.pendingContent,
+      source.pendingFirstObservedAt,
+      source.pendingConfirmAfter,
+      source.nextCheckAt,
+      source.lastAttemptAt,
+      source.lastSuccessAt,
+      source.lastErrorCode,
+      source.lastErrorSummary,
+      source.consecutiveFailures,
+      source.deletedAt,
+      source.createdAt,
+      source.updatedAt,
     ]
   }
 }

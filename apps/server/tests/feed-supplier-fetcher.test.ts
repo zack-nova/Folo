@@ -25,6 +25,16 @@ describe("feed supplier fetcher", () => {
             registryMode: "managed_only",
             status: "ready",
           },
+          {
+            configured: true,
+            dueSourceCount: 0,
+            enabledSourceCount: 1,
+            id: "page_change",
+            lastCycleAt: "2026-08-19T08:00:00.000Z",
+            message: null,
+            persistenceStatus: "ready",
+            status: "ready",
+          },
         ],
       }),
     )
@@ -40,7 +50,46 @@ describe("feed supplier fetcher", () => {
         persistenceStatus: "ready",
         registryMode: "managed_only",
       }),
+      expect.objectContaining({
+        enabledSourceCount: 1,
+        id: "page_change",
+        persistenceStatus: "ready",
+      }),
     ])
+  })
+
+  it("routes pagechange:// materialized feeds without using the ordinary RSS fetcher", async () => {
+    const feedXML = await readFile(fixturePath, "utf8")
+    const supplierFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(feedXML, {
+        headers: {
+          "content-type": "application/rss+xml",
+          "x-folo-upstream-url": "https://example.com/status",
+        },
+      }),
+    )
+    const standardFetch = vi.fn<typeof fetch>()
+    const router = new RoutingFeedFetcher(
+      new HttpFeedFetcher({
+        fetchImplementation: standardFetch,
+        lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      }),
+      new FeedSupplierFetcher({
+        baseURL: "http://feed-supplier:3001",
+        fetchImplementation: supplierFetch,
+        token: "internal-feed-supplier-token-000000000000",
+      }),
+    )
+    const sourceURL = "pagechange://8bd44f7a-84d2-4b0c-b052-3cdacbfc3919"
+
+    const importer = new FeedImporter(new MemoryDataStore(), router)
+    const imported = await importer.subscribe("owner", { url: sourceURL })
+
+    expect(imported.feed.url).toBe(sourceURL)
+    expect(imported.entries.length).toBeGreaterThan(0)
+    expect(router.providerFor(sourceURL)).toBe("feed_supplier")
+    expect(standardFetch).not.toHaveBeenCalled()
+    expect(String(supplierFetch.mock.calls[0]?.[0])).toContain("/v1/feeds/page-change?url=")
   })
 
   it("routes rsshub:// sources through the authenticated supplier and preserves logical identity", async () => {

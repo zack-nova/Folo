@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto"
 
 import { Pool } from "pg"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { loadFeedSupplierConfig } from "../src/config"
+import { PageFetcher } from "../src/page-fetcher"
 import { PostgresSupplierRepository } from "../src/postgres-repository"
 import { buildFeedSupplier } from "../src/server"
 
@@ -26,9 +27,21 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
         connectionString: databaseURL!,
         maxConnections: 2,
       })
+    const pageFetcher = new PageFetcher({
+      fetchImplementation: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response("<main>Initial page value</main>", {
+          headers: { "content-type": "text/html" },
+        }),
+      ),
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      maxBytes: 1024 * 1024,
+      maxContentBytes: 256 * 1024,
+      timeoutMs: 5_000,
+    })
 
     const firstServer = await buildFeedSupplier({
       config: firstConfig,
+      pageFetcher,
       repository: createRepository(firstConfig),
     })
     const headers = { authorization: `Bearer ${firstConfig.adminToken}` }
@@ -52,6 +65,27 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
     })
     expect(routeResponse.statusCode).toBe(201)
     const routeId = routeResponse.json<{ route: { id: string } }>().route.id
+    const pageSourceResponse = await firstServer.inject({
+      headers,
+      method: "POST",
+      payload: {
+        contentSelector: "main",
+        name: `postgres-page-${suffix}`,
+        targetURL: `https://example.com/${suffix}`,
+      },
+      url: "/v1/admin/page-sources",
+    })
+    expect(pageSourceResponse.statusCode).toBe(201)
+    const pageSourceId = pageSourceResponse.json<{ source: { id: string } }>().source.id
+    expect(
+      (
+        await firstServer.inject({
+          headers,
+          method: "POST",
+          url: `/v1/admin/page-sources/${pageSourceId}/check`,
+        })
+      ).json(),
+    ).toMatchObject({ status: "initial_published" })
     await firstServer.close()
 
     const secondConfig = loadFeedSupplierConfig({
@@ -65,6 +99,7 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
     })
     const secondServer = await buildFeedSupplier({
       config: secondConfig,
+      pageFetcher,
       repository: createRepository(secondConfig),
     })
     const rotation = await secondServer.inject({
@@ -84,6 +119,15 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
     expect(persistedCredential).toMatchObject({ id: credentialId, keyId: "current-key" })
     const routes = await secondServer.inject({ headers, method: "GET", url: "/v1/admin/routes" })
     expect(routes.body).toContain(`rsshub://integration/${suffix}`)
+    const pageSources = await secondServer.inject({
+      headers,
+      method: "GET",
+      url: "/v1/admin/page-sources",
+    })
+    expect(pageSources.body).toContain(pageSourceId)
+    expect(pageSources.json<{ sources: Array<{ eventCount: number }> }>().sources).toEqual(
+      expect.arrayContaining([expect.objectContaining({ eventCount: 1 })]),
+    )
     const verification = await secondServer.inject({
       headers,
       method: "GET",
@@ -102,6 +146,11 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
         routeId,
       ]),
     ).rejects.toThrow("source_audit_events is append-only")
+    await expect(
+      directDatabase.query("update page_change_events set title = title where source_id = $1", [
+        pageSourceId,
+      ]),
+    ).rejects.toThrow("page_change_events is immutable")
     await directDatabase.end()
 
     expect(
@@ -110,6 +159,15 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
           headers,
           method: "DELETE",
           url: `/v1/admin/routes/${routeId}`,
+        })
+      ).statusCode,
+    ).toBe(204)
+    expect(
+      (
+        await secondServer.inject({
+          headers,
+          method: "DELETE",
+          url: `/v1/admin/page-sources/${pageSourceId}`,
         })
       ).statusCode,
     ).toBe(204)

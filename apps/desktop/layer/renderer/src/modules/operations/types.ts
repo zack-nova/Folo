@@ -53,7 +53,10 @@ export type OperationsStatus = {
   } | null
   source_providers: Array<{
     configured: boolean
-    id: "rsshub"
+    dueSourceCount?: number
+    enabledSourceCount?: number
+    id: "page_change" | "rsshub"
+    lastCycleAt?: string | null
     managedRouteCount?: number
     message: string | null
     persistenceStatus?: "ready" | "unavailable"

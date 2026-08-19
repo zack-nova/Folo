@@ -43,12 +43,15 @@ import { FeedForm } from "./FeedForm"
 
 const isFeedLikeUrl = (value: string) => {
   const trimmed = value.trim()
-  return /^(?:https?:\/\/|rsshub:\/\/|folo:\/\/|follow:\/\/)/.test(trimmed)
+  return /^(?:https?:\/\/|pagechange:\/\/|rsshub:\/\/|folo:\/\/|follow:\/\/)/.test(trimmed)
 }
 
 // Auto-detect input type
-function detectInputType(value: string): "rss" | "rsshub" | "search" {
+function detectInputType(value: string): "pagechange" | "rss" | "rsshub" | "search" {
   const trimmed = value.trim()
+  if (trimmed.startsWith("pagechange://")) {
+    return "pagechange"
+  }
   if (trimmed.startsWith("rsshub://")) {
     return "rsshub"
   }
@@ -71,6 +74,14 @@ const rssSchema = z.object({
 
 const rsshubSchema = z.object({
   keyword: z.string().url().startsWith("rsshub://"),
+})
+
+const pageChangeSchema = z.object({
+  keyword: z
+    .string()
+    .regex(
+      /^pagechange:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    ),
 })
 
 type SearchFormData = z.infer<typeof searchSchema>
@@ -110,6 +121,7 @@ export function UnifiedDiscoverForm() {
   const organizationEnabled = useCapability("organization.core")
   const opmlEnabled = useCapability("subscriptions.opml")
   const rsshubEnabled = useCapability("sources.rsshub_self_hosted")
+  const pageChangeEnabled = useCapability("sources.page_change")
   const inboxEnabled = useCapability("inboxes.core")
   const profilesEnabled = useCapability("profiles.core")
   const isSelfHosted = capabilityManifest !== null
@@ -170,6 +182,21 @@ export function UnifiedDiscoverForm() {
         const validated = rsshubSchema.safeParse({ keyword })
         if (!validated.success) {
           throw new Error("Invalid RSSHub route")
+        }
+        present({
+          title: t("feed_form.add_feed"),
+          content: () => <FeedForm url={keyword} onSuccess={dismissAll} />,
+        })
+        return []
+      }
+
+      if (inputType === "pagechange") {
+        if (!pageChangeEnabled) {
+          throw new Error("Page change sources are unavailable on this server")
+        }
+        const validated = pageChangeSchema.safeParse({ keyword })
+        if (!validated.success) {
+          throw new Error("Invalid page change source")
         }
         present({
           title: t("feed_form.add_feed"),

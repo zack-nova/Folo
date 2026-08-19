@@ -150,6 +150,7 @@ describe("stage four operations", () => {
     expect(metrics.body).toContain("folo_feed_acquisition_failures 1")
     expect(metrics.body).toContain('folo_processing_jobs{status="queued"} 0')
     expect(metrics.body).toContain('folo_source_provider_ready{provider="rsshub"} 0')
+    expect(metrics.body).toContain("folo_page_change_sources_enabled 0")
 
     const operations = await server.inject({
       method: "GET",
@@ -168,7 +169,10 @@ describe("stage four operations", () => {
             last_error_summary: "upstream unavailable",
           },
         ],
-        source_providers: [{ configured: false, id: "rsshub", message: null, status: "disabled" }],
+        source_providers: [
+          { configured: false, id: "rsshub", message: null, status: "disabled" },
+          { configured: false, id: "page_change", message: null, status: "disabled" },
+        ],
         stats: { feedAcquisitionFailures: 1, subscribedFeeds: 1 },
         status: "degraded",
       },

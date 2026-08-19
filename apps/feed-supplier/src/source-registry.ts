@@ -10,7 +10,7 @@ import type {
 } from "@follow/feed-source-contracts"
 import { parseRssHubSource } from "@follow/feed-source-contracts"
 
-import type { AuditEventDraft } from "./audit"
+import { createAuditDraft } from "./audit"
 import { CredentialCipher } from "./credential-cipher"
 import type { StoredCredential, SupplierRepository } from "./repository"
 
@@ -65,22 +65,6 @@ const credentialSummary = (record: StoredCredential): SourceCredentialSummary =>
   updatedAt: record.updatedAt,
 })
 
-const auditDraft = (
-  actor: string,
-  action: AuditEventDraft["action"],
-  resourceType: AuditEventDraft["resourceType"],
-  resourceId: string | null,
-  details: AuditEventDraft["details"],
-): AuditEventDraft => ({
-  action,
-  actor,
-  details,
-  id: randomUUID(),
-  occurredAt: new Date().toISOString(),
-  resourceId,
-  resourceType,
-})
-
 export class SourceRegistry {
   private readonly cipher: CredentialCipher
 
@@ -116,7 +100,7 @@ export class SourceRegistry {
     return credentialSummary(
       await this.repository.createCredential(
         record,
-        auditDraft(actor, "credential.created", "credential", id, {
+        createAuditDraft(actor, "credential.created", "credential", id, {
           keyId: encrypted.keyId,
           name: input.name,
         }),
@@ -144,7 +128,7 @@ export class SourceRegistry {
     }
     const updated = await this.repository.updateCredential(
       record,
-      auditDraft(actor, "credential.updated", "credential", id, {
+      createAuditDraft(actor, "credential.updated", "credential", id, {
         keyId: record.keyId,
         name: record.name,
         secretReplaced: input.value !== undefined,
@@ -158,7 +142,7 @@ export class SourceRegistry {
     const disabled = await this.repository.disableCredential(
       id,
       disabledAt,
-      auditDraft(actor, "credential.disabled", "credential", id, {}),
+      createAuditDraft(actor, "credential.disabled", "credential", id, {}),
     )
     return disabled ? credentialSummary(disabled) : null
   }
@@ -174,7 +158,7 @@ export class SourceRegistry {
     })
     return this.repository.rotateCredentials(
       rotated,
-      auditDraft(actor, "credential.rotated", "system", null, {
+      createAuditDraft(actor, "credential.rotated", "system", null, {
         activeKeyId: this.cipher.activeId,
         rotatedCount: rotated.length,
       }),
@@ -207,7 +191,7 @@ export class SourceRegistry {
     }
     return this.repository.createRoute(
       route,
-      auditDraft(actor, "route.created", "route", route.id, {
+      createAuditDraft(actor, "route.created", "route", route.id, {
         bindingCount: Object.keys(bindings).length,
         enabled: route.enabled,
         name: route.name,
@@ -235,7 +219,7 @@ export class SourceRegistry {
     }
     return this.repository.updateRoute(
       route,
-      auditDraft(actor, "route.updated", "route", id, {
+      createAuditDraft(actor, "route.updated", "route", id, {
         bindingCount: Object.keys(bindings).length,
         enabled: route.enabled,
         name: route.name,
@@ -247,7 +231,7 @@ export class SourceRegistry {
     return this.repository.softDeleteRoute(
       id,
       new Date().toISOString(),
-      auditDraft(actor, "route.deleted", "route", id, {}),
+      createAuditDraft(actor, "route.deleted", "route", id, {}),
     )
   }
 
@@ -289,7 +273,7 @@ export class SourceRegistry {
 
   async recordRouteTest(routeId: string, actor: string, succeeded: boolean): Promise<void> {
     await this.repository.recordAudit(
-      auditDraft(actor, "route.tested", "route", routeId, { succeeded }),
+      createAuditDraft(actor, "route.tested", "route", routeId, { succeeded }),
     )
   }
 

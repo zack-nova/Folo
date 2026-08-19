@@ -5,6 +5,8 @@ import Fastify from "fastify"
 import { registerSourceAdminRoutes } from "./admin-routes"
 import type { FeedSupplierConfig } from "./config"
 import { MemorySupplierRepository } from "./memory-repository"
+import { PageChangeError, PageChangeService, startPageChangeScheduler } from "./page-change-service"
+import { PageFetcher } from "./page-fetcher"
 import { PostgresSupplierRepository } from "./postgres-repository"
 import type { SupplierRepository } from "./repository"
 import { SourceRegistry, SourceRegistryError } from "./source-registry"
@@ -13,6 +15,7 @@ export interface BuildFeedSupplierOptions {
   config: FeedSupplierConfig
   fetchImplementation?: typeof fetch
   logger?: boolean
+  pageFetcher?: PageFetcher
   repository?: SupplierRepository
 }
 
@@ -64,10 +67,12 @@ const safeUpstreamErrorMessage = (error: unknown): string => {
 
 export const buildFeedSupplier = async ({
   config,
-  fetchImplementation = globalThis.fetch,
+  fetchImplementation: providedFetchImplementation,
   logger = false,
+  pageFetcher: providedPageFetcher,
   repository: providedRepository,
 }: BuildFeedSupplierOptions) => {
+  const fetchImplementation = providedFetchImplementation ?? globalThis.fetch
   const repository =
     providedRepository ??
     (config.nodeEnvironment === "test"
@@ -87,6 +92,15 @@ export const buildFeedSupplier = async ({
     config.credentialKeys,
     config.registryMode,
   )
+  const pageFetcher =
+    providedPageFetcher ??
+    new PageFetcher({
+      fetchImplementation: providedFetchImplementation,
+      maxBytes: config.pageFetchMaxBytes,
+      maxContentBytes: config.pageContentMaxBytes,
+      timeoutMs: config.pageFetchTimeoutMs,
+    })
+  const pageChanges = new PageChangeService(repository, pageFetcher)
   const server = Fastify({
     bodyLimit: 16 * 1024,
     logger: logger
@@ -97,10 +111,23 @@ export const buildFeedSupplier = async ({
           },
         }
       : false,
-    requestTimeout: config.rssHubFetchTimeoutMs + 5_000,
+    requestTimeout: Math.max(config.rssHubFetchTimeoutMs, config.pageFetchTimeoutMs) + 5_000,
   })
-  server.addHook("onClose", async () => repository.close())
   const baseURL = new URL(`${config.rssHubBaseURL}/`)
+  let lastPageChangeCycleAt: string | null = null
+
+  const stopPageChangeScheduler = startPageChangeScheduler({
+    onCycle: (result) => {
+      lastPageChangeCycleAt = new Date().toISOString()
+      if (result.checked > 0) server.log.info(result, "Page change cycle completed")
+    },
+    pollIntervalMs: config.pageSchedulerPollIntervalMs,
+    service: pageChanges,
+  })
+  server.addHook("onClose", async () => {
+    await stopPageChangeScheduler()
+    await repository.close()
+  })
 
   const upstreamURL = async (input: string) => {
     const resolved = await registry.resolve(input)
@@ -189,6 +216,13 @@ export const buildFeedSupplier = async ({
       ? await registry.countManagedRoutes().catch(() => 0)
       : 0
     const ready = persistenceReady && upstreamReady
+    const pageCounts = persistenceReady
+      ? await repository.countPageChangeSources(new Date().toISOString()).catch(() => ({
+          due: 0,
+          enabled: 0,
+          total: 0,
+        }))
+      : { due: 0, enabled: 0, total: 0 }
     return {
       providers: [
         {
@@ -203,6 +237,16 @@ export const buildFeedSupplier = async ({
           persistenceStatus: persistenceReady ? ("ready" as const) : ("unavailable" as const),
           registryMode: registry.mode,
           status: ready ? ("ready" as const) : ("unavailable" as const),
+        },
+        {
+          configured: true,
+          dueSourceCount: pageCounts.due,
+          enabledSourceCount: pageCounts.enabled,
+          id: "page_change" as const,
+          lastCycleAt: lastPageChangeCycleAt,
+          message: persistenceReady ? null : "Source registry persistence is unavailable",
+          persistenceStatus: persistenceReady ? ("ready" as const) : ("unavailable" as const),
+          status: persistenceReady ? ("ready" as const) : ("unavailable" as const),
         },
       ],
     }
@@ -263,7 +307,30 @@ export const buildFeedSupplier = async ({
     }
   })
 
+  server.get("/v1/feeds/page-change", async (request, reply) => {
+    const query = request.query as Record<string, unknown>
+    if (typeof query.url !== "string") {
+      return reply.status(400).send({ code: "invalid_source", message: "url is required" })
+    }
+    try {
+      const feed = await pageChanges.materializeFeed(query.url)
+      reply
+        .header("content-type", "application/rss+xml; charset=utf-8")
+        .header("etag", feed.etag)
+        .header("last-modified", new Date(feed.source.updatedAt).toUTCString())
+        .header("x-folo-upstream-url", feed.source.targetURL)
+      if (request.headers["if-none-match"] === feed.etag) return reply.status(304).send()
+      return reply.status(200).send(feed.body)
+    } catch (error) {
+      if (error instanceof PageChangeError) {
+        return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+      }
+      return reply.status(400).send({ code: "invalid_source", message: "Invalid page source" })
+    }
+  })
+
   registerSourceAdminRoutes({
+    pageChanges,
     registry,
     server,
     testRoute: async (sourceURL) => {

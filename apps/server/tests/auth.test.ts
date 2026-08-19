@@ -142,7 +142,7 @@ describe("capability discovery", () => {
     await server.close()
   })
 
-  it("advertises self-hosted RSSHub independently from official hosted adapters", async () => {
+  it("advertises autonomous suppliers independently from official hosted adapters", async () => {
     const auth = createAuth({
       baseURL: "http://localhost:3000",
       database: memoryAdapter({ account: [], session: [], user: [], verification: [] }),
@@ -156,7 +156,10 @@ describe("capability discovery", () => {
         fetch: async () => {
           throw new Error("Not used by capability discovery")
         },
-        supports: (url) => url.startsWith("rsshub://") || url.startsWith("https://"),
+        supports: (url) =>
+          url.startsWith("pagechange://") ||
+          url.startsWith("rsshub://") ||
+          url.startsWith("https://"),
       },
     })
 
@@ -170,6 +173,10 @@ describe("capability discovery", () => {
     expect(data.stage).toBe(5)
     expect(data.capabilities).toContainEqual({
       id: "sources.rsshub_self_hosted",
+      provider: "local",
+    })
+    expect(data.capabilities).toContainEqual({
+      id: "sources.page_change",
       provider: "local",
     })
     expect(data.unavailable).toContain("rsshub.hosted")

@@ -7,12 +7,13 @@ import type {
 
 import type { AuditEventDraft } from "./audit"
 import type { EncryptedCredentialValue } from "./credential-cipher"
+import type { PageChangeRepository } from "./page-change-repository"
 
 export interface StoredCredential extends SourceCredentialSummary, EncryptedCredentialValue {}
 
 export class RepositoryConflictError extends Error {}
 
-export interface SupplierRepository {
+export interface SupplierRepository extends PageChangeRepository {
   close(): Promise<void>
   countManagedRoutes(): Promise<number>
   createCredential(record: StoredCredential, audit: AuditEventDraft): Promise<StoredCredential>

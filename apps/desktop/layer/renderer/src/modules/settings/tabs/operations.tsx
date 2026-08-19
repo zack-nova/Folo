@@ -285,12 +285,28 @@ const SourceProviders = ({ providers }: { providers: OperationsStatus["source_pr
           <p className="mt-2 text-xs leading-relaxed text-text-secondary">
             {provider.message ?? t(`operations.sources.${provider.id}.${provider.status}`)}
           </p>
-          {provider.managedRouteCount !== undefined && (
+          {(provider.managedRouteCount !== undefined ||
+            provider.enabledSourceCount !== undefined ||
+            provider.persistenceStatus !== undefined) && (
             <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-fill-secondary pt-3 text-xs text-text-secondary">
-              <div className="flex gap-1.5">
-                <dt>{t("operations.sources.managed_routes")}</dt>
-                <dd className="font-mono tabular-nums">{provider.managedRouteCount}</dd>
-              </div>
+              {provider.managedRouteCount !== undefined && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.managed_routes")}</dt>
+                  <dd className="font-mono tabular-nums">{provider.managedRouteCount}</dd>
+                </div>
+              )}
+              {provider.enabledSourceCount !== undefined && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.enabled_pages")}</dt>
+                  <dd className="font-mono tabular-nums">{provider.enabledSourceCount}</dd>
+                </div>
+              )}
+              {provider.dueSourceCount !== undefined && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.due_pages")}</dt>
+                  <dd className="font-mono tabular-nums">{provider.dueSourceCount}</dd>
+                </div>
+              )}
               {provider.registryMode && (
                 <div className="flex gap-1.5">
                   <dt>{t("operations.sources.registry_mode")}</dt>
