@@ -11,6 +11,38 @@ export interface FeedRecord {
   etag: string | null
   lastModified: string | null
   fetchedAt: Date
+  consecutiveFailures: number
+  lastSuccessAt: Date | null
+  nextFetchAt: Date
+}
+
+export interface FeedFetchAttemptRecord {
+  id: string
+  feedId: string
+  status: "failed" | "not_modified" | "succeeded"
+  startedAt: Date
+  finishedAt: Date
+  durationMs: number
+  httpStatus: number | null
+  responseUrl: string | null
+  entryCount: number | null
+  errorCode: string | null
+  errorSummary: string | null
+}
+
+export interface OperationalStats {
+  subscribedFeeds: number
+  feedAcquisitionFailures: number
+  feedsDue: number
+  processingJobs: Record<ProcessingJobStatus, number>
+}
+
+export interface MaintenanceCleanupReport {
+  diagnosticPayloadsCleared: number
+  entryEvaluationsDeleted: number
+  feedFetchAttemptsDeleted: number
+  processingAttemptsDeleted: number
+  processingJobsDeleted: number
 }
 
 export interface EntryRecord {
@@ -205,6 +237,11 @@ export interface EntryEvaluationRecord {
   details: Record<string, unknown> | null
 }
 
+export interface EntryProjectionRecord {
+  evaluation: EntryEvaluationRecord | null
+  processingJob: ProcessingJobRecord | null
+}
+
 export interface EntrySummaryRecord {
   entryId: string
   language: string
@@ -247,7 +284,11 @@ export interface SettingsRecord {
 export interface DataStore {
   getOwnerUserId(): Promise<string | null>
   claimOwner(userId: string): Promise<string>
-  saveFeed(feed: FeedRecord, entries: EntryRecord[]): Promise<void>
+  saveFeed(
+    feed: FeedRecord,
+    entries: EntryRecord[],
+    attempt?: FeedFetchAttemptRecord,
+  ): Promise<void>
   createSubscription(subscription: SubscriptionRecord): Promise<void>
   updateSubscription(
     userId: string,
@@ -306,6 +347,10 @@ export interface DataStore {
   getProcessingJob(userId: string, jobId: string): Promise<ProcessingJobRecord | null>
   listProcessingAttempts(userId: string, jobId: string): Promise<ProcessingAttemptRecord[]>
   getEntryProcessingJobs(userId: string, entryId: string): Promise<ProcessingJobRecord[]>
+  getEntryProjections(
+    userId: string,
+    entryIds: string[],
+  ): Promise<Record<string, EntryProjectionRecord>>
   completeProcessingJob(input: {
     attempt: ProcessingAttemptRecord
     evaluation: EntryEvaluationRecord
@@ -342,13 +387,16 @@ export interface DataStore {
   setEntryTranslation(userId: string, translation: EntryTranslationRecord): Promise<void>
   getActionRules(userId: string): Promise<ActionRulesRecord | null>
   setActionRules(userId: string, rules: Array<Record<string, unknown>>): Promise<void>
-  cleanupProcessingHistory(now: Date): Promise<void>
+  cleanupProcessingHistory(now: Date): Promise<MaintenanceCleanupReport>
   getUnreadCounts(userId: string, view?: number): Promise<Record<string, number>>
   setEntriesRead(userId: string, entryIds: string[], read: boolean): Promise<void>
   markAllAsRead(userId: string, filter: MarkAllReadFilter): Promise<Record<string, number>>
   isEntryCollected(userId: string, entryId: string): Promise<boolean>
   setEntryCollected(userId: string, entryId: string, collected: boolean): Promise<void>
   listSubscribedFeeds(): Promise<FeedRecord[]>
+  listFeedFetchAttempts(feedId: string, limit: number): Promise<FeedFetchAttemptRecord[]>
+  checkHealth(): Promise<void>
+  getOperationalStats(now: Date): Promise<OperationalStats>
   getSettings(userId: string): Promise<Partial<Record<SettingsTab, SettingsRecord>>>
   setSettings(userId: string, tab: SettingsTab, payload: Record<string, unknown>): Promise<void>
 }

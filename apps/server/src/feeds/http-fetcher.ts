@@ -73,6 +73,7 @@ const readBoundedBody = async (response: Response, maxBytes: number): Promise<st
 }
 
 export class HttpFeedFetcher implements FeedFetcher {
+  readonly providerId = "standard_rss" as const
   private readonly allowPrivateAddresses: boolean
   private readonly fetchImplementation: typeof fetch
   private readonly lookup: (hostname: string) => Promise<LookupAddress[]>
@@ -110,22 +111,39 @@ export class HttpFeedFetcher implements FeedFetcher {
     }
   }
 
-  async fetch(input: string): Promise<FetchedFeed> {
+  async fetch(
+    input: string,
+    options: { etag?: string | null; lastModified?: string | null } = {},
+  ): Promise<FetchedFeed> {
     let url = new URL(input)
 
     for (let redirectCount = 0; redirectCount <= this.maxRedirects; redirectCount += 1) {
       await this.assertSafeURL(url)
+      const headers = new Headers({
+        accept:
+          "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
+        "user-agent": "Folo-Self-Hosted/1.0 (+RSS reader)",
+      })
+      if (options.etag) headers.set("if-none-match", options.etag)
+      if (options.lastModified) headers.set("if-modified-since", options.lastModified)
       const response = await this.fetchImplementation(url, {
-        headers: {
-          accept:
-            "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
-          "user-agent": "Folo-Self-Hosted/1.0 (+RSS reader)",
-        },
+        headers,
         redirect: "manual",
         signal: AbortSignal.timeout(this.timeoutMs),
       })
 
       if (response.status >= 300 && response.status < 400) {
+        if (response.status === 304) {
+          return {
+            body: "",
+            contentType: response.headers.get("content-type"),
+            etag: response.headers.get("etag"),
+            lastModified: response.headers.get("last-modified"),
+            notModified: true,
+            status: response.status,
+            url: url.toString(),
+          }
+        }
         const location = response.headers.get("location")
         if (!location) throw new Error(`Feed redirect ${response.status} has no location`)
         if (redirectCount === this.maxRedirects) throw new Error("Feed has too many redirects")
@@ -139,6 +157,8 @@ export class HttpFeedFetcher implements FeedFetcher {
         contentType: response.headers.get("content-type"),
         etag: response.headers.get("etag"),
         lastModified: response.headers.get("last-modified"),
+        notModified: false,
+        status: response.status,
         url: url.toString(),
       }
     }

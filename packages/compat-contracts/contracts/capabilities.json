@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "compatibilityVersion": "folo-client-sdk-0.3.95",
-  "extensionContractVersion": "feeds-agent-extensions-v3",
+  "extensionContractVersion": "feeds-agent-extensions-v4",
   "manifestEndpoint": "/api/extensions/capabilities",
   "capabilities": [
     {
@@ -155,6 +155,19 @@
       "protocolRoutes": []
     },
     {
+      "id": "subscriptions.acquisition_diagnostics",
+      "title": "Standard feed acquisition state and bounded diagnostics",
+      "targetStage": 4,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [],
+      "protocolRoutes": [
+        "GET /api/extensions/subscriptions/{feedId}/acquisition",
+        "GET /api/extensions/subscriptions/{feedId}/acquisition/diagnostics"
+      ]
+    },
+    {
       "id": "entries.core",
       "title": "Entry timelines, details, content, and readability",
       "targetStage": 1,
@@ -169,6 +182,16 @@
       ],
       "nonSdkRequests": [],
       "protocolRoutes": []
+    },
+    {
+      "id": "operations.stability",
+      "title": "Self-hosted runtime health, metrics, alerts, and maintenance status",
+      "targetStage": 4,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [],
+      "protocolRoutes": ["GET /api/extensions/operations/status"]
     },
     {
       "id": "entries.social_and_media",
@@ -508,12 +531,13 @@
     "GET /api/extensions/entries/{entryId}/evaluation",
     "POST /api/extensions/entries/{entryId}/evaluation/{evaluationId}/select",
     "GET /api/extensions/entries/{entryId}/processing-status",
+    "GET /api/extensions/operations/status",
     "POST /api/extensions/entries/projections",
     "POST /api/extensions/processing/jobs",
     "GET /api/extensions/processing/jobs/{jobId}",
     "POST /api/extensions/processing/jobs/{jobId}/retry",
-    "GET /api/extensions/subscriptions/{subscriptionId}/acquisition",
-    "GET /api/extensions/subscriptions/{subscriptionId}/acquisition/diagnostics",
+    "GET /api/extensions/subscriptions/{feedId}/acquisition",
+    "GET /api/extensions/subscriptions/{feedId}/acquisition/diagnostics",
     "GET /api/extensions/profiles",
     "POST /api/extensions/profiles",
     "GET /api/extensions/taxonomies",

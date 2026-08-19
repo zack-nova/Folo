@@ -36,6 +36,20 @@
       "when": 1787039537408,
       "tag": "0004_harsh_bulldozer",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787048347931,
+      "tag": "0005_overjoyed_starjammers",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787048386396,
+      "tag": "0006_unique_shriek",
+      "breakpoints": true
     }
   ]
 }

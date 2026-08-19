@@ -28,8 +28,37 @@ export const feeds = pgTable(
     etag: text("etag"),
     lastModified: text("last_modified"),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    nextFetchAt: timestamp("next_fetch_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("feeds_url_unique").on(table.url)],
+)
+
+export const instanceMetadata = pgTable("instance_metadata", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+})
+
+export const feedFetchAttempts = pgTable(
+  "feed_fetch_attempts",
+  {
+    id: text("id").primaryKey(),
+    feedId: text("feed_id")
+      .notNull()
+      .references(() => feeds.id, { onDelete: "cascade" }),
+    status: text("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }).notNull(),
+    durationMs: integer("duration_ms").notNull(),
+    httpStatus: integer("http_status"),
+    responseUrl: text("response_url"),
+    entryCount: integer("entry_count"),
+    errorCode: text("error_code"),
+    errorSummary: text("error_summary"),
+  },
+  (table) => [index("feed_fetch_attempts_feed_finished_idx").on(table.feedId, table.finishedAt)],
 )
 
 export const entries = pgTable(

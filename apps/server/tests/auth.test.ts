@@ -56,7 +56,7 @@ describe("credential authentication", () => {
 })
 
 describe("capability discovery", () => {
-  it("advertises only locally implemented capabilities through stage three", async () => {
+  it("advertises only locally implemented capabilities through stage four", async () => {
     const auth = createAuth({
       baseURL: "http://localhost:3000",
       database: memoryAdapter({ account: [], session: [], user: [], verification: [] }),
@@ -80,7 +80,7 @@ describe("capability discovery", () => {
       code: 0,
       data: {
         compatibilityVersion: "folo-client-sdk-0.3.95",
-        stage: 3,
+        stage: 4,
       },
     })
 
@@ -100,6 +100,11 @@ describe("capability discovery", () => {
       provider: "local",
     })
     expect(data.capabilities).toContainEqual({ id: "entries.ai_fusion", provider: "local" })
+    expect(data.capabilities).toContainEqual({
+      id: "subscriptions.acquisition_diagnostics",
+      provider: "local",
+    })
+    expect(data.capabilities).toContainEqual({ id: "operations.stability", provider: "local" })
     expect(data.capabilities).toContainEqual({ id: "subscriptions.core", provider: "local" })
     expect(data.capabilities).toContainEqual({ id: "subscriptions.opml", provider: "local" })
     expect(data.unavailable).toContain("ai.chat")

@@ -60,11 +60,47 @@ test("registers, subscribes, renders, and persists read state against the local 
         headers: { "content-type": "application/json" },
         method: "POST",
       })
-      return { body: await response.text(), status: response.status }
+      const body = await response.text()
+      return { body, data: JSON.parse(body) as { feed?: { id?: string } }, status: response.status }
     },
     { apiURL: env.apiURL, url: feedURL },
   )
   expect(subscription.status, subscription.body).toBe(200)
+  const feedId = subscription.data.feed?.id
+  expect(feedId).toBeTruthy()
+
+  const runtime = await page.evaluate(
+    async ({ apiURL, feedId }) => {
+      const urls = [
+        "/ready",
+        "/api/extensions/capabilities",
+        `/api/extensions/subscriptions/${feedId}/acquisition`,
+        `/api/extensions/subscriptions/${feedId}/acquisition/diagnostics`,
+        "/api/extensions/operations/status",
+      ]
+      return Promise.all(
+        urls.map(async (url) => {
+          const response = await fetch(`${apiURL}${url}`, { credentials: "include" })
+          return { body: await response.text(), status: response.status, url }
+        }),
+      )
+    },
+    { apiURL: env.apiURL, feedId: feedId! },
+  )
+  expect(
+    runtime.slice(0, 4).every((response) => response.status === 200),
+    JSON.stringify(runtime),
+  ).toBe(true)
+  expect(runtime[4]?.status).toBe(403)
+  expect(JSON.parse(runtime[4]!.body)).toMatchObject({ code: "forbidden" })
+  expect(JSON.parse(runtime[1]!.body).data.stage).toBe(4)
+  expect(JSON.parse(runtime[2]!.body).data).toMatchObject({
+    active_provider: "standard_rss",
+    status: "healthy",
+  })
+  expect(JSON.parse(runtime[3]!.body).data.items).toEqual(
+    expect.arrayContaining([expect.objectContaining({ status: "succeeded" })]),
+  )
 
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(page.getByText(entryTitle).first()).toBeVisible({ timeout: 120_000 })

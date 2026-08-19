@@ -1,4 +1,4 @@
-# Folo 自托管后端（阶段二：自主 AI 处理）
+# Folo 自托管后端（阶段四：长期运行稳定化）
 
 这个服务是 FOLO API 的自有兼容门面。当前版本不访问 FOLO 官方后端，PostgreSQL 是 Feed、
 Subscription、List、Entry、阅读状态、收藏、正文缓存、AI 配置、处理作业和评估结果的权威存储；客户端
@@ -42,6 +42,8 @@ pnpm server:db:down
 - `UPLOADS_DIRECTORY`：头像文件目录；生产环境应放在持久卷中并单独备份。
 - `ALLOW_PUBLIC_REGISTRATION`：默认 `false`；只应在明确需要多人注册时临时开启。
 - `FEED_POLL_INTERVAL_MS`：已订阅 Feed 的刷新周期，默认 15 分钟。
+- `FEED_POLL_CONCURRENCY`：轮询并发数，默认 4，最大 32。
+- `FEED_RETRY_BASE_DELAY_MS`：单个 Feed 获取失败后的指数退避基数，默认 1 分钟，最长 24 小时。
 - `AI_API_KEY`、`AI_PROVIDER_BASE_URL`、`AI_PROVIDER_MODEL`：可选的环境托管 Provider。也可以登录后通过
   `/api/extensions/ai/provider` 保存 BYOK 配置；数据库只保存 AES-256-GCM 密文和末四位提示。
 - `AI_ENCRYPTION_SECRET`：用于加密数据库 BYOK，默认复用 `BETTER_AUTH_SECRET`。生产环境建议独立设置且必须
@@ -72,18 +74,25 @@ pnpm server:db:down
 - 三维评分使用后端版本化公式：`importance × 0.3 + timeliness × 0.2 + relevance × 0.5`。
 - 启动及每日清理：成功 Attempt 30 天、失败 Attempt 90 天、诊断元数据 7 天；评估至少保留最近 10 条且
   至少保留 180 天，当前指针引用永不清理。
+- ETag/Last-Modified 条件获取、每源指数退避、最近获取诊断和 30 天/每源 500 条保留上限。
+- 数据库 schema 向前版本护栏、带 SHA-256 的备份、隔离恢复演练和终态 Processing Job 清理。
+- `/ready`、Prometheus `/metrics`、所有者运行状态与结构化告警，以及生产 Compose/回滚手册。
+- 批量 Entry 投影查询和 10,000 Entry 容量基准，避免时间线逐 Entry 读取后端投影。
 
-官方 RSSHub/Trending、AI Chat、Billing、MCP、多人权限和生产级可观测性仍未实现；阶段二的摘要、翻译和
+官方 RSSHub/Trending、AI Chat、Billing、MCP、多人权限和外部通知投递仍未实现；摘要、翻译和
 逐条评估全部由本地后端调用所有者配置的 Provider，不访问 Folo 官方后端。
 
 阶段二完整接口和状态语义见
 [`stage-2-ai-processing-backend.md`](../../docs/feeds-agent-integration/stage-2-ai-processing-backend.md)。
 对应的阶段三 Folo 前端融合与能力门控见
 [`stage-3-frontend-fusion.md`](../../docs/feeds-agent-integration/stage-3-frontend-fusion.md)。
+阶段四获取、运维、备份与回滚契约见
+[`stage-4-runtime-stability.md`](../../docs/feeds-agent-integration/stage-4-runtime-stability.md)。
 
 ## 备份与恢复演练
 
-数据库备份使用 PostgreSQL custom archive，拒绝覆盖已有文件，并在落盘前执行 archive 校验：
+数据库备份使用 PostgreSQL custom archive，拒绝覆盖已有文件，并在落盘前执行 archive 校验和
+SHA-256 checksum：
 
 ```bash
 pnpm server:backup backups/folo-$(date +%F).dump
@@ -99,6 +108,7 @@ pnpm server:restore:drill backups/folo-2026-08-18.dump
 
 ```bash
 pnpm --filter @follow/server test
+pnpm --filter @follow/server bench
 pnpm server:db:up
 pnpm server:test:postgres
 pnpm server:e2e:web

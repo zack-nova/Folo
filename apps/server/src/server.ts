@@ -28,6 +28,7 @@ import type {
   ListPatch,
   ListRecord,
   ListSubscriptionRecord,
+  MaintenanceCleanupReport,
   ProcessingJobRecord,
   ProcessingTaxonomySnapshotRecord,
   SettingsTab,
@@ -36,6 +37,7 @@ import type {
 } from "./data/types"
 import type { FeedFetcher } from "./feeds/importer"
 import { FeedImporter } from "./feeds/importer"
+import type { refreshSubscribedFeeds } from "./feeds/scheduler"
 import { startFeedScheduler } from "./feeds/scheduler"
 import { exportOpml, parseOpml } from "./opml"
 import {
@@ -60,7 +62,9 @@ export interface BuildServerOptions {
   clientOrigins: string[]
   dataStore?: DataStore
   feedFetcher?: FeedFetcher
+  feedPollConcurrency?: number
   feedPollIntervalMs?: number
+  feedRetryBaseDelayMs?: number
   readabilityFetcher?: FeedFetcher
   logger?: boolean
   processingMaxAttempts?: number
@@ -331,10 +335,12 @@ const implementedCapabilities = new Set([
   "entries.evaluation_processing",
   "feeds.core",
   "organization.core",
+  "operations.stability",
   "profiles.core",
   "reads.core",
   "settings_and_status.core",
   "subscriptions.core",
+  "subscriptions.acquisition_diagnostics",
   "subscriptions.opml",
 ])
 
@@ -348,7 +354,9 @@ export const buildServer = async ({
   clientOrigins,
   dataStore = new MemoryDataStore(),
   feedFetcher,
+  feedPollConcurrency,
   feedPollIntervalMs,
+  feedRetryBaseDelayMs,
   readabilityFetcher = feedFetcher,
   logger = false,
   processingMaxAttempts,
@@ -362,6 +370,11 @@ export const buildServer = async ({
   const pendingSummaries = new Map<string, Promise<string>>()
   const pendingTranslations = new Map<string, Promise<Record<string, string>>>()
   let registrationTail = Promise.resolve()
+  let lastCleanup: { at: Date; report: MaintenanceCleanupReport } | null = null
+  let lastFeedPollingCycle: {
+    at: Date
+    result: Awaited<ReturnType<typeof refreshSubscribedFeeds>>
+  } | null = null
 
   const resolveAIProvider = async (userId: string): Promise<AIProvider> => {
     if (aiProvider) return aiProvider
@@ -389,6 +402,10 @@ export const buildServer = async ({
   const processingService = new ProcessingService({
     dataStore,
     maxAttempts: processingMaxAttempts,
+    onCleanup: (report) => {
+      lastCleanup = { at: new Date(), report }
+      server.log.info(report, "Maintenance cleanup completed")
+    },
     onError: (error) => server.log.error(error, "Processing worker failed"),
     pollIntervalMs: processingWorkerPollIntervalMs,
     resolveProvider: resolveAIProvider,
@@ -480,20 +497,32 @@ export const buildServer = async ({
   }
 
   const importer = feedFetcher
-    ? new FeedImporter(dataStore, feedFetcher, async ({ entries, userId }) => {
-        try {
-          await enqueueImportedEntries(entries, userId)
-        } catch (error) {
-          server.log.error(error, "Automatic entry processing failed after feed import")
-        }
-      })
+    ? new FeedImporter(
+        dataStore,
+        feedFetcher,
+        async ({ entries, userId }) => {
+          try {
+            await enqueueImportedEntries(entries, userId)
+          } catch (error) {
+            server.log.error(error, "Automatic entry processing failed after feed import")
+          }
+        },
+        {
+          refreshIntervalMs: feedPollIntervalMs,
+          retryBaseDelayMs: feedRetryBaseDelayMs,
+        },
+      )
     : null
   if (importer && feedPollIntervalMs) {
     const stopFeedScheduler = startFeedScheduler({
       dataStore,
       importer,
+      concurrency: feedPollConcurrency,
       intervalMs: feedPollIntervalMs,
-      onResult: (result) => server.log.info(result, "Feed polling cycle completed"),
+      onResult: (result) => {
+        lastFeedPollingCycle = { at: new Date(), result }
+        server.log.info(result, "Feed polling cycle completed")
+      },
     })
     server.addHook("onClose", async () => stopFeedScheduler())
   }
@@ -561,6 +590,38 @@ export const buildServer = async ({
   )
 
   server.get("/health", async () => ({ status: "ok" }))
+
+  server.get("/ready", async (_request, reply) => {
+    try {
+      await dataStore.checkHealth()
+      return { status: "ready" }
+    } catch (error) {
+      server.log.error(error, "Readiness check failed")
+      return reply.status(503).send({ status: "unavailable" })
+    }
+  })
+
+  server.get("/metrics", async (_request, reply) => {
+    const stats = await dataStore.getOperationalStats(new Date())
+    const lines = [
+      "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
+      "# TYPE folo_subscribed_feeds gauge",
+      `folo_subscribed_feeds ${stats.subscribedFeeds}`,
+      "# HELP folo_feed_acquisition_failures Subscribed feeds currently in backoff.",
+      "# TYPE folo_feed_acquisition_failures gauge",
+      `folo_feed_acquisition_failures ${stats.feedAcquisitionFailures}`,
+      "# HELP folo_feeds_due Subscribed feeds currently due for polling.",
+      "# TYPE folo_feeds_due gauge",
+      `folo_feeds_due ${stats.feedsDue}`,
+      "# HELP folo_processing_jobs Processing jobs by status.",
+      "# TYPE folo_processing_jobs gauge",
+      ...Object.entries(stats.processingJobs).map(
+        ([status, count]) => `folo_processing_jobs{status="${status}"} ${count}`,
+      ),
+      "",
+    ]
+    return reply.type("text/plain; version=0.0.4; charset=utf-8").send(lines.join("\n"))
+  })
 
   server.get("/profiles", async (request, reply) => {
     const session = await authenticatedSession(request.headers)
@@ -659,7 +720,7 @@ export const buildServer = async ({
       code: 0,
       data: {
         compatibilityVersion: capabilityManifest.compatibilityVersion,
-        stage: 3,
+        stage: 4,
         capabilities,
         unavailable: capabilityManifest.capabilities
           .map((capability) => capability.id)
@@ -667,6 +728,123 @@ export const buildServer = async ({
       },
     }
   })
+
+  server.get("/api/extensions/operations/status", async (request, reply) => {
+    const session = await authenticatedSession(request.headers)
+    if (!session) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    if ((await dataStore.getOwnerUserId()) !== session.user.id) {
+      return reply.status(403).send({ code: "forbidden", message: "Instance owner required" })
+    }
+    const stats = await dataStore.getOperationalStats(new Date())
+    const alerts = [
+      ...(stats.feedAcquisitionFailures > 0
+        ? [
+            {
+              code: "feed_acquisition_degraded",
+              count: stats.feedAcquisitionFailures,
+              severity: "warning" as const,
+            },
+          ]
+        : []),
+      ...(stats.processingJobs.failed > 0
+        ? [
+            {
+              code: "processing_jobs_failed",
+              count: stats.processingJobs.failed,
+              severity: "warning" as const,
+            },
+          ]
+        : []),
+    ]
+    return {
+      code: 0,
+      data: {
+        alerts,
+        last_cleanup: lastCleanup
+          ? { at: lastCleanup.at.toISOString(), report: lastCleanup.report }
+          : null,
+        last_feed_polling_cycle: lastFeedPollingCycle
+          ? {
+              at: lastFeedPollingCycle.at.toISOString(),
+              result: lastFeedPollingCycle.result,
+            }
+          : null,
+        stats,
+        status: alerts.length > 0 ? ("degraded" as const) : ("healthy" as const),
+      },
+    }
+  })
+
+  server.get<{ Params: { feedId: string } }>(
+    "/api/extensions/subscriptions/:feedId/acquisition",
+    async (request, reply) => {
+      const userId = await authenticatedUserId(request.headers)
+      if (!userId) {
+        return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+      }
+      const subscription = await subscriptionForFeed(userId, request.params.feedId)
+      const feed = subscription ? await dataStore.getFeed(subscription.feedId) : null
+      if (!feed) {
+        return reply
+          .status(404)
+          .send({ code: "subscription_not_found", message: "Subscription not found" })
+      }
+      return {
+        code: 0,
+        data: {
+          active_provider: importer?.providerId ?? ("standard_rss" as const),
+          consecutive_failures: feed.consecutiveFailures,
+          feed_id: feed.id,
+          last_error_at: feed.errorAt?.toISOString() ?? null,
+          last_error_summary: feed.errorMessage,
+          last_success_at: feed.lastSuccessAt?.toISOString() ?? null,
+          next_fetch_at: feed.nextFetchAt.toISOString(),
+          preferred_provider: importer?.providerId ?? ("standard_rss" as const),
+          status: feed.consecutiveFailures > 0 ? ("degraded" as const) : ("healthy" as const),
+        },
+      }
+    },
+  )
+
+  server.get<{ Params: { feedId: string } }>(
+    "/api/extensions/subscriptions/:feedId/acquisition/diagnostics",
+    async (request, reply) => {
+      const userId = await authenticatedUserId(request.headers)
+      if (!userId) {
+        return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+      }
+      const subscription = await subscriptionForFeed(userId, request.params.feedId)
+      const feed = subscription ? await dataStore.getFeed(subscription.feedId) : null
+      if (!feed) {
+        return reply
+          .status(404)
+          .send({ code: "subscription_not_found", message: "Subscription not found" })
+      }
+      const query = request.query as Record<string, unknown>
+      const limit = limitFromUnknown(query.limit, 20, 100)
+      const attempts = await dataStore.listFeedFetchAttempts(feed.id, limit)
+      return {
+        code: 0,
+        data: {
+          items: attempts.map((attempt) => ({
+            duration_ms: attempt.durationMs,
+            entry_count: attempt.entryCount,
+            error_code: attempt.errorCode,
+            error_summary: attempt.errorSummary,
+            finished_at: attempt.finishedAt.toISOString(),
+            http_status: attempt.httpStatus,
+            id: attempt.id,
+            response_url: attempt.responseUrl,
+            started_at: attempt.startedAt.toISOString(),
+            status: attempt.status,
+          })),
+          limit,
+        },
+      }
+    },
+  )
 
   server.get("/api/extensions/ai/provider", async (request, reply) => {
     const userId = await authenticatedUserId(request.headers)
@@ -876,17 +1054,25 @@ export const buildServer = async ({
     return reply.status(201).send({ code: 0, data: snapshot })
   })
 
-  const isEvaluationOutdated = async (userId: string, evaluation: EntryEvaluationRecord) => {
+  const currentProcessingConfiguration = async (userId: string) => {
     const [profile, taxonomy] = await Promise.all([
       dataStore.listProcessingProfileSnapshots(userId),
       dataStore.listProcessingTaxonomySnapshots(userId),
     ])
-    return (
-      evaluation.processorVersion !== "1" ||
-      evaluation.scoreFormulaVersion !== "weighted-v1" ||
-      profile.at(0)?.id !== evaluation.profileSnapshotId ||
-      taxonomy.at(0)?.id !== evaluation.taxonomySnapshotId
-    )
+    return { profileId: profile.at(0)?.id ?? null, taxonomyId: taxonomy.at(0)?.id ?? null }
+  }
+
+  const evaluationIsOutdated = (
+    evaluation: EntryEvaluationRecord,
+    current: Awaited<ReturnType<typeof currentProcessingConfiguration>>,
+  ) =>
+    evaluation.processorVersion !== "1" ||
+    evaluation.scoreFormulaVersion !== "weighted-v1" ||
+    current.profileId !== evaluation.profileSnapshotId ||
+    current.taxonomyId !== evaluation.taxonomySnapshotId
+
+  const isEvaluationOutdated = async (userId: string, evaluation: EntryEvaluationRecord) => {
+    return evaluationIsOutdated(evaluation, await currentProcessingConfiguration(userId))
   }
 
   server.post("/api/extensions/processing/jobs", async (request, reply) => {
@@ -998,11 +1184,12 @@ export const buildServer = async ({
         dataStore.getCurrentEntryEvaluation(userId, request.params.entryId),
         dataStore.listEntryEvaluations(userId, request.params.entryId),
       ])
-      const outdated = new Map<string, boolean>()
-      await Promise.all(
-        history.map(async (evaluation) => {
-          outdated.set(evaluation.id, await isEvaluationOutdated(userId, evaluation))
-        }),
+      const configuration = await currentProcessingConfiguration(userId)
+      const outdated = new Map(
+        history.map((evaluation) => [
+          evaluation.id,
+          evaluationIsOutdated(evaluation, configuration),
+        ]),
       )
       return {
         code: 0,
@@ -1075,23 +1262,25 @@ export const buildServer = async ({
     if (entryIds.length > 100) {
       return reply.status(400).send({ code: "too_many_entries", message: "At most 100 entries" })
     }
-    const projections = await Promise.all(
-      entryIds.map(async (entryId) => {
-        const [evaluation, jobs] = await Promise.all([
-          dataStore.getCurrentEntryEvaluation(userId, entryId),
-          dataStore.getEntryProcessingJobs(userId, entryId),
-        ])
-        return [
-          entryId,
-          {
-            evaluation: evaluation
-              ? apiEvaluation(evaluation, await isEvaluationOutdated(userId, evaluation))
-              : null,
-            processing_status: jobs.at(0) ? apiProcessingJob(jobs[0]!) : null,
-          },
-        ] as const
-      }),
-    )
+    const [entryProjections, configuration] = await Promise.all([
+      dataStore.getEntryProjections(userId, entryIds),
+      currentProcessingConfiguration(userId),
+    ])
+    const projections = entryIds.map((entryId) => {
+      const projection = entryProjections[entryId]!
+      const evaluation = projection.evaluation
+      return [
+        entryId,
+        {
+          evaluation: evaluation
+            ? apiEvaluation(evaluation, evaluationIsOutdated(evaluation, configuration))
+            : null,
+          processing_status: projection.processingJob
+            ? apiProcessingJob(projection.processingJob)
+            : null,
+        },
+      ] as const
+    })
     return { code: 0, data: Object.fromEntries(projections) }
   })
 
@@ -2175,8 +2364,16 @@ export const buildServer = async ({
       return reply.status(404).send({ code: "feed_not_found", message: "Feed not found" })
     }
 
-    await importer.refresh(feed)
-    return { code: 0, data: null }
+    try {
+      await importer.refresh(feed)
+      return { code: 0, data: null }
+    } catch (error) {
+      server.log.warn({ error, feedId: feed.id }, "Manual feed refresh failed")
+      return reply.status(502).send({
+        code: "feed_refresh_failed",
+        message: error instanceof Error ? error.message.slice(0, 500) : "Feed refresh failed",
+      })
+    }
   })
 
   server.get("/feeds/reset", async (request, reply) => {
@@ -2196,8 +2393,16 @@ export const buildServer = async ({
     if (!feed) {
       return reply.status(404).send({ code: "feed_not_found", message: "Feed not found" })
     }
-    await importer.refresh(feed)
-    return { code: 0, data: null }
+    try {
+      await importer.refresh(feed)
+      return { code: 0, data: null }
+    } catch (error) {
+      server.log.warn({ error, feedId: feed.id }, "Feed reset refresh failed")
+      return reply.status(502).send({
+        code: "feed_refresh_failed",
+        message: error instanceof Error ? error.message.slice(0, 500) : "Feed refresh failed",
+      })
+    }
   })
 
   server.post("/feeds/analytics", async (request, reply) => {
@@ -2254,20 +2459,23 @@ export const buildServer = async ({
     })
     if (aiSort) {
       const now = new Date()
-      const featuredRows = await Promise.all(
-        rows.map(async (row) => {
-          const evaluation = await dataStore.getCurrentEntryEvaluation(userId, row.entry.id)
-          if (!evaluation || evaluation.overallScore < FEATURED_SCORE_THRESHOLD) return null
-          const taxonomy = await dataStore.getProcessingTaxonomySnapshot(
-            userId,
-            evaluation.taxonomySnapshotId,
-          )
-          return {
-            rankingScore: featuredRankingScore(row.entry, evaluation, taxonomy, now),
-            row,
-          }
-        }),
-      )
+      const [projections, taxonomies] = await Promise.all([
+        dataStore.getEntryProjections(
+          userId,
+          rows.map((row) => row.entry.id),
+        ),
+        dataStore.listProcessingTaxonomySnapshots(userId),
+      ])
+      const taxonomyById = new Map(taxonomies.map((taxonomy) => [taxonomy.id, taxonomy]))
+      const featuredRows = rows.map((row) => {
+        const evaluation = projections[row.entry.id]?.evaluation
+        if (!evaluation || evaluation.overallScore < FEATURED_SCORE_THRESHOLD) return null
+        const taxonomy = taxonomyById.get(evaluation.taxonomySnapshotId) ?? null
+        return {
+          rankingScore: featuredRankingScore(row.entry, evaluation, taxonomy, now),
+          row,
+        }
+      })
       rows = featuredRows
         .filter((item): item is NonNullable<typeof item> => item !== null)
         .sort(
@@ -2278,23 +2486,28 @@ export const buildServer = async ({
         .slice(0, requestedLimit)
         .map((item) => item.row)
     }
-    const data = await Promise.all(
-      rows.map(async ({ entry, subscription, read, collectionCreatedAt }) => {
-        const feed = await dataStore.getFeed(entry.feedId)
-        if (!feed) return null
-        return {
-          read,
-          view: subscription.view,
-          from: [],
-          feeds: apiFeed(feed),
-          entries: apiEntry(entry),
-          settings: null,
-          ...(collectionCreatedAt
-            ? { collections: { createdAt: collectionCreatedAt.toISOString() } }
-            : {}),
-        }
-      }),
+    const feedById = new Map(
+      await Promise.all(
+        [...new Set(rows.map((row) => row.entry.feedId))].map(
+          async (feedId) => [feedId, await dataStore.getFeed(feedId)] as const,
+        ),
+      ),
     )
+    const data = rows.map(({ entry, subscription, read, collectionCreatedAt }) => {
+      const feed = feedById.get(entry.feedId)
+      if (!feed) return null
+      return {
+        read,
+        view: subscription.view,
+        from: [],
+        feeds: apiFeed(feed),
+        entries: apiEntry(entry),
+        settings: null,
+        ...(collectionCreatedAt
+          ? { collections: { createdAt: collectionCreatedAt.toISOString() } }
+          : {}),
+      }
+    })
 
     return { code: 0, data: data.filter((item) => item !== null) }
   })

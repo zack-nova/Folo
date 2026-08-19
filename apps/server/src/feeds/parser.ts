@@ -69,6 +69,9 @@ const rssFeed = (
     etag: null,
     lastModified: null,
     fetchedAt,
+    consecutiveFailures: 0,
+    lastSuccessAt: fetchedAt,
+    nextFetchAt: fetchedAt,
   }
 
   const entries = array(channel.item)
@@ -156,6 +159,9 @@ const atomFeed = (
     etag: null,
     lastModified: null,
     fetchedAt,
+    consecutiveFailures: 0,
+    lastSuccessAt: fetchedAt,
+    nextFetchAt: fetchedAt,
   }
 
   const entries = array(atom.entry)

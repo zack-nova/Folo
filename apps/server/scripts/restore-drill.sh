@@ -8,7 +8,10 @@ if [[ -z "$backup_input" || ! -f "$backup_input" ]]; then
 fi
 
 script_directory=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
-compose_file="$script_directory/../compose.yaml"
+compose_file=${FOLO_COMPOSE_FILE:-"$script_directory/../compose.yaml"}
+postgres_service=${FOLO_POSTGRES_SERVICE:-postgres}
+database_name=${FOLO_DATABASE_NAME:-folo}
+database_user=${FOLO_DATABASE_USER:-folo}
 drill_database="folo_restore_drill_$$_$RANDOM"
 drill_database_created=false
 
@@ -16,21 +19,34 @@ drop_drill_database() {
   if [[ "$drill_database_created" != "true" ]]; then
     return
   fi
-  docker compose -f "$compose_file" exec -T postgres \
-    psql --username=folo --dbname=postgres --set=ON_ERROR_STOP=1 \
+  docker compose -f "$compose_file" exec -T "$postgres_service" \
+    psql --username="$database_user" --dbname=postgres --set=ON_ERROR_STOP=1 \
     --command="DROP DATABASE IF EXISTS $drill_database WITH (FORCE);" >/dev/null
 }
 trap drop_drill_database EXIT
 
-docker compose -f "$compose_file" exec -T postgres \
-  createdb --username=folo "$drill_database"
+checksum_input="${backup_input}.sha256"
+if [[ -f "$checksum_input" ]]; then
+  backup_directory=$(cd "$(dirname "$backup_input")" && pwd)
+  if command -v shasum >/dev/null 2>&1; then
+    (cd "$backup_directory" && shasum -a 256 -c "$(basename "$checksum_input")")
+  else
+    (cd "$backup_directory" && sha256sum --check "$(basename "$checksum_input")")
+  fi
+fi
+
+docker compose -f "$compose_file" exec -T "$postgres_service" pg_restore --list \
+  <"$backup_input" >/dev/null
+
+docker compose -f "$compose_file" exec -T "$postgres_service" \
+  createdb --username="$database_user" "$drill_database"
 drill_database_created=true
-docker compose -f "$compose_file" exec -T postgres \
-  pg_restore --username=folo --dbname="$drill_database" --exit-on-error --no-owner --no-acl \
+docker compose -f "$compose_file" exec -T "$postgres_service" \
+  pg_restore --username="$database_user" --dbname="$drill_database" --exit-on-error --no-owner --no-acl \
   <"$backup_input"
 
-table_count=$(docker compose -f "$compose_file" exec -T postgres \
-  psql --username=folo --dbname="$drill_database" --tuples-only --no-align \
+table_count=$(docker compose -f "$compose_file" exec -T "$postgres_service" \
+  psql --username="$database_user" --dbname="$drill_database" --tuples-only --no-align \
   --command="SELECT count(*) FROM pg_tables WHERE schemaname = 'public';")
 if [[ ! "$table_count" =~ ^[1-9][0-9]*$ ]]; then
   echo "Restore drill failed: restored database has no public tables" >&2
@@ -56,12 +72,14 @@ count_query="SELECT json_build_array(
   (SELECT count(*) FROM entry_current_evaluations),
   (SELECT count(*) FROM entry_summaries),
   (SELECT count(*) FROM entry_translations)
+  ,(SELECT count(*) FROM feed_fetch_attempts)
+  ,(SELECT count(*) FROM instance_metadata)
 )::text;"
-source_counts=$(docker compose -f "$compose_file" exec -T postgres \
-  psql --username=folo --dbname=folo --tuples-only --no-align \
+source_counts=$(docker compose -f "$compose_file" exec -T "$postgres_service" \
+  psql --username="$database_user" --dbname="$database_name" --tuples-only --no-align \
   --command="$count_query")
-restored_counts=$(docker compose -f "$compose_file" exec -T postgres \
-  psql --username=folo --dbname="$drill_database" --tuples-only --no-align \
+restored_counts=$(docker compose -f "$compose_file" exec -T "$postgres_service" \
+  psql --username="$database_user" --dbname="$drill_database" --tuples-only --no-align \
   --command="$count_query")
 
 if [[ "$source_counts" != "$restored_counts" ]]; then

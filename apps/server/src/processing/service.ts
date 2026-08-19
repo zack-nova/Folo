@@ -8,6 +8,7 @@ import type {
   EnqueueProcessingJobResult,
   EntryEvaluationRecord,
   EntryRecord,
+  MaintenanceCleanupReport,
   ProcessingAttemptRecord,
   ProcessingJobRecord,
 } from "../data/types"
@@ -89,6 +90,7 @@ export interface ProcessingServiceOptions {
   dataStore: DataStore
   maxAttempts?: number
   onError?: (error: unknown) => void
+  onCleanup?: (report: MaintenanceCleanupReport) => void
   pollIntervalMs?: number
   resolveProvider: (userId: string) => Promise<AIProvider>
   retryBaseDelayMs?: number
@@ -111,9 +113,16 @@ export class ProcessingService {
     if (this.timer) return
     this.timer = setInterval(() => this.scheduleDrain(), this.options.pollIntervalMs ?? 1_000)
     this.timer.unref()
-    this.runSafely(this.options.dataStore.cleanupProcessingHistory(new Date()))
+    this.runSafely(
+      this.options.dataStore.cleanupProcessingHistory(new Date()),
+      this.options.onCleanup,
+    )
     this.cleanupTimer = setInterval(
-      () => this.runSafely(this.options.dataStore.cleanupProcessingHistory(new Date())),
+      () =>
+        this.runSafely(
+          this.options.dataStore.cleanupProcessingHistory(new Date()),
+          this.options.onCleanup,
+        ),
       24 * 60 * 60 * 1_000,
     )
     this.cleanupTimer.unref()
@@ -131,8 +140,8 @@ export class ProcessingService {
     queueMicrotask(() => this.scheduleDrain())
   }
 
-  private runSafely(operation: Promise<void>): void {
-    void operation.catch((error: unknown) => this.options.onError?.(error))
+  private runSafely<T>(operation: Promise<T>, onSuccess?: (result: T) => void): void {
+    void operation.then(onSuccess).catch((error: unknown) => this.options.onError?.(error))
   }
 
   private scheduleDrain(): void {

@@ -5,14 +5,18 @@ import type {
   EnqueueProcessingJobResult,
   EntryEvaluationRecord,
   EntryListFilter,
+  EntryProjectionRecord,
   EntryRecord,
   EntrySummaryRecord,
   EntryTranslationRecord,
+  FeedFetchAttemptRecord,
   FeedRecord,
   ListPatch,
   ListRecord,
   ListSubscriptionRecord,
+  MaintenanceCleanupReport,
   MarkAllReadFilter,
+  OperationalStats,
   ProcessingAttemptRecord,
   ProcessingJobRecord,
   ProcessingProfileSnapshotRecord,
@@ -39,6 +43,7 @@ export class MemoryDataStore implements DataStore {
   private readonly entrySummaries = new Map<string, EntrySummaryRecord>()
   private readonly entryTranslations = new Map<string, EntryTranslationRecord>()
   private readonly feeds = new Map<string, FeedRecord>()
+  private readonly feedFetchAttempts = new Map<string, FeedFetchAttemptRecord>()
   private readonly lists = new Map<string, ListRecord>()
   private readonly listSubscriptionRecords = new Map<string, ListSubscriptionRecord>()
   private readonly reads = new Set<string>()
@@ -60,7 +65,11 @@ export class MemoryDataStore implements DataStore {
     return this.ownerUserId
   }
 
-  async saveFeed(feed: FeedRecord, entries: EntryRecord[]): Promise<void> {
+  async saveFeed(
+    feed: FeedRecord,
+    entries: EntryRecord[],
+    attempt?: FeedFetchAttemptRecord,
+  ): Promise<void> {
     this.feeds.set(feed.id, structuredClone(feed))
     for (const entry of entries) {
       const existing = this.entries.get(entry.id)
@@ -72,6 +81,14 @@ export class MemoryDataStore implements DataStore {
         }
       }
       this.entries.set(entry.id, saved)
+    }
+    if (attempt) {
+      this.feedFetchAttempts.set(attempt.id, structuredClone(attempt))
+      const stale = [...this.feedFetchAttempts.values()]
+        .filter((candidate) => candidate.feedId === attempt.feedId)
+        .sort((left, right) => right.finishedAt.getTime() - left.finishedAt.getTime())
+        .slice(500)
+      for (const candidate of stale) this.feedFetchAttempts.delete(candidate.id)
     }
   }
 
@@ -434,6 +451,43 @@ export class MemoryDataStore implements DataStore {
       .map((job) => structuredClone(job))
   }
 
+  async getEntryProjections(
+    userId: string,
+    entryIds: string[],
+  ): Promise<Record<string, EntryProjectionRecord>> {
+    const allowedFeedIds = new Set(
+      [...this.subscriptions.values()]
+        .filter((subscription) => subscription.userId === userId)
+        .map((subscription) => subscription.feedId),
+    )
+    const result: Record<string, EntryProjectionRecord> = {}
+    for (const entryId of new Set(entryIds)) {
+      const entry = this.entries.get(entryId)
+      if (!entry || !allowedFeedIds.has(entry.feedId)) {
+        result[entryId] = { evaluation: null, processingJob: null }
+        continue
+      }
+      const evaluationId = this.entryCurrentEvaluations.get(entryId)
+      const evaluation = evaluationId ? this.entryEvaluations.get(evaluationId) : undefined
+      const processingJob = [...this.processingJobs.values()]
+        .filter((job) => job.userId === userId && job.entryId === entryId)
+        .sort((left, right) => {
+          const active = (status: ProcessingJobRecord["status"]) =>
+            status === "queued" || status === "running" ? 1 : 0
+          return (
+            active(right.status) - active(left.status) ||
+            right.queuedAt.getTime() - left.queuedAt.getTime()
+          )
+        })
+        .at(0)
+      result[entryId] = {
+        evaluation: evaluation ? structuredClone(evaluation) : null,
+        processingJob: processingJob ? structuredClone(processingJob) : null,
+      }
+    }
+    return result
+  }
+
   async completeProcessingJob(input: {
     attempt: ProcessingAttemptRecord
     evaluation: EntryEvaluationRecord
@@ -563,34 +617,76 @@ export class MemoryDataStore implements DataStore {
     })
   }
 
-  async cleanupProcessingHistory(now: Date): Promise<void> {
+  async cleanupProcessingHistory(now: Date): Promise<MaintenanceCleanupReport> {
     const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1_000
     const thirtyDaysAgo = now.getTime() - 30 * 24 * 60 * 60 * 1_000
     const ninetyDaysAgo = now.getTime() - 90 * 24 * 60 * 60 * 1_000
+    const oneHundredEightyDaysAgo = now.getTime() - 180 * 24 * 60 * 60 * 1_000
+    let diagnosticPayloadsCleared = 0
+    let processingAttemptsDeleted = 0
     for (const [id, attempt] of this.processingAttempts) {
       const finishedAt = attempt.finishedAt?.getTime()
       if (!finishedAt) continue
-      if (finishedAt < sevenDaysAgo) attempt.executionMetadata = null
+      if (finishedAt < sevenDaysAgo && attempt.executionMetadata !== null) {
+        attempt.executionMetadata = null
+        diagnosticPayloadsCleared += 1
+      }
       if (
         (attempt.status === "succeeded" && finishedAt < thirtyDaysAgo) ||
         (attempt.status === "failed" && finishedAt < ninetyDaysAgo)
       ) {
         this.processingAttempts.delete(id)
+        processingAttemptsDeleted += 1
       }
     }
 
-    const oldestHistory = now.getTime() - 180 * 24 * 60 * 60 * 1_000
+    let entryEvaluationsDeleted = 0
     const byEntry = Map.groupBy(this.entryEvaluations.values(), (evaluation) => evaluation.entryId)
     for (const evaluations of byEntry.values()) {
       evaluations.sort((left, right) => right.processedAt.getTime() - left.processedAt.getTime())
       for (const evaluation of evaluations.slice(10)) {
         if (
-          evaluation.processedAt.getTime() < oldestHistory &&
+          evaluation.processedAt.getTime() < oneHundredEightyDaysAgo &&
           this.entryCurrentEvaluations.get(evaluation.entryId) !== evaluation.id
         ) {
           this.entryEvaluations.delete(evaluation.id)
+          entryEvaluationsDeleted += 1
         }
       }
+    }
+
+    let feedFetchAttemptsDeleted = 0
+    for (const [id, attempt] of this.feedFetchAttempts) {
+      if (attempt.finishedAt.getTime() < thirtyDaysAgo) {
+        this.feedFetchAttempts.delete(id)
+        feedFetchAttemptsDeleted += 1
+      }
+    }
+
+    let processingJobsDeleted = 0
+    for (const [id, job] of this.processingJobs) {
+      if (
+        (job.status === "failed" || job.status === "succeeded" || job.status === "superseded") &&
+        job.finishedAt &&
+        job.finishedAt.getTime() < oneHundredEightyDaysAgo
+      ) {
+        this.processingJobs.delete(id)
+        processingJobsDeleted += 1
+        for (const [attemptId, attempt] of this.processingAttempts) {
+          if (attempt.jobId === id) {
+            this.processingAttempts.delete(attemptId)
+            processingAttemptsDeleted += 1
+          }
+        }
+      }
+    }
+
+    return {
+      diagnosticPayloadsCleared,
+      entryEvaluationsDeleted,
+      feedFetchAttemptsDeleted,
+      processingAttemptsDeleted,
+      processingJobsDeleted,
     }
   }
 
@@ -658,6 +754,38 @@ export class MemoryDataStore implements DataStore {
       .map((feedId) => this.feeds.get(feedId))
       .filter((feed): feed is FeedRecord => feed !== undefined)
       .map((feed) => structuredClone(feed))
+  }
+
+  async listFeedFetchAttempts(feedId: string, limit: number): Promise<FeedFetchAttemptRecord[]> {
+    return [...this.feedFetchAttempts.values()]
+      .filter((attempt) => attempt.feedId === feedId)
+      .sort((left, right) => right.finishedAt.getTime() - left.finishedAt.getTime())
+      .slice(0, Math.min(Math.max(limit, 1), 100))
+      .map((attempt) => structuredClone(attempt))
+  }
+
+  async checkHealth(): Promise<void> {}
+
+  async getOperationalStats(now: Date): Promise<OperationalStats> {
+    const subscribedFeedIds = new Set(this.subscriptions.values().map((item) => item.feedId))
+    const subscribedFeeds = [...subscribedFeedIds]
+      .map((feedId) => this.feeds.get(feedId))
+      .filter((feed): feed is FeedRecord => feed !== undefined)
+    const processingJobs: OperationalStats["processingJobs"] = {
+      failed: 0,
+      queued: 0,
+      running: 0,
+      succeeded: 0,
+      superseded: 0,
+    }
+    for (const job of this.processingJobs.values()) processingJobs[job.status] += 1
+    return {
+      feedAcquisitionFailures: subscribedFeeds.filter((feed) => feed.consecutiveFailures > 0)
+        .length,
+      feedsDue: subscribedFeeds.filter((feed) => feed.nextFetchAt <= now).length,
+      processingJobs,
+      subscribedFeeds: subscribedFeeds.length,
+    }
   }
 
   async getSettings(userId: string): Promise<Partial<Record<SettingsTab, SettingsRecord>>> {

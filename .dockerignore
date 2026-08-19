@@ -1,0 +1,7 @@
+.git
+.turbo
+**/.DS_Store
+**/dist
+**/node_modules
+apps/server/.env*
+backups

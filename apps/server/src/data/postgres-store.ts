@@ -11,6 +11,7 @@ import {
   entryReadability,
   entrySummaries,
   entryTranslations,
+  feedFetchAttempts,
   feeds,
   instanceOwnership,
   lists,
@@ -30,14 +31,18 @@ import type {
   EnqueueProcessingJobResult,
   EntryEvaluationRecord,
   EntryListFilter,
+  EntryProjectionRecord,
   EntryRecord,
   EntrySummaryRecord,
   EntryTranslationRecord,
+  FeedFetchAttemptRecord,
   FeedRecord,
   ListPatch,
   ListRecord,
   ListSubscriptionRecord,
+  MaintenanceCleanupReport,
   MarkAllReadFilter,
+  OperationalStats,
   ProcessingAttemptRecord,
   ProcessingJobRecord,
   ProcessingProfileSnapshotRecord,
@@ -71,7 +76,11 @@ export class PostgresDataStore implements DataStore {
     return ownerUserId
   }
 
-  async saveFeed(feed: FeedRecord, entryRecords: EntryRecord[]): Promise<void> {
+  async saveFeed(
+    feed: FeedRecord,
+    entryRecords: EntryRecord[],
+    attempt?: FeedFetchAttemptRecord,
+  ): Promise<void> {
     await this.database.transaction(async (transaction) => {
       await transaction
         .insert(feeds)
@@ -89,34 +98,52 @@ export class PostgresDataStore implements DataStore {
             etag: feed.etag,
             lastModified: feed.lastModified,
             fetchedAt: feed.fetchedAt,
+            consecutiveFailures: feed.consecutiveFailures,
+            lastSuccessAt: feed.lastSuccessAt,
+            nextFetchAt: feed.nextFetchAt,
           },
         })
 
-      if (entryRecords.length === 0) return
-      await transaction
-        .insert(entries)
-        .values(entryRecords)
-        .onConflictDoUpdate({
-          target: entries.id,
-          set: {
-            title: sql`excluded.title`,
-            description: sql`excluded.description`,
-            content: sql`excluded.content`,
-            url: sql`excluded.url`,
-            author: sql`excluded.author`,
-            authorUrl: sql`excluded.author_url`,
-            authorAvatar: sql`excluded.author_avatar`,
-            language: sql`excluded.language`,
-            categories: sql`excluded.categories`,
-            attachments: sql`excluded.attachments`,
-            media: sql`excluded.media`,
-            extra: sql`excluded.extra`,
-            publishedAt: sql`case
-              when excluded.published_at = excluded.inserted_at then ${entries.publishedAt}
-              else excluded.published_at
-            end`,
-          },
-        })
+      if (entryRecords.length > 0) {
+        await transaction
+          .insert(entries)
+          .values(entryRecords)
+          .onConflictDoUpdate({
+            target: entries.id,
+            set: {
+              title: sql`excluded.title`,
+              description: sql`excluded.description`,
+              content: sql`excluded.content`,
+              url: sql`excluded.url`,
+              author: sql`excluded.author`,
+              authorUrl: sql`excluded.author_url`,
+              authorAvatar: sql`excluded.author_avatar`,
+              language: sql`excluded.language`,
+              categories: sql`excluded.categories`,
+              attachments: sql`excluded.attachments`,
+              media: sql`excluded.media`,
+              extra: sql`excluded.extra`,
+              publishedAt: sql`case
+                when excluded.published_at = excluded.inserted_at then ${entries.publishedAt}
+                else excluded.published_at
+              end`,
+            },
+          })
+      }
+      if (attempt) {
+        await transaction.insert(feedFetchAttempts).values(attempt)
+        await transaction.execute(sql`
+          delete from ${feedFetchAttempts}
+          where ${feedFetchAttempts.feedId} = ${attempt.feedId}
+            and ${feedFetchAttempts.id} not in (
+              select ${feedFetchAttempts.id}
+              from ${feedFetchAttempts}
+              where ${feedFetchAttempts.feedId} = ${attempt.feedId}
+              order by ${feedFetchAttempts.finishedAt} desc
+              limit 500
+            )
+        `)
+      }
     })
   }
 
@@ -613,6 +640,47 @@ export class PostgresDataStore implements DataStore {
       )) as ProcessingJobRecord[]
   }
 
+  async getEntryProjections(
+    userId: string,
+    entryIds: string[],
+  ): Promise<Record<string, EntryProjectionRecord>> {
+    const uniqueIds = [...new Set(entryIds)]
+    const result = Object.fromEntries(
+      uniqueIds.map((entryId) => [entryId, { evaluation: null, processingJob: null }]),
+    ) as Record<string, EntryProjectionRecord>
+    if (uniqueIds.length === 0) return result
+
+    const evaluationRows = await this.database
+      .select({ entryId: entries.id, evaluation: entryEvaluations })
+      .from(entries)
+      .innerJoin(
+        subscriptions,
+        and(eq(subscriptions.feedId, entries.feedId), eq(subscriptions.userId, userId)),
+      )
+      .innerJoin(entryCurrentEvaluations, eq(entryCurrentEvaluations.entryId, entries.id))
+      .innerJoin(entryEvaluations, eq(entryEvaluations.id, entryCurrentEvaluations.evaluationId))
+      .where(inArray(entries.id, uniqueIds))
+    for (const row of evaluationRows) {
+      result[row.entryId]!.evaluation = row.evaluation as EntryEvaluationRecord
+    }
+
+    const jobRows = await this.database
+      .select()
+      .from(processingJobs)
+      .where(and(eq(processingJobs.userId, userId), inArray(processingJobs.entryId, uniqueIds)))
+      .orderBy(
+        sql`case when ${processingJobs.status} in ('queued', 'running') then 1 else 0 end desc`,
+        desc(processingJobs.queuedAt),
+      )
+    for (const job of jobRows) {
+      const projection = result[job.entryId]
+      if (projection && !projection.processingJob) {
+        projection.processingJob = job as ProcessingJobRecord
+      }
+    }
+    return result
+  }
+
   async completeProcessingJob(input: {
     attempt: ProcessingAttemptRecord
     evaluation: EntryEvaluationRecord
@@ -830,17 +898,23 @@ export class PostgresDataStore implements DataStore {
       })
   }
 
-  async cleanupProcessingHistory(now: Date): Promise<void> {
+  async cleanupProcessingHistory(now: Date): Promise<MaintenanceCleanupReport> {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1_000)
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1_000)
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1_000)
     const oneHundredEightyDaysAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1_000)
-    await this.database.transaction(async (transaction) => {
-      await transaction
+    return this.database.transaction(async (transaction) => {
+      const diagnosticPayloadsCleared = await transaction
         .update(processingAttempts)
         .set({ executionMetadata: null })
-        .where(lt(processingAttempts.finishedAt, sevenDaysAgo))
-      await transaction
+        .where(
+          and(
+            lt(processingAttempts.finishedAt, sevenDaysAgo),
+            isNotNull(processingAttempts.executionMetadata),
+          ),
+        )
+        .returning({ id: processingAttempts.id })
+      const deletedAttempts = await transaction
         .delete(processingAttempts)
         .where(
           or(
@@ -854,7 +928,8 @@ export class PostgresDataStore implements DataStore {
             ),
           ),
         )
-      await transaction.execute(sql`
+        .returning({ id: processingAttempts.id })
+      const deletedEvaluations = await transaction.execute<{ id: string }>(sql`
         delete from ${entryEvaluations} evaluation
         using (
           select id, row_number() over (
@@ -869,7 +944,28 @@ export class PostgresDataStore implements DataStore {
             select 1 from ${entryCurrentEvaluations} current_evaluation
             where current_evaluation.evaluation_id = evaluation.id
           )
+        returning evaluation.id
       `)
+      const deletedFeedAttempts = await transaction
+        .delete(feedFetchAttempts)
+        .where(lt(feedFetchAttempts.finishedAt, thirtyDaysAgo))
+        .returning({ id: feedFetchAttempts.id })
+      const deletedJobs = await transaction
+        .delete(processingJobs)
+        .where(
+          and(
+            inArray(processingJobs.status, ["failed", "succeeded", "superseded"]),
+            lt(processingJobs.finishedAt, oneHundredEightyDaysAgo),
+          ),
+        )
+        .returning({ id: processingJobs.id })
+      return {
+        diagnosticPayloadsCleared: diagnosticPayloadsCleared.length,
+        entryEvaluationsDeleted: deletedEvaluations.rows.length,
+        feedFetchAttemptsDeleted: deletedFeedAttempts.length,
+        processingAttemptsDeleted: deletedAttempts.length,
+        processingJobsDeleted: deletedJobs.length,
+      }
     })
   }
 
@@ -986,6 +1082,59 @@ export class PostgresDataStore implements DataStore {
       .from(feeds)
       .innerJoin(subscriptions, eq(subscriptions.feedId, feeds.id))
     return rows.map((row) => row.feed)
+  }
+
+  async listFeedFetchAttempts(feedId: string, limit: number): Promise<FeedFetchAttemptRecord[]> {
+    return (await this.database
+      .select()
+      .from(feedFetchAttempts)
+      .where(eq(feedFetchAttempts.feedId, feedId))
+      .orderBy(desc(feedFetchAttempts.finishedAt))
+      .limit(Math.min(Math.max(limit, 1), 100))) as FeedFetchAttemptRecord[]
+  }
+
+  async checkHealth(): Promise<void> {
+    await this.database.execute(sql`select 1`)
+  }
+
+  async getOperationalStats(now: Date): Promise<OperationalStats> {
+    const [feedStats] = await this.database
+      .select({
+        feedAcquisitionFailures:
+          sql<number>`count(distinct ${feeds.id}) filter (where ${feeds.consecutiveFailures} > 0)`.mapWith(
+            Number,
+          ),
+        feedsDue:
+          sql<number>`count(distinct ${feeds.id}) filter (where ${feeds.nextFetchAt} <= ${now})`.mapWith(
+            Number,
+          ),
+        subscribedFeeds: sql<number>`count(distinct ${feeds.id})`.mapWith(Number),
+      })
+      .from(feeds)
+      .innerJoin(subscriptions, eq(subscriptions.feedId, feeds.id))
+    const processingJobsByStatus = await this.database
+      .select({
+        count: sql<number>`count(*)`.mapWith(Number),
+        status: processingJobs.status,
+      })
+      .from(processingJobs)
+      .groupBy(processingJobs.status)
+    const jobs: OperationalStats["processingJobs"] = {
+      failed: 0,
+      queued: 0,
+      running: 0,
+      succeeded: 0,
+      superseded: 0,
+    }
+    for (const row of processingJobsByStatus) {
+      if (row.status in jobs) jobs[row.status as keyof typeof jobs] = row.count
+    }
+    return {
+      feedAcquisitionFailures: feedStats?.feedAcquisitionFailures ?? 0,
+      feedsDue: feedStats?.feedsDue ?? 0,
+      processingJobs: jobs,
+      subscribedFeeds: feedStats?.subscribedFeeds ?? 0,
+    }
   }
 
   async getSettings(userId: string): Promise<Partial<Record<SettingsTab, SettingsRecord>>> {
