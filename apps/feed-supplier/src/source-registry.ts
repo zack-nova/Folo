@@ -13,6 +13,7 @@ import { parseRssHubSource } from "@follow/feed-source-contracts"
 import { createAuditDraft } from "./audit"
 import { CredentialCipher } from "./credential-cipher"
 import type { StoredCredential, SupplierRepository } from "./repository"
+import type { SourceCatalogService } from "./source-catalog"
 
 export class SourceRegistryError extends Error {
   constructor(
@@ -73,6 +74,7 @@ export class SourceRegistry {
     activeKeyId: string,
     keys: ReadonlyMap<string, Buffer>,
     readonly mode: SourceRegistryMode,
+    private readonly catalog?: SourceCatalogService,
   ) {
     this.cipher = new CredentialCipher(activeKeyId, keys)
   }
@@ -238,7 +240,8 @@ export class SourceRegistry {
   async resolve(input: string): Promise<ResolvedRssHubSource> {
     const source = parseRssHubSource(input)
     const route = await this.repository.findRouteBySourceURL(source.logicalURL)
-    if (!route && this.mode === "managed_only") {
+    const catalogMatch = route ? null : await this.catalog?.resolve(source)
+    if (!route && !catalogMatch && this.mode === "managed_only") {
       throw new SourceRegistryError(
         "source_not_registered",
         "RSSHub source is not registered in the managed route registry",
@@ -248,6 +251,7 @@ export class SourceRegistry {
     if (route && !route.enabled) {
       throw new SourceRegistryError("source_route_disabled", "RSSHub source route is disabled", 409)
     }
+    if (catalogMatch) return { route: null, secretQuery: catalogMatch.secretQuery, source }
     const secretQuery: Record<string, string> = {}
     for (const [parameter, credentialId] of Object.entries(route?.secretQueryBindings ?? {})) {
       const credential = await this.repository.findCredential(credentialId)

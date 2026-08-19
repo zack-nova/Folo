@@ -2140,6 +2140,17 @@
     },
     {
       "method": "GET",
+      "path": "/api/extensions/sources/catalog",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/source-catalog/api.ts",
+          "line": 43,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/extensions/subscriptions/{expression}/acquisition/diagnostics?limit=20",
       "callsites": [
         {
@@ -2342,6 +2353,28 @@
         {
           "file": "apps/desktop/layer/renderer/src/modules/ai-processing/api.ts",
           "line": 68,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/sources/catalog/{expression}/render",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/source-catalog/api.ts",
+          "line": 48,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/sources/catalog/{expression}/test",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/source-catalog/api.ts",
+          "line": 57,
           "target": "desktop"
         }
       ]

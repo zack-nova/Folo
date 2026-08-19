@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "node:crypto"
 
+import type { FastifyReply } from "fastify"
 import Fastify from "fastify"
+import { z } from "zod"
 
 import { registerSourceAdminRoutes } from "./admin-routes"
 import type { FeedSupplierConfig } from "./config"
@@ -9,6 +11,7 @@ import { PageChangeError, PageChangeService, startPageChangeScheduler } from "./
 import { PageFetcher } from "./page-fetcher"
 import { PostgresSupplierRepository } from "./postgres-repository"
 import type { SupplierRepository } from "./repository"
+import { SourceCatalogService } from "./source-catalog"
 import { SourceRegistry, SourceRegistryError } from "./source-registry"
 
 export interface BuildFeedSupplierOptions {
@@ -86,11 +89,17 @@ export const buildFeedSupplier = async ({
         : null)
   if (!repository) throw new Error("Feed supplier DATABASE_URL is required outside tests")
   await repository.initialize()
+  const catalog = new SourceCatalogService(
+    repository,
+    config.credentialActiveKeyId,
+    config.credentialKeys,
+  )
   const registry = new SourceRegistry(
     repository,
     config.credentialActiveKeyId,
     config.credentialKeys,
     config.registryMode,
+    catalog,
   )
   const pageFetcher =
     providedPageFetcher ??
@@ -169,6 +178,37 @@ export const buildFeedSupplier = async ({
     throw new Error("RSSHub returned too many redirects")
   }
 
+  const testRoute = async (sourceURL: string) => {
+    try {
+      const { target, diagnosticURL } = await upstreamURL(sourceURL)
+      const response = await fetchUpstream(
+        target,
+        new Headers({
+          accept:
+            "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
+          "user-agent": "Folo-Feed-Supplier/1.0 (+self-hosted RSSHub)",
+        }),
+      )
+      if (!response.ok) {
+        throw new SourceRegistryError(
+          "rsshub_request_failed",
+          `RSSHub request failed with HTTP ${response.status}`,
+          502,
+        )
+      }
+      const body = await boundedBody(response, config.rssHubFetchMaxBytes)
+      return {
+        contentBytes: Buffer.byteLength(body),
+        contentType: response.headers.get("content-type"),
+        upstreamStatus: response.status,
+        upstreamURL: diagnosticURL,
+      }
+    } catch (error) {
+      if (error instanceof SourceRegistryError) throw error
+      throw new SourceRegistryError("rsshub_request_failed", safeUpstreamErrorMessage(error), 502)
+    }
+  }
+
   const probeUpstream = async () => {
     try {
       const response = await fetchImplementation(baseURL, {
@@ -212,9 +252,15 @@ export const buildFeedSupplier = async ({
       repository.isReady(),
       probeUpstream(),
     ])
-    const managedRouteCount = persistenceReady
-      ? await registry.countManagedRoutes().catch(() => 0)
-      : 0
+    const [managedRouteCount, catalogRouteCount] = persistenceReady
+      ? await Promise.all([
+          registry.countManagedRoutes().catch(() => 0),
+          catalog
+            .listAdminRoutes()
+            .then((routes) => routes.length)
+            .catch(() => 0),
+        ])
+      : [0, 0]
     const ready = persistenceReady && upstreamReady
     const pageCounts = persistenceReady
       ? await repository.countPageChangeSources(new Date().toISOString()).catch(() => ({
@@ -227,6 +273,7 @@ export const buildFeedSupplier = async ({
       providers: [
         {
           configured: true,
+          catalogRouteCount,
           id: "rsshub" as const,
           managedRouteCount,
           message: ready
@@ -251,6 +298,66 @@ export const buildFeedSupplier = async ({
       ],
     }
   })
+
+  const catalogParameters = z
+    .object({
+      parameters: z.record(
+        z.string().min(1).max(64),
+        z.union([z.boolean(), z.number().safe(), z.string().max(512)]),
+      ),
+    })
+    .strict()
+
+  const sendCatalogError = (error: unknown, reply: FastifyReply) => {
+    if (error instanceof SourceRegistryError) {
+      return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+    }
+    throw error
+  }
+
+  server.get("/v1/catalog/routes", async () => ({ routes: await catalog.listPublicRoutes() }))
+
+  server.post<{ Params: { routeId: string } }>(
+    "/v1/catalog/routes/:routeId/render",
+    async (request, reply) => {
+      const parsed = catalogParameters.safeParse(request.body)
+      if (!parsed.success) {
+        return reply.status(400).send({
+          code: "invalid_request",
+          message: parsed.error.issues[0]?.message ?? "Request is invalid",
+        })
+      }
+      try {
+        return await catalog.render(request.params.routeId, parsed.data.parameters)
+      } catch (error) {
+        return sendCatalogError(error, reply)
+      }
+    },
+  )
+
+  server.post<{ Params: { routeId: string } }>(
+    "/v1/catalog/routes/:routeId/test",
+    async (request, reply) => {
+      const parsed = catalogParameters.safeParse(request.body)
+      if (!parsed.success) {
+        return reply.status(400).send({
+          code: "invalid_request",
+          message: parsed.error.issues[0]?.message ?? "Request is invalid",
+        })
+      }
+      let logicalURL: string
+      try {
+        logicalURL = (await catalog.render(request.params.routeId, parsed.data.parameters))
+          .logicalURL
+        const result = await testRoute(logicalURL)
+        await catalog.recordTest(request.params.routeId, "feed-supplier-internal", true)
+        return { ...result, logicalURL }
+      } catch (error) {
+        await catalog.recordTest(request.params.routeId, "feed-supplier-internal", false)
+        return sendCatalogError(error, reply)
+      }
+    },
+  )
 
   server.get("/v1/feeds/rsshub", async (request, reply) => {
     const query = request.query as Record<string, unknown>
@@ -330,39 +437,11 @@ export const buildFeedSupplier = async ({
   })
 
   registerSourceAdminRoutes({
+    catalog,
     pageChanges,
     registry,
     server,
-    testRoute: async (sourceURL) => {
-      try {
-        const { target, diagnosticURL } = await upstreamURL(sourceURL)
-        const response = await fetchUpstream(
-          target,
-          new Headers({
-            accept:
-              "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
-            "user-agent": "Folo-Feed-Supplier/1.0 (+self-hosted RSSHub)",
-          }),
-        )
-        if (!response.ok) {
-          throw new SourceRegistryError(
-            "rsshub_request_failed",
-            `RSSHub request failed with HTTP ${response.status}`,
-            502,
-          )
-        }
-        const body = await boundedBody(response, config.rssHubFetchMaxBytes)
-        return {
-          contentBytes: Buffer.byteLength(body),
-          contentType: response.headers.get("content-type"),
-          upstreamStatus: response.status,
-          upstreamURL: diagnosticURL,
-        }
-      } catch (error) {
-        if (error instanceof SourceRegistryError) throw error
-        throw new SourceRegistryError("rsshub_request_failed", safeUpstreamErrorMessage(error), 502)
-      }
-    },
+    testRoute,
   })
 
   await server.ready()

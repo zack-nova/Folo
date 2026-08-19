@@ -5,6 +5,8 @@ import type {
   SourceAuditAction,
   SourceAuditEvent,
   SourceAuditVerification,
+  SourceCatalogParameter,
+  SourceCatalogRouteAdministration,
   SourceRouteInstance,
 } from "@follow/feed-source-contracts"
 import type { PoolClient, QueryResultRow } from "pg"
@@ -37,6 +39,22 @@ interface RouteRow extends QueryResultRow {
   name: string
   secret_query_bindings: unknown
   source_url: string
+  updated_at: Date | string
+}
+
+interface CatalogRouteRow extends QueryResultRow {
+  category: string
+  created_at: Date | string
+  deleted_at: Date | string | null
+  description: string | null
+  documentation_url: string | null
+  enabled: boolean
+  id: string
+  parameters: unknown
+  route_key: string
+  route_path_template: string
+  secret_query_bindings: unknown
+  title: string
   updated_at: Date | string
 }
 
@@ -134,6 +152,31 @@ const routeFromRow = (row: RouteRow): SourceRouteInstance => ({
   updatedAt: isoTimestamp(row.updated_at),
 })
 
+const parseCatalogParameters = (value: unknown): SourceCatalogParameter[] => {
+  if (!Array.isArray(value)) throw new Error("Persisted catalog parameters are invalid")
+  return value as SourceCatalogParameter[]
+}
+
+const catalogRouteFromRow = (row: CatalogRouteRow): SourceCatalogRouteAdministration => {
+  const secretQueryBindings = parseBindings(row.secret_query_bindings)
+  return {
+    category: row.category,
+    createdAt: isoTimestamp(row.created_at),
+    deletedAt: optionalTimestamp(row.deleted_at),
+    description: row.description,
+    documentationURL: row.documentation_url,
+    enabled: row.enabled,
+    id: row.id,
+    key: row.route_key,
+    parameters: parseCatalogParameters(row.parameters),
+    requiresCredentials: Object.keys(secretQueryBindings).length > 0,
+    routePathTemplate: row.route_path_template,
+    secretQueryBindings,
+    title: row.title,
+    updatedAt: isoTimestamp(row.updated_at),
+  }
+}
+
 const auditFromRow = (row: AuditRow): SourceAuditEvent => ({
   action: row.action,
   actor: row.actor,
@@ -228,10 +271,12 @@ export class PostgresSupplierRepository implements SupplierRepository {
 
   async initialize(): Promise<void> {
     const migrations = await Promise.all(
-      ["001_source_registry.sql", "002_page_change_sources.sql"].map(async (filename, index) => ({
-        sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
-        version: index + 1,
-      })),
+      ["001_source_registry.sql", "002_page_change_sources.sql", "003_source_catalog.sql"].map(
+        async (filename, index) => ({
+          sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
+          version: index + 1,
+        }),
+      ),
     )
     await this.withTransaction(async (client) => {
       await client.query("select pg_advisory_xact_lock($1)", [1_931_505_202])
@@ -497,6 +542,92 @@ export class PostgresSupplierRepository implements SupplierRepository {
     return result.rows.map(credentialFromRow)
   }
 
+  async listCatalogRoutes(): Promise<SourceCatalogRouteAdministration[]> {
+    const result = await this.pool.query<CatalogRouteRow>(
+      `select * from source_catalog_routes
+       where deleted_at is null order by lower(category), lower(title), created_at`,
+    )
+    return result.rows.map(catalogRouteFromRow)
+  }
+
+  async findCatalogRouteById(id: string): Promise<SourceCatalogRouteAdministration | null> {
+    const result = await this.pool.query<CatalogRouteRow>(
+      "select * from source_catalog_routes where id = $1 and deleted_at is null limit 1",
+      [id],
+    )
+    return result.rows[0] ? catalogRouteFromRow(result.rows[0]) : null
+  }
+
+  async createCatalogRoute(
+    route: SourceCatalogRouteAdministration,
+    audit: AuditEventDraft,
+  ): Promise<SourceCatalogRouteAdministration> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        const result = await client.query<CatalogRouteRow>(
+          `insert into source_catalog_routes
+            (id, route_key, title, description, category, documentation_url,
+             route_path_template, parameters, secret_query_bindings, enabled, deleted_at,
+             created_at, updated_at)
+           values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13)
+           returning *`,
+          this.catalogRouteParameters(route),
+        )
+        return catalogRouteFromRow(result.rows[0]!)
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new RepositoryConflictError(
+          "An active catalog route already uses this key or template",
+        )
+      }
+      throw error
+    }
+  }
+
+  async updateCatalogRoute(
+    route: SourceCatalogRouteAdministration,
+    audit: AuditEventDraft,
+  ): Promise<SourceCatalogRouteAdministration | null> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        const result = await client.query<CatalogRouteRow>(
+          `update source_catalog_routes set
+             route_key = $2, title = $3, description = $4, category = $5,
+             documentation_url = $6, route_path_template = $7, parameters = $8::jsonb,
+             secret_query_bindings = $9::jsonb, enabled = $10, deleted_at = $11,
+             updated_at = $13
+           where id = $1 and deleted_at is null returning *`,
+          this.catalogRouteParameters(route),
+        )
+        return result.rows[0] ? catalogRouteFromRow(result.rows[0]) : null
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new RepositoryConflictError(
+          "An active catalog route already uses this key or template",
+        )
+      }
+      throw error
+    }
+  }
+
+  async softDeleteCatalogRoute(
+    id: string,
+    deletedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<SourceCatalogRouteAdministration | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<CatalogRouteRow>(
+        `update source_catalog_routes
+         set enabled = false, deleted_at = $2, updated_at = $2
+         where id = $1 and deleted_at is null returning *`,
+        [id, deletedAt],
+      )
+      return result.rows[0] ? catalogRouteFromRow(result.rows[0]) : null
+    })
+  }
+
   async findCredential(id: string): Promise<StoredCredential | null> {
     const result = await this.pool.query<CredentialRow>(
       "select * from source_credentials where id = $1 limit 1",
@@ -561,6 +692,10 @@ export class PostgresSupplierRepository implements SupplierRepository {
       const usage = await client.query<{ used: boolean }>(
         `select exists(
            select 1 from source_route_instances route,
+             jsonb_each_text(route.secret_query_bindings) binding
+           where route.deleted_at is null and route.enabled = true and binding.value = $1
+           union all
+           select 1 from source_catalog_routes route,
              jsonb_each_text(route.secret_query_bindings) binding
            where route.deleted_at is null and route.enabled = true and binding.value = $1
          ) as used`,
@@ -789,6 +924,24 @@ export class PostgresSupplierRepository implements SupplierRepository {
       route.sourceURL,
       route.enabled,
       JSON.stringify(route.secretQueryBindings),
+      route.deletedAt,
+      route.createdAt,
+      route.updatedAt,
+    ]
+  }
+
+  private catalogRouteParameters(route: SourceCatalogRouteAdministration): unknown[] {
+    return [
+      route.id,
+      route.key,
+      route.title,
+      route.description,
+      route.category,
+      route.documentationURL,
+      route.routePathTemplate,
+      JSON.stringify(route.parameters),
+      JSON.stringify(route.secretQueryBindings),
+      route.enabled,
       route.deletedAt,
       route.createdAt,
       route.updatedAt,

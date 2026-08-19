@@ -1,5 +1,11 @@
-import type { AutonomousSourceProviderHealth } from "@follow/feed-source-contracts"
+import type {
+  AutonomousSourceProviderHealth,
+  SourceCatalogRenderResult,
+  SourceCatalogRoute,
+  SourceCatalogTestResult,
+} from "@follow/feed-source-contracts"
 import { parsePageChangeSource, parseRssHubSource } from "@follow/feed-source-contracts"
+import { z } from "zod"
 
 import type { FeedFetcher, FetchedFeed } from "./importer"
 
@@ -10,6 +16,78 @@ export interface FeedSupplierFetcherOptions {
   timeoutMs?: number
   token: string
 }
+
+export interface SourceCatalogClient {
+  listRoutes(): Promise<SourceCatalogRoute[]>
+  renderRoute(
+    routeId: string,
+    parameters: Record<string, boolean | number | string>,
+  ): Promise<SourceCatalogRenderResult>
+  testRoute(
+    routeId: string,
+    parameters: Record<string, boolean | number | string>,
+  ): Promise<SourceCatalogTestResult>
+}
+
+const sourceCatalogValue = z.union([z.boolean(), z.number().int().safe(), z.string().max(512)])
+const sourceCatalogParameter = z
+  .object({
+    defaultValue: sourceCatalogValue.nullable(),
+    description: z.string().max(500).nullable(),
+    key: z.string().min(1).max(64),
+    label: z.string().min(1).max(128),
+    location: z.enum(["path", "query"]),
+    maximum: z.number().int().safe().nullable(),
+    minimum: z.number().int().safe().nullable(),
+    options: z
+      .array(z.object({ label: z.string().max(128), value: z.string().max(256) }).strict())
+      .max(100),
+    required: z.boolean(),
+    type: z.enum(["boolean", "enum", "integer", "string"]),
+  })
+  .strict()
+const sourceCatalogRoute = z
+  .object({
+    category: z.string().min(1).max(128),
+    createdAt: z.string().min(1).max(64),
+    description: z.string().max(1_000).nullable(),
+    documentationURL: z.string().max(2_048).nullable(),
+    enabled: z.boolean(),
+    id: z.string().min(1).max(128),
+    key: z.string().min(1).max(128),
+    parameters: z.array(sourceCatalogParameter).max(32),
+    requiresCredentials: z.boolean(),
+    routePathTemplate: z.string().min(2).max(1_024),
+    title: z.string().min(1).max(128),
+    updatedAt: z.string().min(1).max(64),
+  })
+  .strict()
+const sourceCatalogList = z.object({ routes: z.array(sourceCatalogRoute) }).strict()
+const sourceCatalogRender = z.object({ logicalURL: z.string().min(1).max(2_048) }).strict()
+const sourceCatalogTest = sourceCatalogRender
+  .extend({
+    contentBytes: z.number().int().min(0),
+    contentType: z.string().max(256).nullable(),
+    upstreamStatus: z.number().int().min(100).max(599),
+    upstreamURL: z.string().min(1).max(2_048),
+  })
+  .strict()
+const sourceProviderHealth = z
+  .object({
+    catalogRouteCount: z.number().int().min(0).optional(),
+    configured: z.boolean(),
+    dueSourceCount: z.number().int().min(0).optional(),
+    enabledSourceCount: z.number().int().min(0).optional(),
+    id: z.enum(["page_change", "rsshub"]),
+    lastCycleAt: z.string().max(64).nullable().optional(),
+    managedRouteCount: z.number().int().min(0).optional(),
+    message: z.string().max(500).nullable(),
+    persistenceStatus: z.enum(["ready", "unavailable"]).optional(),
+    registryMode: z.enum(["managed_only", "permissive"]).optional(),
+    status: z.enum(["ready", "unavailable"]),
+  })
+  .strict()
+const sourceProviderList = z.object({ providers: z.array(sourceProviderHealth) }).strict()
 
 const boundedBody = async (response: Response, maximumBytes: number): Promise<string> => {
   const declaredLength = Number(response.headers.get("content-length"))
@@ -44,7 +122,7 @@ const errorMessage = async (response: Response): Promise<string> => {
   return `Feed supplier request failed with HTTP ${response.status}`
 }
 
-export class FeedSupplierFetcher implements FeedFetcher {
+export class FeedSupplierFetcher implements FeedFetcher, SourceCatalogClient {
   readonly providerId = "feed_supplier" as const
   private readonly baseURL: URL
   private readonly fetchImplementation: typeof fetch
@@ -80,25 +158,9 @@ export class FeedSupplierFetcher implements FeedFetcher {
         signal: AbortSignal.timeout(Math.min(this.timeoutMs, 5_000)),
       })
       if (!response.ok) throw new Error(`Supplier returned HTTP ${response.status}`)
-      const payload = (await response.json()) as { providers?: unknown }
-      if (!Array.isArray(payload.providers)) throw new Error("Supplier status is invalid")
-      const providers = payload.providers.filter(
-        (item): item is AutonomousSourceProviderHealth =>
-          Boolean(item) &&
-          typeof item === "object" &&
-          "id" in item &&
-          (item.id === "rsshub" || item.id === "page_change") &&
-          "status" in item &&
-          (item.status === "ready" || item.status === "unavailable") &&
-          (!("managedRouteCount" in item) ||
-            (typeof item.managedRouteCount === "number" && item.managedRouteCount >= 0)) &&
-          (!("persistenceStatus" in item) ||
-            item.persistenceStatus === "ready" ||
-            item.persistenceStatus === "unavailable") &&
-          (!("registryMode" in item) ||
-            item.registryMode === "permissive" ||
-            item.registryMode === "managed_only"),
-      )
+      const parsed = sourceProviderList.safeParse(await response.json())
+      if (!parsed.success) throw new Error("Supplier status is invalid")
+      const providers: AutonomousSourceProviderHealth[] = parsed.data.providers
       if (!providers.some((provider) => provider.id === "rsshub")) {
         throw new Error("Supplier did not report RSSHub status")
       }
@@ -122,6 +184,39 @@ export class FeedSupplierFetcher implements FeedFetcher {
         },
       ]
     }
+  }
+
+  async listRoutes(): Promise<SourceCatalogRoute[]> {
+    const payload = await this.requestJSON<unknown>("v1/catalog/routes")
+    const parsed = sourceCatalogList.safeParse(payload)
+    if (!parsed.success) throw new Error("Supplier catalog response is invalid")
+    return parsed.data.routes
+  }
+
+  async renderRoute(
+    routeId: string,
+    parameters: Record<string, boolean | number | string>,
+  ): Promise<SourceCatalogRenderResult> {
+    const payload = await this.requestJSON<unknown>(
+      `v1/catalog/routes/${encodeURIComponent(routeId)}/render`,
+      parameters,
+    )
+    const parsed = sourceCatalogRender.safeParse(payload)
+    if (!parsed.success) throw new TypeError("Supplier catalog render response is invalid")
+    return parsed.data
+  }
+
+  async testRoute(
+    routeId: string,
+    parameters: Record<string, boolean | number | string>,
+  ): Promise<SourceCatalogTestResult> {
+    const payload = await this.requestJSON<unknown>(
+      `v1/catalog/routes/${encodeURIComponent(routeId)}/test`,
+      parameters,
+    )
+    const parsed = sourceCatalogTest.safeParse(payload)
+    if (!parsed.success) throw new Error("Supplier catalog test response is invalid")
+    return parsed.data
   }
 
   async fetch(
@@ -173,5 +268,24 @@ export class FeedSupplierFetcher implements FeedFetcher {
       status: response.status,
       url: responseURL.toString(),
     }
+  }
+
+  private async requestJSON<T>(
+    path: string,
+    parameters?: Record<string, boolean | number | string>,
+  ): Promise<T> {
+    const response = await this.fetchImplementation(new URL(path, this.baseURL), {
+      body: parameters === undefined ? undefined : JSON.stringify({ parameters }),
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${this.token}`,
+        ...(parameters === undefined ? {} : { "content-type": "application/json" }),
+      },
+      method: parameters === undefined ? "GET" : "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(this.timeoutMs),
+    })
+    if (!response.ok) throw new Error(await errorMessage(response))
+    return (await response.json()) as T
   }
 }

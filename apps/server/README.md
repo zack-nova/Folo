@@ -117,6 +117,7 @@ docker build -f apps/server/Dockerfile -t folo-server:local .
 - 能力门控的所有者运维前端：运行概览、Feed/AI 失败列表、获取诊断和人工重试。
 - 批量 Entry 投影查询和 10,000 Entry 容量基准，避免时间线逐 Entry 读取后端投影。
 - 独立 feed-supplier、自建 RSSHub 的 `rsshub://` 预览/订阅/刷新闭环，以及 provider 健康状态和告警。
+- Owner 鉴权的自有数据源目录、参数渲染和连接测试代理；供应端管理令牌与凭据不进入浏览器或核心配置。
 
 FOLO 官方 RSSHub/Trending、AI Chat、Billing、MCP、多人权限和外部通知投递仍未实现；摘要、翻译和
 逐条评估全部由本地后端调用所有者配置的 Provider，不访问 Folo 官方后端。

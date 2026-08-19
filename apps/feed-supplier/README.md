@@ -1,8 +1,8 @@
 # Folo Feed Supplier
 
 阶段 5A 的独立数据源供给服务。它把 `rsshub://` 路由转换为自建 RSSHub 的标准 Feed，并把
-`pagechange://` 页面来源的确认变化物化为新 GUID RSS Entry。5A.2/5A.3 使用独立 PostgreSQL 保存路由、
-密文凭据、页面观测状态、不可变事件和 HMAC 哈希链审计；数据库和密钥都不进入 Folo 核心。
+`pagechange://` 页面来源的确认变化物化为新 GUID RSS Entry。5A.2–5A.4 使用独立 PostgreSQL 保存路由、
+自有路由目录、密文凭据、页面观测状态、不可变事件和 HMAC 哈希链审计；数据库和密钥都不进入 Folo 核心。
 
 本地通常直接运行仓库根目录的 `pnpm dev:self-hosted:sources`。单独开发时：
 
@@ -25,6 +25,12 @@ POST   /v1/admin/routes
 PATCH  /v1/admin/routes/:routeId
 DELETE /v1/admin/routes/:routeId
 POST   /v1/admin/routes/:routeId/test
+GET    /v1/admin/catalog/routes
+POST   /v1/admin/catalog/routes
+GET    /v1/admin/catalog/routes/:routeId
+PATCH  /v1/admin/catalog/routes/:routeId
+DELETE /v1/admin/catalog/routes/:routeId
+POST   /v1/admin/catalog/routes/:routeId/test
 GET    /v1/admin/page-sources
 POST   /v1/admin/page-sources
 GET    /v1/admin/page-sources/:sourceId
@@ -39,6 +45,19 @@ GET    /v1/admin/audit/verify
 
 凭据值只允许写入，不允许读回。路由通过 `secretQueryBindings` 将上游查询参数绑定到凭据 ID，诊断 URL、
 响应和审计都不会包含明文。RSSHub 的基础 `ACCESS_KEY` 仍是部署密钥，不属于业务凭据库。
+
+创建一个自有目录路由：
+
+```bash
+curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"key":"repository-releases","title":"Repository releases","category":"Development","routePathTemplate":"/github/releases/:owner/:repository","parameters":[{"key":"owner","label":"Owner","location":"path","required":true,"type":"string"},{"key":"repository","label":"Repository","location":"path","required":true,"type":"string"}]}' \
+  http://127.0.0.1:3001/v1/admin/catalog/routes
+```
+
+启用目录通过内部令牌提供 `GET /v1/catalog/routes` 以及按 route ID 的 `render`、`test`。这些接口只返回公开
+schema、逻辑地址和脱敏诊断；Folo 核心再以实例 Owner 会话代理给“设置 → 数据源”页面。目录初始为空，
+不会访问 FOLO 官方目录，也不会向浏览器返回内部令牌、管理令牌或凭据绑定。
 
 创建一个默认不定时抓取的页面来源，并执行第一次真实观测：
 

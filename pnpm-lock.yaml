@@ -245,6 +245,9 @@ importers:
       '@follow/constants':
         specifier: workspace:*
         version: link:../../packages/internal/constants
+      '@follow/feed-source-contracts':
+        specifier: workspace:*
+        version: link:../../packages/feed-source-contracts
       '@follow/hooks':
         specifier: workspace:*
         version: link:../../packages/internal/hooks

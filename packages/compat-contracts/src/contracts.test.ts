@@ -133,7 +133,7 @@ describe("capability manifest", () => {
   it("uses explicit client behavior and never selects an official provider before stage 5", async () => {
     const manifest = await readJson<CapabilityManifest>(join(contractsRoot, "capabilities.json"))
 
-    expect(manifest.schemaVersion).toBe(4)
+    expect(manifest.schemaVersion).toBe(5)
     expect(manifest.compatibilityVersion).toBe("folo-client-sdk-0.3.95")
     expect(manifest.extensionContractVersion).toBe("feeds-agent-extensions-v5")
     expect(manifest.manifestEndpoint).toBe("/api/extensions/capabilities")
@@ -164,6 +164,14 @@ describe("capability manifest", () => {
     expect(manifest.capabilities).toContainEqual(
       expect.objectContaining({
         id: "sources.page_change",
+        targetStage: 5,
+        provider: "local",
+        clientBehavior: "enabled_when_advertised",
+      }),
+    )
+    expect(manifest.capabilities).toContainEqual(
+      expect.objectContaining({
+        id: "sources.route_catalog",
         targetStage: 5,
         provider: "local",
         clientBehavior: "enabled_when_advertised",

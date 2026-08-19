@@ -76,12 +76,13 @@ RSSHub `key` 和所有秘密绑定参数。
 ```json
 [
   { "id": "sources.rsshub_self_hosted", "provider": "local" },
-  { "id": "sources.page_change", "provider": "local" }
+  { "id": "sources.page_change", "provider": "local" },
+  { "id": "sources.route_catalog", "provider": "local" }
 ]
 ```
 
-未配置时服务仍报告阶段四能力，前端隐藏 `rsshub://` 和 `pagechange://` 入口。配置后报告阶段五能力，但
-`rsshub.hosted` 继续位于 `unavailable`。
+未配置时服务仍报告阶段四能力，前端隐藏 `rsshub://`、`pagechange://` 和自有目录入口。配置后报告阶段五
+能力，但 `rsshub.hosted` 继续位于 `unavailable`。
 
 所有者运维状态新增 `source_providers`，Prometheus 新增：
 
@@ -148,6 +149,45 @@ Folo 发现输入框粘贴该 `pagechange://` 地址完成普通 Feed 订阅。�
 第一版只支持无需登录、服务端可直接访问的公开 HTML 或文本页面。不支持 JavaScript 浏览器渲染、Cookie
 登录、截图比较、AI 语义去噪、邮件、Webhook 或系统通知；这些能力不得通过扩大核心 RSS 抓取器职责实现。
 
+## 5A.4 自有路由目录与参数表单
+
+路由目录是供给端自己的权威数据，不读取、缓存或代理 FOLO 官方目录。`source_catalog_routes` 保存稳定路由
+key、展示元数据、RSSHub 路径模板、公开参数 schema、启用状态和秘密查询参数到凭据 ID 的绑定。目录初始
+为空，由部署者通过独立 `ADMIN_TOKEN` 发布；仓库不内置可能随 RSSHub 版本漂移的路由预设。
+
+支持的公开参数类型为 `string`、`integer`、`boolean` 和 `enum`，位置为 `path` 或 `query`。路径占位符必须
+与必填 path 参数一一对应；整数支持上下界，枚举值由目录定义。渲染器拒绝未知参数、重复查询参数、秘密
+参数冲突、越界值、不完整模板、点路径段和可能命中同一地址的歧义模板，并只生成经过 URL 编码的
+`rsshub://` 逻辑地址。解析时仍按静态段数量和稳定 key 排序，避免异常并发写入导致路由选择随展示顺序变化。
+
+管理接口继续只接受 `ADMIN_TOKEN`：
+
+```text
+GET    /v1/admin/catalog/routes
+POST   /v1/admin/catalog/routes
+GET    /v1/admin/catalog/routes/:routeId
+PATCH  /v1/admin/catalog/routes/:routeId
+DELETE /v1/admin/catalog/routes/:routeId
+POST   /v1/admin/catalog/routes/:routeId/test
+```
+
+核心只持有 `FEED_SUPPLIER_TOKEN`，可访问以下内部只读/执行接口；它不能修改目录或读取凭据绑定：
+
+```text
+GET  /v1/catalog/routes
+POST /v1/catalog/routes/:routeId/render
+POST /v1/catalog/routes/:routeId/test
+```
+
+核心再以实例 Owner 会话保护 `/api/extensions/sources/catalog` 及其 `render`、`test` 子路由。桌面端只有在
+`sources.route_catalog` 被宣告时显示“数据源”设置页，提供搜索、分类过滤、动态类型表单、连接测试，并把
+生成的逻辑地址交给既有 `FeedForm` 完成预览和订阅。浏览器不接收内部或管理令牌，也不接收凭据 ID/值。
+核心会对供给端目录响应执行严格 schema 校验并拒绝任何额外管理字段，避免内部协议漂移把凭据绑定透传到浏览器。
+
+目录模板同时参与 `managed_only` 路由解析，因此由表单生成的地址不需要再创建一条路由实例；精确登记的
+`source_route_instances` 仍具有优先级。普通 HTTP/HTTPS RSS、页面变化源和既有 `rsshub://` 实例链路保持
+不变。目录增删改与连接测试写入现有 HMAC 前向哈希链审计，备份恢复演练把目录表列为权威表。
+
 ## 配置与启动
 
 本地最小闭环：
@@ -194,10 +234,9 @@ docker compose --env-file apps/server/.env.production \
 
 ## 5A 后续切片
 
-5A.3 完成后按以下顺序继续：
+5A.4 完成后按以下顺序继续：
 
-1. **5A.4 路由目录与表单**：自有路由元数据、参数 schema、连接测试和前端管理，不调用 FOLO 官方目录。
-2. **5A.5 生产规模化**：Redis 缓存、每路由限流、并发隔离和真实数据灰度。
+1. **5A.5 生产规模化**：Redis 缓存、每路由限流、并发隔离和真实数据灰度。
 
 阶段 5B 不属于上述切片。只有 5A 真实数据灰度稳定后，才评估是否需要 FOLO 官方发现或托管获取。
 
@@ -206,7 +245,7 @@ docker compose --env-file apps/server/.env.production \
 - 5A.1：约 3–5 人日，代码、契约、容器、运维可见性和自动测试组成一个最小闭环。
 - 5A.2：独立配置库、凭据生命周期、审计、备份恢复已完成。
 - 5A.3：页面来源持久化、空基线首次发布、确认去抖、物化 Feed、调度隔离和自动测试已完成。
-- 5A.4：约 1–2 周，主要体量在路由 schema、目录缓存和管理前端。
+- 5A.4：自有目录持久化、严格参数 schema、连接测试、Owner 代理和前端表单已完成。
 - 5A.5：约 1–2 周工程化，再加真实数据灰度观察时间。
 
 最大风险不是 RSS 代理本身，而是站点凭据安全、反爬变化、调度公平性和页面变化去重。真实数据灰度按既定
@@ -240,3 +279,12 @@ docker compose --env-file apps/server/.env.production \
 - 页面抓取逐跳执行公网地址校验、超时、响应大小和内容类型限制；错误响应不泄露目标凭据。
 - 页面 worker、失败退避和目标 HTTP 连接位于供给端；普通 RSS/Atom 和 RSSHub 回归测试保持通过。
 - `pagechange://` 可以预览、订阅、轮询、进入时间线并复用现有 Action 与自主 AI 处理。
+
+## 5A.4 验收标准
+
+- 目录元数据、参数 schema、启用状态和秘密凭据绑定跨供给端重启保持稳定，不依赖 FOLO 官方目录。
+- 参数渲染拒绝未知/缺失/越界值和模板冲突，只输出稳定且编码安全的 `rsshub://` 地址。
+- `managed_only` 接受启用目录模板生成的地址，并只在供给端注入活动凭据；响应、日志和审计不泄露明文。
+- 内部令牌不能访问目录管理 API，浏览器只能经实例 Owner 鉴权的核心 API 读取、渲染和测试。
+- 前端支持目录搜索、分类过滤、四种参数类型、连接反馈，并复用普通 Feed 预览/订阅闭环。
+- 目录增删改和测试进入哈希链审计，PostgreSQL 迁移、备份恢复、普通 RSS/RSSHub/页面来源回归全部通过。

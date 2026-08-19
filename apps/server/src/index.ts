@@ -25,15 +25,15 @@ const standardFeedFetcher = new HttpFeedFetcher({
   maxBytes: config.feedFetchMaxBytes,
   timeoutMs: config.feedFetchTimeoutMs,
 })
-const feedFetcher = config.feedSupplierConfig
-  ? new RoutingFeedFetcher(
-      standardFeedFetcher,
-      new FeedSupplierFetcher({
-        ...config.feedSupplierConfig,
-        maxBytes: config.feedFetchMaxBytes,
-        timeoutMs: config.feedFetchTimeoutMs,
-      }),
-    )
+const feedSupplierFetcher = config.feedSupplierConfig
+  ? new FeedSupplierFetcher({
+      ...config.feedSupplierConfig,
+      maxBytes: config.feedFetchMaxBytes,
+      timeoutMs: config.feedFetchTimeoutMs,
+    })
+  : null
+const feedFetcher = feedSupplierFetcher
+  ? new RoutingFeedFetcher(standardFeedFetcher, feedSupplierFetcher)
   : standardFeedFetcher
 const server = await buildServer({
   aiEncryptionSecret: config.aiEncryptionSecret,
@@ -55,6 +55,7 @@ const server = await buildServer({
   processingWorkerPollIntervalMs: config.processingWorkerPollIntervalMs,
   readabilityFetcher: standardFeedFetcher,
   serverURL: config.serverURL,
+  sourceCatalogClient: feedSupplierFetcher ?? undefined,
   trustProxyHops: config.trustProxyHops,
   uploadsDirectory: config.uploadsDirectory,
 })

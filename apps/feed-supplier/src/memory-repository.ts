@@ -2,6 +2,7 @@ import type {
   PageChangeEvent,
   SourceAuditEvent,
   SourceAuditVerification,
+  SourceCatalogRouteAdministration,
   SourceRouteInstance,
 } from "@follow/feed-source-contracts"
 
@@ -23,6 +24,17 @@ const cloneRoute = (route: SourceRouteInstance): SourceRouteInstance => ({
   secretQueryBindings: { ...route.secretQueryBindings },
 })
 
+const cloneCatalogRoute = (
+  route: SourceCatalogRouteAdministration,
+): SourceCatalogRouteAdministration => ({
+  ...route,
+  parameters: route.parameters.map((parameter) => ({
+    ...parameter,
+    options: parameter.options.map((option) => ({ ...option })),
+  })),
+  secretQueryBindings: { ...route.secretQueryBindings },
+})
+
 const clonePageSource = (source: StoredPageChangeSource): StoredPageChangeSource => ({
   ...source,
   ignoreSelectors: [...source.ignoreSelectors],
@@ -32,6 +44,7 @@ const clonePageEvent = (event: PageChangeEvent): PageChangeEvent => ({ ...event 
 
 export class MemorySupplierRepository implements SupplierRepository {
   private readonly auditEvents: SourceAuditEvent[] = []
+  private readonly catalogRoutes = new Map<string, SourceCatalogRouteAdministration>()
   private readonly credentials = new Map<string, StoredCredential>()
   private readonly pageEvents = new Map<string, PageChangeEvent[]>()
   private readonly pageSources = new Map<string, StoredPageChangeSource>()
@@ -156,6 +169,52 @@ export class MemorySupplierRepository implements SupplierRepository {
     return [...this.credentials.values()].map(cloneCredential)
   }
 
+  async listCatalogRoutes(): Promise<SourceCatalogRouteAdministration[]> {
+    return [...this.catalogRoutes.values()]
+      .filter((route) => !route.deletedAt)
+      .sort((left, right) => left.title.localeCompare(right.title))
+      .map(cloneCatalogRoute)
+  }
+
+  async findCatalogRouteById(id: string): Promise<SourceCatalogRouteAdministration | null> {
+    const route = this.catalogRoutes.get(id)
+    return route && !route.deletedAt ? cloneCatalogRoute(route) : null
+  }
+
+  async createCatalogRoute(
+    route: SourceCatalogRouteAdministration,
+    audit: AuditEventDraft,
+  ): Promise<SourceCatalogRouteAdministration> {
+    this.assertUniqueCatalogRoute(route)
+    this.catalogRoutes.set(route.id, cloneCatalogRoute(route))
+    this.appendAudit(audit)
+    return cloneCatalogRoute(route)
+  }
+
+  async updateCatalogRoute(
+    route: SourceCatalogRouteAdministration,
+    audit: AuditEventDraft,
+  ): Promise<SourceCatalogRouteAdministration | null> {
+    if (!this.catalogRoutes.has(route.id)) return null
+    this.assertUniqueCatalogRoute(route)
+    this.catalogRoutes.set(route.id, cloneCatalogRoute(route))
+    this.appendAudit(audit)
+    return cloneCatalogRoute(route)
+  }
+
+  async softDeleteCatalogRoute(
+    id: string,
+    deletedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<SourceCatalogRouteAdministration | null> {
+    const route = this.catalogRoutes.get(id)
+    if (!route || route.deletedAt) return null
+    const updated = { ...route, deletedAt, enabled: false, updatedAt: deletedAt }
+    this.catalogRoutes.set(id, cloneCatalogRoute(updated))
+    this.appendAudit(audit)
+    return cloneCatalogRoute(updated)
+  }
+
   async findCredential(id: string): Promise<StoredCredential | null> {
     const record = this.credentials.get(id)
     return record ? cloneCredential(record) : null
@@ -189,7 +248,7 @@ export class MemorySupplierRepository implements SupplierRepository {
   ): Promise<StoredCredential | null> {
     const record = this.credentials.get(id)
     if (!record || record.disabledAt) return null
-    const inUse = [...this.routes.values()].some(
+    const inUse = [...this.routes.values(), ...this.catalogRoutes.values()].some(
       (route) =>
         !route.deletedAt && route.enabled && Object.values(route.secretQueryBindings).includes(id),
     )
@@ -314,6 +373,20 @@ export class MemorySupplierRepository implements SupplierRepository {
     )
     if (duplicate)
       throw new RepositoryConflictError("An active route already uses this name or URL")
+  }
+
+  private assertUniqueCatalogRoute(route: SourceCatalogRouteAdministration): void {
+    const normalizedKey = route.key.toLocaleLowerCase()
+    const duplicate = [...this.catalogRoutes.values()].some(
+      (item) =>
+        item.id !== route.id &&
+        !item.deletedAt &&
+        (item.key.toLocaleLowerCase() === normalizedKey ||
+          item.routePathTemplate === route.routePathTemplate),
+    )
+    if (duplicate) {
+      throw new RepositoryConflictError("An active catalog route already uses this key or template")
+    }
   }
 
   private assertUniquePageSourceName(name: string, id: string): void {

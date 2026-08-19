@@ -11,9 +11,11 @@ import type { AutonomousSourceProviderHealth } from "@follow/feed-source-contrac
 import {
   PAGE_CHANGE_CAPABILITY,
   RSSHUB_SELF_HOSTED_CAPABILITY,
+  SOURCE_ROUTE_CATALOG_CAPABILITY,
 } from "@follow/feed-source-contracts"
 import { readabilityFromHTML } from "@follow-app/readability"
 import { fromNodeHeaders } from "better-auth/node"
+import type { FastifyReply, FastifyRequest } from "fastify"
 import Fastify from "fastify"
 import { join } from "pathe"
 
@@ -42,6 +44,7 @@ import type {
   SubscriptionPatch,
   SubscriptionRecord,
 } from "./data/types"
+import type { SourceCatalogClient } from "./feeds/feed-supplier-fetcher"
 import type { FeedFetcher } from "./feeds/importer"
 import { FeedImporter } from "./feeds/importer"
 import type { refreshSubscribedFeeds } from "./feeds/scheduler"
@@ -81,6 +84,7 @@ export interface BuildServerOptions {
   processingRetryBaseDelayMs?: number
   processingWorkerPollIntervalMs?: number
   serverURL?: string
+  sourceCatalogClient?: SourceCatalogClient
   trustProxyHops?: number
   uploadsDirectory?: string
 }
@@ -388,6 +392,7 @@ export const buildServer = async ({
   processingRetryBaseDelayMs,
   processingWorkerPollIntervalMs,
   serverURL = "http://localhost:3000",
+  sourceCatalogClient,
   trustProxyHops = 0,
   uploadsDirectory = "./data/uploads",
 }: BuildServerOptions) => {
@@ -847,14 +852,17 @@ export const buildServer = async ({
     const rssHubSourcesEnabled = feedFetcher?.supports?.("rsshub://example/route") === true
     const pageChangeSourcesEnabled =
       feedFetcher?.supports?.("pagechange://8bd44f7a-84d2-4b0c-b052-3cdacbfc3919") === true
-    const autonomousSourcesEnabled = rssHubSourcesEnabled || pageChangeSourcesEnabled
+    const sourceCatalogEnabled = sourceCatalogClient !== undefined
+    const autonomousSourcesEnabled =
+      rssHubSourcesEnabled || pageChangeSourcesEnabled || sourceCatalogEnabled
     const capabilities = capabilityManifest.capabilities
       .filter(
         (capability) =>
           capability.provider === "local" &&
           (implementedCapabilities.has(capability.id) ||
             (capability.id === RSSHUB_SELF_HOSTED_CAPABILITY && rssHubSourcesEnabled) ||
-            (capability.id === PAGE_CHANGE_CAPABILITY && pageChangeSourcesEnabled)),
+            (capability.id === PAGE_CHANGE_CAPABILITY && pageChangeSourcesEnabled) ||
+            (capability.id === SOURCE_ROUTE_CATALOG_CAPABILITY && sourceCatalogEnabled)),
       )
       .map((capability) => ({ id: capability.id, provider: "local" as const }))
     const enabled = new Set(capabilities.map((capability) => capability.id))
@@ -871,6 +879,91 @@ export const buildServer = async ({
       },
     }
   })
+
+  const catalogOwnerSession = async (request: FastifyRequest) => {
+    const session = await authenticatedSession(request.headers)
+    if (!session) return { error: "unauthorized" as const, session: null }
+    if ((await dataStore.getOwnerUserId()) !== session.user.id) {
+      return { error: "forbidden" as const, session: null }
+    }
+    return { error: null, session }
+  }
+  const catalogParametersFromBody = (
+    body: unknown,
+  ): Record<string, boolean | number | string> | null => {
+    if (!isRecord(body) || !isRecord(body.parameters)) return null
+    const entries = Object.entries(body.parameters)
+    if (entries.length > 32) return null
+    if (
+      entries.some(
+        ([key, value]) =>
+          !/^[A-Z]\w{0,63}$/i.test(key) ||
+          !(
+            typeof value === "boolean" ||
+            (typeof value === "number" && Number.isSafeInteger(value)) ||
+            (typeof value === "string" && value.length <= 512)
+          ),
+      )
+    ) {
+      return null
+    }
+    return Object.fromEntries(entries) as Record<string, boolean | number | string>
+  }
+  const catalogOwnerError = (error: "forbidden" | "unauthorized", reply: FastifyReply) =>
+    error === "unauthorized"
+      ? reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+      : reply.status(403).send({ code: "forbidden", message: "Instance owner required" })
+  const catalogUnavailable = (error: unknown, reply: FastifyReply) =>
+    reply.status(502).send({
+      code: "source_catalog_unavailable",
+      message: error instanceof Error ? error.message.slice(0, 500) : "Source catalog unavailable",
+    })
+
+  server.get("/api/extensions/sources/catalog", async (request, reply) => {
+    const owner = await catalogOwnerSession(request)
+    if (owner.error) return catalogOwnerError(owner.error, reply)
+    if (!sourceCatalogClient) {
+      return reply
+        .status(503)
+        .send({ code: "source_catalog_unavailable", message: "Source catalog is not configured" })
+    }
+    try {
+      return { code: 0, data: { routes: await sourceCatalogClient.listRoutes() } }
+    } catch (error) {
+      return catalogUnavailable(error, reply)
+    }
+  })
+
+  for (const action of ["render", "test"] as const) {
+    server.post<{ Params: { routeId: string } }>(
+      `/api/extensions/sources/catalog/:routeId/${action}`,
+      async (request, reply) => {
+        const owner = await catalogOwnerSession(request)
+        if (owner.error) return catalogOwnerError(owner.error, reply)
+        if (!sourceCatalogClient) {
+          return reply.status(503).send({
+            code: "source_catalog_unavailable",
+            message: "Source catalog is not configured",
+          })
+        }
+        const parameters = catalogParametersFromBody(request.body)
+        if (!parameters) {
+          return reply
+            .status(400)
+            .send({ code: "invalid_request", message: "Catalog parameters are invalid" })
+        }
+        try {
+          const data =
+            action === "render"
+              ? await sourceCatalogClient.renderRoute(request.params.routeId, parameters)
+              : await sourceCatalogClient.testRoute(request.params.routeId, parameters)
+          return { code: 0, data }
+        } catch (error) {
+          return catalogUnavailable(error, reply)
+        }
+      },
+    )
+  }
 
   server.get("/api/extensions/operations/status", async (request, reply) => {
     const session = await authenticatedSession(request.headers)

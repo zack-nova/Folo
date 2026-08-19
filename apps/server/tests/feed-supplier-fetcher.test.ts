@@ -12,11 +12,82 @@ import { RoutingFeedFetcher } from "../src/feeds/routing-fetcher"
 const fixturePath = fileURLToPath(new URL("fixtures/phase-one.rss.xml", import.meta.url))
 
 describe("feed supplier fetcher", () => {
+  it("uses the internal token for catalog reads, rendering, and connection tests", async () => {
+    const supplierFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ routes: [] }))
+      .mockResolvedValueOnce(Response.json({ logicalURL: "rsshub://example/releases/folo" }))
+      .mockResolvedValueOnce(
+        Response.json({
+          contentBytes: 128,
+          contentType: "application/rss+xml",
+          logicalURL: "rsshub://example/releases/folo",
+          upstreamStatus: 200,
+          upstreamURL: "http://rsshub:1200/example/releases/folo",
+        }),
+      )
+    const fetcher = new FeedSupplierFetcher({
+      baseURL: "http://feed-supplier:3001",
+      fetchImplementation: supplierFetch,
+      token: "internal-feed-supplier-token-000000000000",
+    })
+
+    await expect(fetcher.listRoutes()).resolves.toEqual([])
+    await expect(fetcher.renderRoute("route-id", { project: "folo" })).resolves.toEqual({
+      logicalURL: "rsshub://example/releases/folo",
+    })
+    await expect(fetcher.testRoute("route-id", { project: "folo" })).resolves.toMatchObject({
+      upstreamStatus: 200,
+    })
+    for (const call of supplierFetch.mock.calls) {
+      expect(new Headers(call[1]?.headers).get("authorization")).toBe(
+        "Bearer internal-feed-supplier-token-000000000000",
+      )
+    }
+    expect(supplierFetch.mock.calls[1]?.[1]?.body).toBe(
+      JSON.stringify({ parameters: { project: "folo" } }),
+    )
+  })
+
+  it("rejects catalog payloads that contain supplier management fields", async () => {
+    const supplierFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        routes: [
+          {
+            category: "Development",
+            createdAt: "2026-08-19T00:00:00.000Z",
+            description: null,
+            documentationURL: null,
+            enabled: true,
+            id: "8bd44f7a-84d2-4b0c-b052-3cdacbfc3919",
+            key: "repository-releases",
+            parameters: [],
+            requiresCredentials: true,
+            routePathTemplate: "/github/releases/:owner/:repository",
+            secretQueryBindings: {
+              token: "99b6390a-d36e-457a-a82a-f5754b69eabc",
+            },
+            title: "Repository releases",
+            updatedAt: "2026-08-19T00:00:00.000Z",
+          },
+        ],
+      }),
+    )
+    const fetcher = new FeedSupplierFetcher({
+      baseURL: "http://feed-supplier:3001",
+      fetchImplementation: supplierFetch,
+      token: "internal-feed-supplier-token-000000000000",
+    })
+
+    await expect(fetcher.listRoutes()).rejects.toThrow("Supplier catalog response is invalid")
+  })
+
   it("preserves source registry persistence status", async () => {
     const supplierFetch = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
         providers: [
           {
+            catalogRouteCount: 2,
             configured: true,
             id: "rsshub",
             managedRouteCount: 3,
@@ -46,6 +117,7 @@ describe("feed supplier fetcher", () => {
 
     await expect(fetcher.getProviderStatuses()).resolves.toEqual([
       expect.objectContaining({
+        catalogRouteCount: 2,
         managedRouteCount: 3,
         persistenceStatus: "ready",
         registryMode: "managed_only",

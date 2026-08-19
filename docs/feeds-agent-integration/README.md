@@ -22,6 +22,7 @@
 - [adr/0025-integrate-autonomous-sources-through-feed-supplier.md](./adr/0025-integrate-autonomous-sources-through-feed-supplier.md)：Folo monorepo 中独立供给服务和自主 RSSHub capability 的实现决策。
 - [adr/0026-persist-source-configuration-outside-the-core.md](./adr/0026-persist-source-configuration-outside-the-core.md)：独立来源数据库、密文凭据、管理令牌与哈希链审计决策。
 - [adr/0027-materialize-confirmed-page-observations-as-feed-entries.md](./adr/0027-materialize-confirmed-page-observations-as-feed-entries.md)：空基线、去抖确认、不可变页面事件和调度隔离决策。
+- [adr/0028-publish-a-self-owned-source-route-catalog.md](./adr/0028-publish-a-self-owned-source-route-catalog.md)：自有路由目录、严格参数 schema、Owner 代理和管理密钥隔离决策。
 
 ## 推荐开发阶段
 

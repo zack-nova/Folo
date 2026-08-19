@@ -1,11 +1,13 @@
 export const RSSHUB_SELF_HOSTED_CAPABILITY = "sources.rsshub_self_hosted" as const
 export const PAGE_CHANGE_CAPABILITY = "sources.page_change" as const
+export const SOURCE_ROUTE_CATALOG_CAPABILITY = "sources.route_catalog" as const
 
 export type AutonomousSourceProviderId = "page_change" | "rsshub"
 export type AutonomousSourceProviderStatus = "disabled" | "ready" | "unavailable"
 export type SourceRegistryMode = "managed_only" | "permissive"
 
 export interface AutonomousSourceProviderHealth {
+  catalogRouteCount?: number
   configured: boolean
   dueSourceCount?: number
   enabledSourceCount?: number
@@ -39,6 +41,58 @@ export interface SourceRouteInstance {
   updatedAt: string
 }
 
+export type SourceCatalogParameterType = "boolean" | "enum" | "integer" | "string"
+export type SourceCatalogParameterValue = boolean | number | string
+
+export interface SourceCatalogParameterOption {
+  label: string
+  value: string
+}
+
+export interface SourceCatalogParameter {
+  defaultValue: SourceCatalogParameterValue | null
+  description: string | null
+  key: string
+  label: string
+  location: "path" | "query"
+  maximum: number | null
+  minimum: number | null
+  options: SourceCatalogParameterOption[]
+  required: boolean
+  type: SourceCatalogParameterType
+}
+
+export interface SourceCatalogRoute {
+  category: string
+  createdAt: string
+  description: string | null
+  documentationURL: string | null
+  enabled: boolean
+  id: string
+  key: string
+  parameters: SourceCatalogParameter[]
+  requiresCredentials: boolean
+  routePathTemplate: string
+  title: string
+  updatedAt: string
+}
+
+export interface SourceCatalogRouteAdministration extends SourceCatalogRoute {
+  deletedAt: string | null
+  secretQueryBindings: Record<string, string>
+}
+
+export interface SourceCatalogRenderResult {
+  logicalURL: string
+}
+
+export interface SourceCatalogTestResult extends SourceCatalogRenderResult {
+  contentBytes: number
+  contentType: string | null
+  upstreamStatus: number
+  upstreamURL: string
+}
+
 export type SourceAuditAction =
   | "credential.created"
   | "credential.disabled"
@@ -48,6 +102,10 @@ export type SourceAuditAction =
   | "route.deleted"
   | "route.tested"
   | "route.updated"
+  | "catalog_route.created"
+  | "catalog_route.deleted"
+  | "catalog_route.tested"
+  | "catalog_route.updated"
   | "page_source.created"
   | "page_source.deleted"
   | "page_source.tested"
@@ -62,7 +120,7 @@ export interface SourceAuditEvent {
   occurredAt: string
   previousHash: string | null
   resourceId: string | null
-  resourceType: "credential" | "page_source" | "route" | "system"
+  resourceType: "catalog_route" | "credential" | "page_source" | "route" | "system"
   sequence: number
 }
 

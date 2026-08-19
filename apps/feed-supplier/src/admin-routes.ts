@@ -8,6 +8,11 @@ import type {
 } from "./page-change-service"
 import { PageChangeError } from "./page-change-service"
 import { RepositoryConflictError } from "./repository"
+import type {
+  CreateCatalogRouteInput,
+  SourceCatalogService,
+  UpdateCatalogRouteInput,
+} from "./source-catalog"
 import type { SourceRegistry } from "./source-registry"
 import { SourceRegistryError } from "./source-registry"
 
@@ -19,6 +24,7 @@ export interface RouteTestResult {
 }
 
 export interface RegisterSourceAdminRoutesOptions {
+  catalog: SourceCatalogService
   registry: SourceRegistry
   pageChanges: PageChangeService
   server: FastifyInstance
@@ -101,6 +107,79 @@ const pageSourceUpdate = z
   .strict()
   .refine((body) => Object.keys(body).length > 0, "At least one field is required")
 
+const catalogParameterKey = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Z]\w*$/i)
+const catalogParameter = z
+  .object({
+    defaultValue: z.union([z.boolean(), z.number().int(), z.string()]).nullable().default(null),
+    description: z.string().trim().max(500).nullable().default(null),
+    key: catalogParameterKey,
+    label: z.string().trim().min(1).max(128),
+    location: z.enum(["path", "query"]),
+    maximum: z.number().int().safe().nullable().default(null),
+    minimum: z.number().int().safe().nullable().default(null),
+    options: z
+      .array(
+        z
+          .object({ label: z.string().trim().min(1).max(128), value: z.string().min(1).max(256) })
+          .strict(),
+      )
+      .max(100)
+      .default([]),
+    required: z.boolean(),
+    type: z.enum(["boolean", "enum", "integer", "string"]),
+  })
+  .strict()
+const catalogDocumentationURL = z
+  .url()
+  .max(2_048)
+  .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+    message: "Documentation URL must use HTTP or HTTPS",
+  })
+const catalogFields = {
+  category: z.string().trim().min(1).max(128),
+  description: z.string().trim().max(1_000).nullable(),
+  documentationURL: catalogDocumentationURL.nullable(),
+  enabled: z.boolean(),
+  key: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  parameters: z.array(catalogParameter).max(32),
+  routePathTemplate: z.string().min(2).max(1_024),
+  secretQueryBindings,
+  title: z.string().trim().min(1).max(128),
+}
+const catalogRouteCreate = z
+  .object({
+    ...catalogFields,
+    description: catalogFields.description.optional(),
+    documentationURL: catalogFields.documentationURL.optional(),
+    enabled: catalogFields.enabled.optional(),
+    secretQueryBindings: catalogFields.secretQueryBindings.optional(),
+  })
+  .strict()
+const catalogRouteUpdate = z
+  .object(
+    Object.fromEntries(
+      Object.entries(catalogFields).map(([key, schema]) => [key, schema.optional()]),
+    ) as { [Key in keyof typeof catalogFields]: z.ZodOptional<(typeof catalogFields)[Key]> },
+  )
+  .strict()
+  .refine((body) => Object.keys(body).length > 0, "At least one field is required")
+const catalogRender = z
+  .object({
+    parameters: z.record(
+      z.string().min(1).max(64),
+      z.union([z.boolean(), z.number().safe(), z.string().max(512)]),
+    ),
+  })
+  .strict()
+
 const actorFor = (request: FastifyRequest): string => {
   const actor = request.headers["x-folo-actor"]
   return typeof actor === "string" && /^[\w@. -]{1,128}$/.test(actor)
@@ -128,11 +207,96 @@ const handleAdminError = (error: unknown, reply: FastifyReply) => {
 }
 
 export const registerSourceAdminRoutes = ({
+  catalog,
   registry,
   pageChanges,
   server,
   testRoute,
 }: RegisterSourceAdminRoutesOptions): void => {
+  server.get("/v1/admin/catalog/routes", async () => ({
+    routes: await catalog.listAdminRoutes(),
+  }))
+
+  server.post("/v1/admin/catalog/routes", async (request, reply) => {
+    const parsed = catalogRouteCreate.safeParse(request.body)
+    if (!parsed.success) return invalidBody(reply, parsed.error)
+    try {
+      const route = await catalog.createRoute(
+        parsed.data as CreateCatalogRouteInput,
+        actorFor(request),
+      )
+      return reply.status(201).send({ route })
+    } catch (error) {
+      return handleAdminError(error, reply)
+    }
+  })
+
+  server.get<{ Params: { routeId: string } }>(
+    "/v1/admin/catalog/routes/:routeId",
+    async (request, reply) => {
+      const route = await catalog.getAdminRoute(request.params.routeId)
+      if (!route) {
+        return reply
+          .status(404)
+          .send({ code: "catalog_route_not_found", message: "Catalog route was not found" })
+      }
+      return { route }
+    },
+  )
+
+  server.patch<{ Params: { routeId: string } }>(
+    "/v1/admin/catalog/routes/:routeId",
+    async (request, reply) => {
+      const parsed = catalogRouteUpdate.safeParse(request.body)
+      if (!parsed.success) return invalidBody(reply, parsed.error)
+      try {
+        const route = await catalog.updateRoute(
+          request.params.routeId,
+          parsed.data as UpdateCatalogRouteInput,
+          actorFor(request),
+        )
+        if (!route) {
+          return reply
+            .status(404)
+            .send({ code: "catalog_route_not_found", message: "Catalog route was not found" })
+        }
+        return { route }
+      } catch (error) {
+        return handleAdminError(error, reply)
+      }
+    },
+  )
+
+  server.delete<{ Params: { routeId: string } }>(
+    "/v1/admin/catalog/routes/:routeId",
+    async (request, reply) => {
+      const route = await catalog.deleteRoute(request.params.routeId, actorFor(request))
+      if (!route) {
+        return reply
+          .status(404)
+          .send({ code: "catalog_route_not_found", message: "Catalog route was not found" })
+      }
+      return reply.status(204).send()
+    },
+  )
+
+  server.post<{ Params: { routeId: string } }>(
+    "/v1/admin/catalog/routes/:routeId/test",
+    async (request, reply) => {
+      const parsed = catalogRender.safeParse(request.body)
+      if (!parsed.success) return invalidBody(reply, parsed.error)
+      try {
+        const rendered = await catalog.render(request.params.routeId, parsed.data.parameters)
+        const result = await testRoute(rendered.logicalURL)
+        await catalog.recordTest(request.params.routeId, actorFor(request), true)
+        return { ...result, ...rendered }
+      } catch (error) {
+        await catalog.recordTest(request.params.routeId, actorFor(request), false)
+        return handleAdminError(error, reply)
+      }
+    },
+  )
+
   server.get("/v1/admin/page-sources", async () => ({ sources: await pageChanges.listSources() }))
 
   server.post("/v1/admin/page-sources", async (request, reply) => {

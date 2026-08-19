@@ -55,6 +55,7 @@
     "@follow/components": "workspace:*",
     "@follow/configs": "workspace:*",
     "@follow/constants": "workspace:*",
+    "@follow/feed-source-contracts": "workspace:*",
     "@follow/hooks": "workspace:*",
     "@follow/models": "workspace:*",
     "@follow/shared": "workspace:*",

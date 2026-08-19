@@ -54,6 +54,7 @@ docker compose "${compose_arguments[@]}" --profile sources exec -T "$postgres_se
 count_query="SELECT json_build_array(
   (SELECT count(*) FROM source_credentials),
   (SELECT count(*) FROM source_route_instances),
+  (SELECT count(*) FROM source_catalog_routes),
   (SELECT count(*) FROM page_change_sources),
   (SELECT count(*) FROM page_change_events),
   (SELECT count(*) FROM source_audit_events),

@@ -52,6 +52,7 @@ export type OperationsStatus = {
     }
   } | null
   source_providers: Array<{
+    catalogRouteCount?: number
     configured: boolean
     dueSourceCount?: number
     enabledSourceCount?: number

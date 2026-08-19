@@ -11,7 +11,7 @@ import { buildFeedSupplier } from "../src/server"
 const databaseURL = process.env.TEST_FEED_SUPPLIER_DATABASE_URL
 
 describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
-  it("migrates and retains credentials, routes, and a valid audit chain across restarts", async () => {
+  it("migrates and retains credentials, routes, catalog metadata, and audit history", async () => {
     const suffix = randomUUID()
     const firstConfig = loadFeedSupplierConfig({
       CREDENTIAL_ENCRYPTION_KEY: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
@@ -65,6 +65,29 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
     })
     expect(routeResponse.statusCode).toBe(201)
     const routeId = routeResponse.json<{ route: { id: string } }>().route.id
+    const catalogResponse = await firstServer.inject({
+      headers,
+      method: "POST",
+      payload: {
+        category: "Integration",
+        key: `postgres-catalog-${suffix}`,
+        parameters: [
+          {
+            key: "subject",
+            label: "Subject",
+            location: "path",
+            required: true,
+            type: "string",
+          },
+        ],
+        routePathTemplate: `/integration/catalog-${suffix}/:subject`,
+        secretQueryBindings: { token: credentialId },
+        title: `Postgres catalog ${suffix}`,
+      },
+      url: "/v1/admin/catalog/routes",
+    })
+    expect(catalogResponse.statusCode, catalogResponse.body).toBe(201)
+    const catalogRouteId = catalogResponse.json<{ route: { id: string } }>().route.id
     const pageSourceResponse = await firstServer.inject({
       headers,
       method: "POST",
@@ -119,6 +142,13 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
     expect(persistedCredential).toMatchObject({ id: credentialId, keyId: "current-key" })
     const routes = await secondServer.inject({ headers, method: "GET", url: "/v1/admin/routes" })
     expect(routes.body).toContain(`rsshub://integration/${suffix}`)
+    const catalogRoutes = await secondServer.inject({
+      headers,
+      method: "GET",
+      url: "/v1/admin/catalog/routes",
+    })
+    expect(catalogRoutes.body).toContain(catalogRouteId)
+    expect(catalogRoutes.body).not.toContain("database-secret")
     const pageSources = await secondServer.inject({
       headers,
       method: "GET",
@@ -153,6 +183,15 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
     ).rejects.toThrow("page_change_events is immutable")
     await directDatabase.end()
 
+    expect(
+      (
+        await secondServer.inject({
+          headers,
+          method: "DELETE",
+          url: `/v1/admin/catalog/routes/${catalogRouteId}`,
+        })
+      ).statusCode,
+    ).toBe(204)
     expect(
       (
         await secondServer.inject({
