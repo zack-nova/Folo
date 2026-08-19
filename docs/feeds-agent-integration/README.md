@@ -14,12 +14,13 @@
 - [stage-1-minimum-loop.md](./stage-1-minimum-loop.md)：已完成的自有认证、PostgreSQL、RSS 订阅、阅读状态与收藏最小闭环，以及完整阶段一的剩余边界。
 - [stage-2-ai-processing-backend.md](./stage-2-ai-processing-backend.md)：自主 Provider、版本化评估、可靠 Processing Job 与范围重评后端。
 - [stage-3-frontend-fusion.md](./stage-3-frontend-fusion.md)：Featured 时间线、评估详情、失败恢复、范围重评和自主 AI 设置的 Folo 前端融合。
-- [stage-5a-autonomous-sources.md](./stage-5a-autonomous-sources.md)：自主数据源契约、自建 RSSHub 最小闭环、运维与后续切片。
+- [stage-5a-autonomous-sources.md](./stage-5a-autonomous-sources.md)：自主数据源契约、自建 RSSHub、独立配置库、加密凭据、审计与后续切片。
 - [feeds-agent-CONTEXT.md](./feeds-agent-CONTEXT.md)：Feeds Agent 当前领域语言和已解决歧义快照。
 - [adr/0012-store-processing-results-by-content-version.md](./adr/0012-store-processing-results-by-content-version.md)：旧处理结果版本化 ADR，已被后续设计取代。
 - [adr/0023-split-feed-core-and-supplier-services.md](./adr/0023-split-feed-core-and-supplier-services.md)：feed_core 与 feed_supplier 拆分边界。
 - [adr/0024-publish-page-changes-as-new-feed-entries.md](./adr/0024-publish-page-changes-as-new-feed-entries.md)：页面变化作为新 Feed Entry 发布的决策。
 - [adr/0025-integrate-autonomous-sources-through-feed-supplier.md](./adr/0025-integrate-autonomous-sources-through-feed-supplier.md)：Folo monorepo 中独立供给服务和自主 RSSHub capability 的实现决策。
+- [adr/0026-persist-source-configuration-outside-the-core.md](./adr/0026-persist-source-configuration-outside-the-core.md)：独立来源数据库、密文凭据、管理令牌与哈希链审计决策。
 
 ## 推荐开发阶段
 

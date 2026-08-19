@@ -54,7 +54,10 @@ export type OperationsStatus = {
   source_providers: Array<{
     configured: boolean
     id: "rsshub"
+    managedRouteCount?: number
     message: string | null
+    persistenceStatus?: "ready" | "unavailable"
+    registryMode?: "managed_only" | "permissive"
     status: "disabled" | "ready" | "unavailable"
   }>
   stats: {

@@ -13,11 +13,13 @@
   "dependencies": {
     "@follow/feed-source-contracts": "workspace:*",
     "fastify": "5.10.0",
+    "pg": "8.18.0",
     "tsx": "4.23.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@follow/configs": "workspace:*",
+    "@types/pg": "8.21.0",
     "typescript": "catalog:",
     "vitest": "4.1.10"
   }

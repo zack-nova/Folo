@@ -1,14 +1,19 @@
 import { timingSafeEqual } from "node:crypto"
 
-import { parseRssHubSource } from "@follow/feed-source-contracts"
 import Fastify from "fastify"
 
+import { registerSourceAdminRoutes } from "./admin-routes"
 import type { FeedSupplierConfig } from "./config"
+import { MemorySupplierRepository } from "./memory-repository"
+import { PostgresSupplierRepository } from "./postgres-repository"
+import type { SupplierRepository } from "./repository"
+import { SourceRegistry, SourceRegistryError } from "./source-registry"
 
 export interface BuildFeedSupplierOptions {
   config: FeedSupplierConfig
   fetchImplementation?: typeof fetch
   logger?: boolean
+  repository?: SupplierRepository
 }
 
 const matchesSecret = (received: string | undefined, expected: string): boolean => {
@@ -44,11 +49,44 @@ const boundedBody = async (response: Response, maximumBytes: number): Promise<st
   return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8")
 }
 
+const safeUpstreamErrorMessage = (error: unknown): string => {
+  if (!(error instanceof Error)) return "RSSHub request failed"
+  if (
+    error.message.startsWith("RSSHub response exceeds the ") ||
+    error.message === "RSSHub returned too many redirects" ||
+    error.message === "RSSHub redirect left the configured upstream origin" ||
+    /^RSSHub redirect \d{3} has no location$/.test(error.message)
+  ) {
+    return error.message.slice(0, 500)
+  }
+  return "RSSHub request failed"
+}
+
 export const buildFeedSupplier = async ({
   config,
   fetchImplementation = globalThis.fetch,
   logger = false,
+  repository: providedRepository,
 }: BuildFeedSupplierOptions) => {
+  const repository =
+    providedRepository ??
+    (config.nodeEnvironment === "test"
+      ? new MemorySupplierRepository(config.auditHmacKey)
+      : config.databaseURL
+        ? new PostgresSupplierRepository({
+            auditKey: config.auditHmacKey,
+            connectionString: config.databaseURL,
+            maxConnections: config.databaseMaxConnections,
+          })
+        : null)
+  if (!repository) throw new Error("Feed supplier DATABASE_URL is required outside tests")
+  await repository.initialize()
+  const registry = new SourceRegistry(
+    repository,
+    config.credentialActiveKeyId,
+    config.credentialKeys,
+    config.registryMode,
+  )
   const server = Fastify({
     bodyLimit: 16 * 1024,
     logger: logger
@@ -61,16 +99,24 @@ export const buildFeedSupplier = async ({
       : false,
     requestTimeout: config.rssHubFetchTimeoutMs + 5_000,
   })
+  server.addHook("onClose", async () => repository.close())
   const baseURL = new URL(`${config.rssHubBaseURL}/`)
 
-  const upstreamURL = (input: string) => {
-    const source = parseRssHubSource(input)
+  const upstreamURL = async (input: string) => {
+    const resolved = await registry.resolve(input)
+    const { source } = resolved
     const target = new URL(source.routePath.replace(/^\//, ""), baseURL)
     target.search = source.search
+    for (const [parameter, value] of Object.entries(resolved.secretQuery)) {
+      target.searchParams.set(parameter, value)
+    }
     if (config.rssHubAccessKey) target.searchParams.set("key", config.rssHubAccessKey)
     const diagnosticURL = new URL(target)
     diagnosticURL.searchParams.delete("key")
-    return { source, target, diagnosticURL: diagnosticURL.toString() }
+    for (const parameter of Object.keys(resolved.secretQuery)) {
+      diagnosticURL.searchParams.delete(parameter)
+    }
+    return { resolved, target, diagnosticURL: diagnosticURL.toString() }
   }
 
   const fetchUpstream = async (target: URL, headers: Headers) => {
@@ -111,7 +157,11 @@ export const buildFeedSupplier = async ({
 
   server.get("/health", async () => ({ status: "ok" }))
   server.get("/ready", async (_request, reply) => {
-    if (await probeUpstream()) return { status: "ready" }
+    const [persistenceReady, upstreamReady] = await Promise.all([
+      repository.isReady(),
+      probeUpstream(),
+    ])
+    if (persistenceReady && upstreamReady) return { status: "ready" }
     return reply.status(503).send({ status: "unavailable" })
   })
 
@@ -119,7 +169,10 @@ export const buildFeedSupplier = async ({
     if (request.routeOptions.url === "/health" || request.routeOptions.url === "/ready") return
     const authorization = request.headers.authorization
     const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined
-    if (!matchesSecret(token, config.internalToken)) {
+    const expectedToken = request.routeOptions.url?.startsWith("/v1/admin/")
+      ? config.adminToken
+      : config.internalToken
+    if (!matchesSecret(token, expectedToken)) {
       return reply
         .header("www-authenticate", 'Bearer realm="folo-feed-supplier"')
         .status(401)
@@ -128,13 +181,27 @@ export const buildFeedSupplier = async ({
   })
 
   server.get("/v1/providers", async () => {
-    const ready = await probeUpstream()
+    const [persistenceReady, upstreamReady] = await Promise.all([
+      repository.isReady(),
+      probeUpstream(),
+    ])
+    const managedRouteCount = persistenceReady
+      ? await registry.countManagedRoutes().catch(() => 0)
+      : 0
+    const ready = persistenceReady && upstreamReady
     return {
       providers: [
         {
           configured: true,
           id: "rsshub" as const,
-          message: ready ? null : "Configured RSSHub instance is unavailable",
+          managedRouteCount,
+          message: ready
+            ? null
+            : persistenceReady
+              ? "Configured RSSHub instance is unavailable"
+              : "Source registry persistence is unavailable",
+          persistenceStatus: persistenceReady ? ("ready" as const) : ("unavailable" as const),
+          registryMode: registry.mode,
           status: ready ? ("ready" as const) : ("unavailable" as const),
         },
       ],
@@ -150,7 +217,11 @@ export const buildFeedSupplier = async ({
     let sourceRequest: ReturnType<typeof upstreamURL>
     try {
       sourceRequest = upstreamURL(query.url)
+      await sourceRequest
     } catch (error) {
+      if (error instanceof SourceRegistryError) {
+        return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+      }
       return reply.status(400).send({
         code: "invalid_source",
         message: error instanceof Error ? error.message.slice(0, 500) : "Invalid RSSHub source",
@@ -158,7 +229,7 @@ export const buildFeedSupplier = async ({
     }
 
     try {
-      const { target, diagnosticURL } = sourceRequest
+      const { target, diagnosticURL } = await sourceRequest
       const headers = new Headers({
         accept:
           "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
@@ -187,9 +258,44 @@ export const buildFeedSupplier = async ({
     } catch (error) {
       return reply.status(502).send({
         code: "rsshub_request_failed",
-        message: error instanceof Error ? error.message.slice(0, 500) : "RSSHub request failed",
+        message: safeUpstreamErrorMessage(error),
       })
     }
+  })
+
+  registerSourceAdminRoutes({
+    registry,
+    server,
+    testRoute: async (sourceURL) => {
+      try {
+        const { target, diagnosticURL } = await upstreamURL(sourceURL)
+        const response = await fetchUpstream(
+          target,
+          new Headers({
+            accept:
+              "application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
+            "user-agent": "Folo-Feed-Supplier/1.0 (+self-hosted RSSHub)",
+          }),
+        )
+        if (!response.ok) {
+          throw new SourceRegistryError(
+            "rsshub_request_failed",
+            `RSSHub request failed with HTTP ${response.status}`,
+            502,
+          )
+        }
+        const body = await boundedBody(response, config.rssHubFetchMaxBytes)
+        return {
+          contentBytes: Buffer.byteLength(body),
+          contentType: response.headers.get("content-type"),
+          upstreamStatus: response.status,
+          upstreamURL: diagnosticURL,
+        }
+      } catch (error) {
+        if (error instanceof SourceRegistryError) throw error
+        throw new SourceRegistryError("rsshub_request_failed", safeUpstreamErrorMessage(error), 502)
+      }
+    },
   })
 
   await server.ready()

@@ -42,6 +42,8 @@
     "server:restore:drill": "bash apps/server/scripts/restore-drill.sh",
     "server:test:postgres": "cross-env TEST_DATABASE_URL=postgres://folo:folo@localhost:54329/folo pnpm --filter @follow/server test",
     "sources:down": "docker compose -f apps/server/compose.yaml --profile sources down",
+    "sources:backup": "bash apps/feed-supplier/scripts/backup.sh",
+    "sources:restore:drill": "bash apps/feed-supplier/scripts/restore-drill.sh",
     "sources:up": "docker compose -f apps/server/compose.yaml --profile sources up -d --wait rsshub feed-supplier",
     "typecheck": "turbo typecheck"
   },

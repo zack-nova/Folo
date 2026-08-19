@@ -285,6 +285,26 @@ const SourceProviders = ({ providers }: { providers: OperationsStatus["source_pr
           <p className="mt-2 text-xs leading-relaxed text-text-secondary">
             {provider.message ?? t(`operations.sources.${provider.id}.${provider.status}`)}
           </p>
+          {provider.managedRouteCount !== undefined && (
+            <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-fill-secondary pt-3 text-xs text-text-secondary">
+              <div className="flex gap-1.5">
+                <dt>{t("operations.sources.managed_routes")}</dt>
+                <dd className="font-mono tabular-nums">{provider.managedRouteCount}</dd>
+              </div>
+              {provider.registryMode && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.registry_mode")}</dt>
+                  <dd>{t(`operations.sources.mode.${provider.registryMode}`)}</dd>
+                </div>
+              )}
+              {provider.persistenceStatus && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.persistence")}</dt>
+                  <dd>{t(`operations.sources.status.${provider.persistenceStatus}`)}</dd>
+                </div>
+              )}
+            </dl>
+          )}
         </article>
       ))}
     </div>

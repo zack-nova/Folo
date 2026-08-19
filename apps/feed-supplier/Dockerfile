@@ -29,6 +29,7 @@ RUN mkdir -p /app && chown -R node:node /app
 WORKDIR /app
 COPY --from=dependencies --chown=node:node /build /app
 COPY --chown=node:node apps/feed-supplier/src ./apps/feed-supplier/src
+COPY --chown=node:node apps/feed-supplier/migrations ./apps/feed-supplier/migrations
 COPY --chown=node:node packages/feed-source-contracts/src ./packages/feed-source-contracts/src
 
 WORKDIR /app/apps/feed-supplier

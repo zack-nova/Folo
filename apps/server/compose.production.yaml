@@ -54,13 +54,22 @@ services:
       context: ../..
       dockerfile: apps/feed-supplier/Dockerfile
     depends_on:
+      feed-supplier-postgres:
+        condition: service_healthy
       rsshub:
         condition: service_healthy
     environment:
+      ADMIN_TOKEN: ${FEED_SUPPLIER_ADMIN_TOKEN:?set FEED_SUPPLIER_ADMIN_TOKEN}
+      AUDIT_HMAC_KEY: ${FEED_SUPPLIER_AUDIT_HMAC_KEY:?set FEED_SUPPLIER_AUDIT_HMAC_KEY}
+      CREDENTIAL_DECRYPTION_KEYS_JSON: ${FEED_SUPPLIER_CREDENTIAL_DECRYPTION_KEYS_JSON:-{}}
+      CREDENTIAL_ENCRYPTION_KEY: ${FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY:?set FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY}
+      CREDENTIAL_ENCRYPTION_KEY_ID: ${FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY_ID:?set FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY_ID}
+      DATABASE_URL: ${FEED_SUPPLIER_DATABASE_URL:?set FEED_SUPPLIER_DATABASE_URL}
       HOST: 0.0.0.0
-      INTERNAL_TOKEN: ${FEED_SUPPLIER_TOKEN:-}
+      INTERNAL_TOKEN: ${FEED_SUPPLIER_TOKEN:?set FEED_SUPPLIER_TOKEN}
       NODE_ENV: production
-      RSSHUB_ACCESS_KEY: ${RSSHUB_ACCESS_KEY:-}
+      ROUTE_REGISTRY_MODE: ${FEED_SUPPLIER_REGISTRY_MODE:-permissive}
+      RSSHUB_ACCESS_KEY: ${RSSHUB_ACCESS_KEY:?set RSSHUB_ACCESS_KEY}
       RSSHUB_BASE_URL: http://rsshub:1200
     healthcheck:
       test:
@@ -93,6 +102,33 @@ services:
       - core
       - sources
 
+  feed-supplier-postgres:
+    profiles: ["sources"]
+    image: postgres:17
+    environment:
+      POSTGRES_DB: feed_supplier
+      POSTGRES_PASSWORD: ${FEED_SUPPLIER_POSTGRES_PASSWORD:?set FEED_SUPPLIER_POSTGRES_PASSWORD}
+      POSTGRES_USER: feed_supplier
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U feed_supplier -d feed_supplier"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    shm_size: 128mb
+    stop_grace_period: 60s
+    volumes:
+      - feed-supplier-postgres:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    networks:
+      - sources
+
   postgres:
     image: postgres:17
     environment:
@@ -123,7 +159,7 @@ services:
     profiles: ["sources"]
     image: ${RSSHUB_IMAGE:-diygod/rsshub:latest}
     environment:
-      ACCESS_KEY: ${RSSHUB_ACCESS_KEY:-}
+      ACCESS_KEY: ${RSSHUB_ACCESS_KEY:?set RSSHUB_ACCESS_KEY}
       CACHE_TYPE: memory
       NODE_ENV: production
       NO_LOGFILES: "true"
@@ -162,5 +198,6 @@ networks:
   sources:
 
 volumes:
+  feed-supplier-postgres:
   folo-postgres:
   folo-uploads:

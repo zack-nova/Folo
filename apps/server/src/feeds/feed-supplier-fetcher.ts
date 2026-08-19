@@ -88,7 +88,15 @@ export class FeedSupplierFetcher implements FeedFetcher {
           "id" in item &&
           item.id === "rsshub" &&
           "status" in item &&
-          (item.status === "ready" || item.status === "unavailable"),
+          (item.status === "ready" || item.status === "unavailable") &&
+          (!("managedRouteCount" in item) ||
+            (typeof item.managedRouteCount === "number" && item.managedRouteCount >= 0)) &&
+          (!("persistenceStatus" in item) ||
+            item.persistenceStatus === "ready" ||
+            item.persistenceStatus === "unavailable") &&
+          (!("registryMode" in item) ||
+            item.registryMode === "permissive" ||
+            item.registryMode === "managed_only"),
       )
       if (!provider) throw new Error("Supplier did not report RSSHub status")
       return [provider]

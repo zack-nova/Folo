@@ -5,12 +5,20 @@ services:
       context: ../..
       dockerfile: apps/feed-supplier/Dockerfile
     depends_on:
+      feed-supplier-postgres:
+        condition: service_healthy
       rsshub:
         condition: service_healthy
     environment:
+      ADMIN_TOKEN: local-feed-supplier-admin-token-at-least-32-characters
+      AUDIT_HMAC_KEY: CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws=
+      CREDENTIAL_ENCRYPTION_KEY: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
+      CREDENTIAL_ENCRYPTION_KEY_ID: local-primary
+      DATABASE_URL: postgresql://feed_supplier:feed_supplier@feed-supplier-postgres:5432/feed_supplier
       HOST: 0.0.0.0
       INTERNAL_TOKEN: local-feed-supplier-token-at-least-32-characters
       NODE_ENV: development
+      ROUTE_REGISTRY_MODE: permissive
       RSSHUB_BASE_URL: http://rsshub:1200
     healthcheck:
       test:
@@ -25,6 +33,23 @@ services:
       retries: 20
     ports:
       - "127.0.0.1:3001:3001"
+
+  feed-supplier-postgres:
+    profiles: ["sources"]
+    image: postgres:17
+    environment:
+      POSTGRES_DB: feed_supplier
+      POSTGRES_PASSWORD: feed_supplier
+      POSTGRES_USER: feed_supplier
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U feed_supplier -d feed_supplier"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    ports:
+      - "127.0.0.1:54330:5432"
+    volumes:
+      - feed-supplier-postgres:/var/lib/postgresql/data
 
   postgres:
     image: postgres:17
@@ -62,4 +87,5 @@ services:
       retries: 20
 
 volumes:
+  feed-supplier-postgres:
   folo-postgres:

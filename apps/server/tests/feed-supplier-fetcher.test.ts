@@ -12,6 +12,37 @@ import { RoutingFeedFetcher } from "../src/feeds/routing-fetcher"
 const fixturePath = fileURLToPath(new URL("fixtures/phase-one.rss.xml", import.meta.url))
 
 describe("feed supplier fetcher", () => {
+  it("preserves source registry persistence status", async () => {
+    const supplierFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        providers: [
+          {
+            configured: true,
+            id: "rsshub",
+            managedRouteCount: 3,
+            message: null,
+            persistenceStatus: "ready",
+            registryMode: "managed_only",
+            status: "ready",
+          },
+        ],
+      }),
+    )
+    const fetcher = new FeedSupplierFetcher({
+      baseURL: "http://feed-supplier:3001",
+      fetchImplementation: supplierFetch,
+      token: "internal-feed-supplier-token-000000000000",
+    })
+
+    await expect(fetcher.getProviderStatuses()).resolves.toEqual([
+      expect.objectContaining({
+        managedRouteCount: 3,
+        persistenceStatus: "ready",
+        registryMode: "managed_only",
+      }),
+    ])
+  })
+
   it("routes rsshub:// sources through the authenticated supplier and preserves logical identity", async () => {
     const feedXML = await readFile(fixturePath, "utf8")
     const supplierFetch = vi.fn<typeof fetch>().mockResolvedValue(

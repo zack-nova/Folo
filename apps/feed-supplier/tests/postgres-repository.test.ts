@@ -1,0 +1,127 @@
+import { randomUUID } from "node:crypto"
+
+import { Pool } from "pg"
+import { describe, expect, it } from "vitest"
+
+import { loadFeedSupplierConfig } from "../src/config"
+import { PostgresSupplierRepository } from "../src/postgres-repository"
+import { buildFeedSupplier } from "../src/server"
+
+const databaseURL = process.env.TEST_FEED_SUPPLIER_DATABASE_URL
+
+describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
+  it("migrates and retains credentials, routes, and a valid audit chain across restarts", async () => {
+    const suffix = randomUUID()
+    const firstConfig = loadFeedSupplierConfig({
+      CREDENTIAL_ENCRYPTION_KEY: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+      CREDENTIAL_ENCRYPTION_KEY_ID: "old-key",
+      DATABASE_URL: databaseURL,
+      INTERNAL_TOKEN: "internal-supplier-token-0000000000000000",
+      NODE_ENV: "test",
+      RSSHUB_BASE_URL: "http://rsshub:1200",
+    })
+    const createRepository = (config: typeof firstConfig) =>
+      new PostgresSupplierRepository({
+        auditKey: config.auditHmacKey,
+        connectionString: databaseURL!,
+        maxConnections: 2,
+      })
+
+    const firstServer = await buildFeedSupplier({
+      config: firstConfig,
+      repository: createRepository(firstConfig),
+    })
+    const headers = { authorization: `Bearer ${firstConfig.adminToken}` }
+    const credentialResponse = await firstServer.inject({
+      headers,
+      method: "POST",
+      payload: { name: `postgres-credential-${suffix}`, value: "database-secret" },
+      url: "/v1/admin/credentials",
+    })
+    expect(credentialResponse.statusCode).toBe(201)
+    const credentialId = credentialResponse.json<{ credential: { id: string } }>().credential.id
+    const routeResponse = await firstServer.inject({
+      headers,
+      method: "POST",
+      payload: {
+        name: `postgres-route-${suffix}`,
+        secretQueryBindings: { token: credentialId },
+        sourceURL: `rsshub://integration/${suffix}`,
+      },
+      url: "/v1/admin/routes",
+    })
+    expect(routeResponse.statusCode).toBe(201)
+    const routeId = routeResponse.json<{ route: { id: string } }>().route.id
+    await firstServer.close()
+
+    const secondConfig = loadFeedSupplierConfig({
+      CREDENTIAL_DECRYPTION_KEYS_JSON: '{"old-key":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}',
+      CREDENTIAL_ENCRYPTION_KEY: "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+      CREDENTIAL_ENCRYPTION_KEY_ID: "current-key",
+      DATABASE_URL: databaseURL,
+      INTERNAL_TOKEN: "internal-supplier-token-0000000000000000",
+      NODE_ENV: "test",
+      RSSHUB_BASE_URL: "http://rsshub:1200",
+    })
+    const secondServer = await buildFeedSupplier({
+      config: secondConfig,
+      repository: createRepository(secondConfig),
+    })
+    const rotation = await secondServer.inject({
+      headers,
+      method: "POST",
+      url: "/v1/admin/credentials/rotate",
+    })
+    expect(rotation.json()).toEqual({ rotatedCount: 1 })
+    const credentials = await secondServer.inject({
+      headers,
+      method: "GET",
+      url: "/v1/admin/credentials",
+    })
+    const persistedCredential = credentials
+      .json<{ credentials: Array<{ id: string; keyId: string }> }>()
+      .credentials.find((credential) => credential.id === credentialId)
+    expect(persistedCredential).toMatchObject({ id: credentialId, keyId: "current-key" })
+    const routes = await secondServer.inject({ headers, method: "GET", url: "/v1/admin/routes" })
+    expect(routes.body).toContain(`rsshub://integration/${suffix}`)
+    const verification = await secondServer.inject({
+      headers,
+      method: "GET",
+      url: "/v1/admin/audit/verify",
+    })
+    expect(verification.json()).toMatchObject({ brokenAtSequence: null, valid: true })
+
+    const directDatabase = new Pool({ connectionString: databaseURL })
+    const storedCredential = await directDatabase.query<{ ciphertext: Buffer }>(
+      "select ciphertext from source_credentials where id = $1",
+      [credentialId],
+    )
+    expect(storedCredential.rows[0]?.ciphertext.toString("utf8")).not.toContain("database-secret")
+    await expect(
+      directDatabase.query("update source_audit_events set actor = actor where resource_id = $1", [
+        routeId,
+      ]),
+    ).rejects.toThrow("source_audit_events is append-only")
+    await directDatabase.end()
+
+    expect(
+      (
+        await secondServer.inject({
+          headers,
+          method: "DELETE",
+          url: `/v1/admin/routes/${routeId}`,
+        })
+      ).statusCode,
+    ).toBe(204)
+    expect(
+      (
+        await secondServer.inject({
+          headers,
+          method: "DELETE",
+          url: `/v1/admin/credentials/${credentialId}`,
+        })
+      ).statusCode,
+    ).toBe(204)
+    await secondServer.close()
+  })
+})
