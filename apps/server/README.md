@@ -10,6 +10,7 @@ SQLite 仍只是可重建缓存。
 
 ```bash
 cp apps/server/.env.example apps/server/.env
+pnpm preflight:self-hosted
 pnpm server:db:up
 pnpm server:migrate
 pnpm dev:self-hosted
@@ -18,6 +19,27 @@ pnpm dev:self-hosted
 `pnpm dev:self-hosted` 会同时启动 API（`http://localhost:3000`）和 Desktop Web renderer
 （`http://localhost:2233`），并把前端 API 地址切到本地服务。首次使用时通过邮箱和密码注册本地账号；
 默认首个账号成为实例所有者，随后注册入口关闭。
+
+启动前预检也可以单独运行：
+
+```bash
+pnpm preflight:self-hosted
+pnpm preflight:self-hosted:sources
+```
+
+`preflight:self-hosted` 检查 Node.js、仓库钉住的 pnpm 版本、本地 `tsx`/Vite 可执行链接、Docker
+CLI/Compose、Docker daemon、Docker credential helper 和常用端口占用。`preflight:self-hosted:sources`
+额外检查完整 sources 栈需要的 Docker buildx 和 Compose profile；当 `docker buildx version` 不可用时，
+`feed-supplier` 镜像会因为 Dockerfile 中的 BuildKit cache mount 提前构建失败。预检只报告问题和修复建议，
+不会安装工具、修改 Docker 配置或启动/停止容器。
+
+完整自托管 sources 栈启动后，常用入口为：
+
+- Desktop Web：`http://localhost:2233`
+- API：`http://localhost:3000`
+- Feed Supplier：`http://localhost:3001`
+- 主 PostgreSQL：`localhost:54329`
+- Feed Supplier PostgreSQL：`localhost:54330`
 
 只启动后端：
 

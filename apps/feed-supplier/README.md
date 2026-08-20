@@ -4,7 +4,19 @@
 `pagechange://` 页面来源的确认变化物化为新 GUID RSS Entry。5A.2–5A.4 使用独立 PostgreSQL 保存路由、
 自有路由目录、密文凭据、页面观测状态、不可变事件和 HMAC 哈希链审计；数据库和密钥都不进入 Folo 核心。
 
-本地通常直接运行仓库根目录的 `pnpm dev:self-hosted:sources`。单独开发时：
+本地通常先在仓库根目录运行完整 sources 预检，再启动完整自托管栈：
+
+```bash
+pnpm preflight:self-hosted:sources
+pnpm dev:self-hosted:sources
+```
+
+预检会在启动前确认 Docker daemon、Compose、buildx、Docker credential helper、仓库钉住的 pnpm 版本和
+本地服务端口状态。`feed-supplier` 的开发镜像依赖 Docker BuildKit；如果 `docker buildx version`
+不可用，Compose 会回退到普通 builder，并在 Dockerfile 的 cache mount 步骤失败。预检只诊断，不会自动
+安装 buildx 或改写 Docker 配置。
+
+单独开发时：
 
 ```bash
 cp apps/feed-supplier/.env.example apps/feed-supplier/.env

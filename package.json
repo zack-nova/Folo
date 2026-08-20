@@ -21,6 +21,8 @@
     "dev:web": "turbo run @follow/web#dev @follow/ssr#dev",
     "dev:self-hosted": "pnpm server:db:up && cross-env DATABASE_URL=postgres://folo:folo@localhost:54329/folo BETTER_AUTH_SECRET=local-development-secret-at-least-32-characters SERVER_URL=http://localhost:3000 CLIENT_ORIGINS=http://localhost:2233 VITE_API_URL=http://localhost:3000 VITE_WEB_URL=http://localhost:2233 turbo run @follow/server#dev @follow/web#dev",
     "dev:self-hosted:sources": "pnpm server:db:up && pnpm sources:up && cross-env DATABASE_URL=postgres://folo:folo@localhost:54329/folo BETTER_AUTH_SECRET=local-development-secret-at-least-32-characters SERVER_URL=http://localhost:3000 CLIENT_ORIGINS=http://localhost:2233 FEED_SUPPLIER_URL=http://localhost:3001 FEED_SUPPLIER_TOKEN=local-feed-supplier-token-at-least-32-characters VITE_API_URL=http://localhost:3000 VITE_WEB_URL=http://localhost:2233 turbo run @follow/server#dev @follow/web#dev",
+    "preflight:self-hosted": "node scripts/preflight-self-hosted.mjs",
+    "preflight:self-hosted:sources": "node scripts/preflight-self-hosted.mjs --sources",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "icons:sync": "tsx scripts/svg-to-rn.ts && prettier --write apps/mobile/src/icons/**/*.tsx && eslint --fix apps/mobile/src/icons/**/*.tsx",
