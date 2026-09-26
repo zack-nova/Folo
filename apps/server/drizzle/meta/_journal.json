@@ -50,6 +50,13 @@
       "when": 1787048386396,
       "tag": "0006_unique_shriek",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790406515160,
+      "tag": "0007_sync_actions",
+      "breakpoints": true
     }
   ]
 }

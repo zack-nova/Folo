@@ -107,6 +107,38 @@ test("registers, subscribes, renders, and persists read state against the local 
   await expectTimelineSwitchAndEntryReadFlow(page)
   await expect(page.getByTestId("entry-evaluation-panel")).toBeVisible()
 
+  // Another device renames the subscription. The client sync engine picks the change up from
+  // the change log when the window regains focus, without a reload or a full refetch.
+  const deltaRequests: string[] = []
+  page.on("request", (request) => {
+    if (request.url().includes("/sync/delta")) deltaRequests.push(request.url())
+  })
+  const renamedTitle = "Renamed on another device"
+  const renamed = await page.evaluate(
+    async ({ apiURL, feedId, title }) => {
+      const response = await fetch(`${apiURL}/subscriptions`, {
+        body: JSON.stringify({ feedId, title }),
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      })
+      return { body: (await response.json()) as { lastSyncId?: number }, status: response.status }
+    },
+    { apiURL: env.apiURL, feedId: feedId!, title: renamedTitle },
+  )
+  expect(renamed.status).toBe(200)
+  expect(renamed.body.lastSyncId).toBeGreaterThan(0)
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+        return page.getByText(renamedTitle).count()
+      },
+      { intervals: [1_000, 2_000, 3_000], timeout: 30_000 },
+    )
+    .toBeGreaterThan(0)
+  expect(deltaRequests.length).toBeGreaterThan(0)
+
   await openSettings(page, "ai")
   await expect(page.getByTestId("autonomous-ai-settings")).toBeVisible()
   await expect(page.locator("#autonomous-ai-base-url")).toBeVisible()

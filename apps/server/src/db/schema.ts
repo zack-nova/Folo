@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm"
 import {
+  bigint,
+  bigserial,
   boolean,
   index,
   integer,
@@ -392,3 +394,33 @@ export const settings = pgTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.tab] })],
 )
+
+/**
+ * Per-user change log replayed by the client sync engine. Ids come from one global sequence;
+ * rows of one user are written under a per-user advisory lock as the last statement of the
+ * transaction that made the change, so they become visible in id order.
+ */
+export const syncActions = pgTable(
+  "sync_actions",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id").notNull(),
+    model: text("model").notNull(),
+    modelId: text("model_id"),
+    action: text("action").notNull(),
+    data: jsonb("data").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+  },
+  (table) => [
+    index("sync_actions_user_id_id_idx").on(table.userId, table.id),
+    index("sync_actions_created_at_idx").on(table.createdAt),
+  ],
+)
+
+/** The highest id deleted from a user's log; an older cursor must take a fresh snapshot. */
+export const syncFloors = pgTable("sync_floors", {
+  userId: text("user_id").primaryKey(),
+  floorId: bigint("floor_id", { mode: "number" }).notNull(),
+})

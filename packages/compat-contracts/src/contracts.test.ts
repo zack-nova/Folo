@@ -215,9 +215,9 @@ describe("capability manifest", () => {
     expect(manifest.capabilities).toContainEqual(
       expect.objectContaining({
         id: "sync.incremental",
-        targetStage: null,
-        provider: "unavailable",
-        clientBehavior: "hidden",
+        targetStage: 4,
+        provider: "local",
+        clientBehavior: "enabled_when_advertised",
         sdkApis: ["sync.delta", "sync.state"],
       }),
     )

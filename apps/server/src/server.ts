@@ -27,6 +27,7 @@ import {
 } from "./ai/credentials"
 import type { AIProvider } from "./ai/provider"
 import { OpenAICompatibleProvider } from "./ai/provider"
+import { apiFeed, apiList, apiListSubscription, apiSubscription } from "./api-shapes"
 import type { AppAuth } from "./auth"
 import { MemoryDataStore } from "./data/memory-store"
 import type {
@@ -36,13 +37,11 @@ import type {
   FeedRecord,
   ListPatch,
   ListRecord,
-  ListSubscriptionRecord,
   MaintenanceCleanupReport,
   ProcessingJobRecord,
   ProcessingTaxonomySnapshotRecord,
   SettingsTab,
   SubscriptionPatch,
-  SubscriptionRecord,
 } from "./data/types"
 import type { SourceCatalogClient } from "./feeds/feed-supplier-fetcher"
 import type { FeedFetcher } from "./feeds/importer"
@@ -110,33 +109,6 @@ const bodyForAuthRequest = (body: unknown): BodyInit | undefined => {
   return JSON.stringify(body)
 }
 
-const apiFeed = (feed: FeedRecord) => ({
-  id: feed.id,
-  type: "feed" as const,
-  title: feed.title,
-  description: feed.description,
-  image: feed.image,
-  ownerUserId: feed.ownerUserId,
-  owner: null,
-  url: feed.url,
-  siteUrl: feed.siteUrl,
-  errorMessage: feed.errorMessage,
-  errorAt: feed.errorAt?.toISOString() ?? null,
-  tipUsers: null,
-})
-
-const apiSubscription = (subscription: SubscriptionRecord, feed: FeedRecord) => ({
-  userId: subscription.userId,
-  feedId: subscription.feedId,
-  view: subscription.view,
-  category: subscription.category,
-  title: subscription.title,
-  isPrivate: subscription.isPrivate,
-  hideFromTimeline: subscription.hideFromTimeline,
-  createdAt: subscription.createdAt.toISOString(),
-  feeds: apiFeed(feed),
-})
-
 const apiEntry = (entry: EntryRecord) => ({
   id: entry.id,
   title: entry.title,
@@ -154,41 +126,6 @@ const apiEntry = (entry: EntryRecord) => ({
   attachments: entry.attachments,
   extra: entry.extra,
   language: entry.language,
-})
-
-const apiList = (list: ListRecord) => ({
-  id: list.id,
-  feedIds: list.feedIds,
-  title: list.title,
-  description: list.description,
-  image: list.image,
-  view: list.view,
-  fee: list.fee,
-  language: null,
-  ownerUserId: list.ownerUserId,
-  createdAt: list.createdAt.toISOString(),
-  updatedAt: list.updatedAt.toISOString(),
-})
-
-const apiListSubscription = (subscription: ListSubscriptionRecord, list: ListRecord) => ({
-  userId: subscription.userId,
-  feedId: "",
-  listId: subscription.listId,
-  view: subscription.view,
-  category: subscription.category,
-  title: subscription.title,
-  isPrivate: subscription.isPrivate,
-  hideFromTimeline: subscription.hideFromTimeline,
-  createdAt: subscription.createdAt.toISOString(),
-  lists: {
-    ...apiList(list),
-    owner: {
-      id: list.ownerUserId,
-      name: null,
-      image: null,
-      handle: null,
-    },
-  },
 })
 
 const apiProcessingJob = (job: ProcessingJobRecord) => ({
@@ -345,6 +282,32 @@ const matchesSecret = (received: string | undefined, expected: string | undefine
   )
 }
 
+const SYNC_DELTA_DEFAULT_LIMIT = 500
+const SYNC_DELTA_MAX_LIMIT = 1_000
+
+/** Routes whose writes are recorded in the sync change log. */
+const syncedMutationRoutes = new Set([
+  "PUT /actions",
+  "PATCH /settings/:tab",
+  "POST /subscriptions",
+  "PATCH /subscriptions",
+  "PATCH /subscriptions/batch",
+  "DELETE /subscriptions",
+  "POST /subscriptions/import",
+  "PATCH /categories",
+  "DELETE /categories",
+  "POST /lists",
+  "PATCH /lists",
+  "DELETE /lists",
+  "POST /lists/feeds",
+  "DELETE /lists/feeds",
+  "POST /reads",
+  "DELETE /reads",
+  "POST /reads/all",
+  "POST /collections",
+  "DELETE /collections",
+])
+
 const settingsTabs = ["general", "appearance", "integration", "ai"] as const
 const isSettingsTab = (value: string): value is SettingsTab =>
   settingsTabs.includes(value as SettingsTab)
@@ -368,6 +331,7 @@ const implementedCapabilities = new Set([
   "subscriptions.core",
   "subscriptions.acquisition_diagnostics",
   "subscriptions.opml",
+  "sync.incremental",
 ])
 
 export const buildServer = async ({
@@ -637,11 +601,21 @@ export const buildServer = async ({
     if (existingUser) await dataStore.claimOwner(existingUser.id)
   }
 
-  const authenticatedSession = async (headers: Parameters<typeof fromNodeHeaders>[0]) => {
+  const lookupSession = async (headers: Parameters<typeof fromNodeHeaders>[0]) => {
     const session = await auth.api.getSession({ headers: fromNodeHeaders(headers) })
     if (!session || allowPublicRegistration) return session
     const ownerUserId = await dataStore.claimOwner(session.user.id)
     return ownerUserId === session.user.id ? session : null
+  }
+  // One lookup per request, shared by the route and the hook that adds `lastSyncId`.
+  const sessionsByHeaders = new WeakMap<object, ReturnType<typeof lookupSession>>()
+  const authenticatedSession = (headers: Parameters<typeof fromNodeHeaders>[0]) => {
+    let session = sessionsByHeaders.get(headers)
+    if (!session) {
+      session = lookupSession(headers)
+      sessionsByHeaders.set(headers, session)
+    }
+    return session
   }
 
   const authenticatedUserId = async (headers: Parameters<typeof fromNodeHeaders>[0]) =>
@@ -707,6 +681,60 @@ export const buildServer = async ({
     { bodyLimit: 512 * 1024, parseAs: "buffer" },
     (_request, body, done) => done(null, body),
   )
+
+  // Mutations that record sync actions answer with the user's newest sync id, so the client
+  // knows when the change log has caught up with its own write.
+  server.addHook("preSerialization", async (request, reply, payload) => {
+    if (reply.statusCode >= 300 || !isRecord(payload) || payload.code !== 0) return payload
+    if (!syncedMutationRoutes.has(`${request.method} ${request.routeOptions.url ?? ""}`)) {
+      return payload
+    }
+    const userId = await authenticatedUserId(request.headers)
+    return userId ? { ...payload, lastSyncId: await dataStore.getSyncState(userId) } : payload
+  })
+
+  server.get("/sync/state", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    return { code: 0, data: { lastSyncId: await dataStore.getSyncState(userId) } }
+  })
+
+  server.get("/sync/delta", async (request, reply) => {
+    const userId = await authenticatedUserId(request.headers)
+    if (!userId) {
+      return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
+    }
+    const query = request.query as Record<string, unknown>
+    const lastSyncId = Number(query.lastSyncId)
+    if (!Number.isSafeInteger(lastSyncId) || lastSyncId < 0) {
+      return reply
+        .status(400)
+        .send({ code: "invalid_request", message: "lastSyncId must be a non-negative integer" })
+    }
+    const delta = await dataStore.listSyncActions(
+      userId,
+      lastSyncId,
+      limitFromUnknown(query.limit, SYNC_DELTA_DEFAULT_LIMIT, SYNC_DELTA_MAX_LIMIT),
+    )
+    return {
+      code: 0,
+      data: {
+        actions: delta.actions.map((action) => ({
+          id: action.id,
+          model: action.model,
+          modelId: action.modelId,
+          action: action.action,
+          data: action.data,
+          createdAt: action.createdAt.toISOString(),
+        })),
+        lastSyncId: delta.lastSyncId,
+        hasMore: delta.hasMore,
+        reset: delta.reset,
+      },
+    }
+  })
 
   server.get("/health", async () => ({ status: "ok" }))
 
@@ -2947,7 +2975,10 @@ export const buildServer = async ({
       return reply.status(401).send({ code: "unauthorized", message: "Authentication required" })
     }
     const query = request.query as Record<string, unknown>
-    return { code: 0, data: await dataStore.getUnreadCounts(userId, numberFromUnknown(query.view)) }
+    // The counts and the sync id come from one snapshot, so the client applies exactly the
+    // counter changes logged after it.
+    const snapshot = await dataStore.getUnreadSnapshot(userId, numberFromUnknown(query.view))
+    return { code: 0, data: snapshot.counts, lastSyncId: snapshot.lastSyncId }
   })
 
   server.get("/reads/total-count", async (request, reply) => {
@@ -3109,8 +3140,8 @@ export const buildServer = async ({
 
   server.setNotFoundHandler((request, reply) => {
     const path = request.url.split("?", 1)[0] ?? request.url
-    // The client sync engine treats only a 404 on /sync as "no incremental sync" and falls
-    // back to full refetches; any other status aborts its bootstrap and keeps it retrying.
+    // The client sync engine treats a 404 on /sync as "no incremental sync"; keep unknown sync
+    // routes on 404 rather than the generic 501 so a newer client degrades the same way.
     if (path === "/sync" || path.startsWith("/sync/")) {
       return reply.status(404).send({ code: "not_found", message: "Route not found" })
     }

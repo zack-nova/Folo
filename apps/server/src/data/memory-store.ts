@@ -1,3 +1,21 @@
+import {
+  actionRulesUpdated,
+  collectionDeleted,
+  collectionInserted,
+  listDeleted,
+  listSubscriptionDeleted,
+  listSubscriptionInserted,
+  listSubscriptionUpdated,
+  listUpdated,
+  settingsUpdated,
+  subscriptionDeleted,
+  subscriptionInserted,
+  subscriptionUpdated,
+  SYNC_ACTION_RETENTION_MS,
+  SYNC_HINT_RETENTION_MS,
+  timelineEntriesArrived,
+  timelineReadFlipped,
+} from "../sync/actions"
 import type {
   ActionRulesRecord,
   AIProviderConfigRecord,
@@ -26,6 +44,10 @@ import type {
   SettingsTab,
   SubscriptionPatch,
   SubscriptionRecord,
+  SyncActionInput,
+  SyncActionRecord,
+  SyncDelta,
+  UnreadSnapshot,
 } from "./types"
 
 const subscriptionKey = (userId: string, feedId: string) => `${userId}:${feedId}`
@@ -55,6 +77,19 @@ export class MemoryDataStore implements DataStore {
   private readonly processingProfiles = new Map<string, ProcessingProfileSnapshotRecord>()
   private readonly processingTaxonomies = new Map<string, ProcessingTaxonomySnapshotRecord>()
   private ownerUserId: string | null = null
+  private readonly syncLog: SyncActionRecord[] = []
+  private readonly syncFloors = new Map<string, number>()
+  private nextSyncId = 1
+
+  private recordSyncActions(actions: SyncActionInput[]) {
+    for (const action of actions) {
+      this.syncLog.push({
+        ...structuredClone(action),
+        id: this.nextSyncId++,
+        createdAt: new Date(),
+      })
+    }
+  }
 
   async getOwnerUserId(): Promise<string | null> {
     return this.ownerUserId
@@ -71,9 +106,11 @@ export class MemoryDataStore implements DataStore {
     attempt?: FeedFetchAttemptRecord,
   ): Promise<void> {
     this.feeds.set(feed.id, structuredClone(feed))
+    const inserted: EntryRecord[] = []
     for (const entry of entries) {
       const existing = this.entries.get(entry.id)
       const saved = structuredClone(entry)
+      if (!existing) inserted.push(saved)
       if (existing) {
         saved.insertedAt = existing.insertedAt
         if (entry.publishedAt.getTime() === entry.insertedAt.getTime()) {
@@ -90,6 +127,18 @@ export class MemoryDataStore implements DataStore {
         .slice(500)
       for (const candidate of stale) this.feedFetchAttempts.delete(candidate.id)
     }
+    if (inserted.length === 0) return
+    for (const subscription of this.subscriptions.values()) {
+      if (subscription.feedId !== feed.id) continue
+      const listIds = [...this.lists.values()]
+        .filter(
+          (list) => list.ownerUserId === subscription.userId && list.feedIds.includes(feed.id),
+        )
+        .map((list) => list.id)
+      this.recordSyncActions([
+        timelineEntriesArrived(subscription.userId, feed.id, inserted, listIds),
+      ])
+    }
   }
 
   async createSubscription(subscription: SubscriptionRecord): Promise<void> {
@@ -97,6 +146,8 @@ export class MemoryDataStore implements DataStore {
       subscriptionKey(subscription.userId, subscription.feedId),
       structuredClone(subscription),
     )
+    const feed = this.feeds.get(subscription.feedId)
+    if (feed) this.recordSyncActions([subscriptionInserted(subscription, feed)])
   }
 
   async updateSubscription(
@@ -109,12 +160,15 @@ export class MemoryDataStore implements DataStore {
     if (!current) return null
     const updated = { ...current, ...structuredClone(patch) }
     this.subscriptions.set(key, updated)
+    this.recordSyncActions([subscriptionUpdated(userId, feedId, patch)])
     return structuredClone(updated)
   }
 
   async deleteSubscriptions(userId: string, feedIds: string[]): Promise<void> {
     for (const feedId of new Set(feedIds)) {
-      this.subscriptions.delete(subscriptionKey(userId, feedId))
+      if (this.subscriptions.delete(subscriptionKey(userId, feedId))) {
+        this.recordSyncActions([subscriptionDeleted(userId, feedId)])
+      }
     }
   }
 
@@ -133,6 +187,7 @@ export class MemoryDataStore implements DataStore {
       listSubscriptionKey(subscription.userId, subscription.listId),
       structuredClone(subscription),
     )
+    this.recordSyncActions([listSubscriptionInserted(subscription, list)])
   }
 
   async updateList(userId: string, listId: string, patch: ListPatch): Promise<ListRecord | null> {
@@ -140,6 +195,7 @@ export class MemoryDataStore implements DataStore {
     if (!current) return null
     const updated = { ...current, ...structuredClone(patch), updatedAt: new Date() }
     this.lists.set(listId, updated)
+    this.recordSyncActions([listUpdated(userId, listId, patch)])
     if (patch.view !== undefined) {
       await this.updateListSubscription(userId, listId, { view: patch.view })
     }
@@ -150,9 +206,14 @@ export class MemoryDataStore implements DataStore {
     const list = await this.getList(userId, listId)
     if (!list) return
     this.lists.delete(listId)
+    const userIds = new Set([userId])
     for (const [key, subscription] of this.listSubscriptionRecords) {
-      if (subscription.listId === listId) this.listSubscriptionRecords.delete(key)
+      if (subscription.listId !== listId) continue
+      this.listSubscriptionRecords.delete(key)
+      userIds.add(subscription.userId)
     }
+    // Clients drop their subscription to the list along with it.
+    this.recordSyncActions([...userIds].map((id) => listDeleted(id, listId)))
   }
 
   async getList(userId: string, listId: string): Promise<ListRecord | null> {
@@ -175,6 +236,7 @@ export class MemoryDataStore implements DataStore {
     if (!list) return null
     const updated = { ...list, feedIds: [...new Set(feedIds)], updatedAt: new Date() }
     this.lists.set(listId, updated)
+    this.recordSyncActions([listUpdated(userId, listId, { feedIds: updated.feedIds })])
     return structuredClone(updated)
   }
 
@@ -197,11 +259,14 @@ export class MemoryDataStore implements DataStore {
     if (!current) return null
     const updated = { ...current, ...structuredClone(patch) }
     this.listSubscriptionRecords.set(key, updated)
+    this.recordSyncActions([listSubscriptionUpdated(userId, listId, patch)])
     return structuredClone(updated)
   }
 
   async deleteListSubscription(userId: string, listId: string): Promise<void> {
-    this.listSubscriptionRecords.delete(listSubscriptionKey(userId, listId))
+    if (this.listSubscriptionRecords.delete(listSubscriptionKey(userId, listId))) {
+      this.recordSyncActions([listSubscriptionDeleted(userId, listId)])
+    }
   }
 
   async listEntries({
@@ -630,6 +695,26 @@ export class MemoryDataStore implements DataStore {
       updatedAt: now,
       userId,
     })
+    this.recordSyncActions([actionRulesUpdated(userId, rules)])
+  }
+
+  async cleanupSyncActions(now: Date): Promise<number> {
+    let deleted = 0
+    for (let index = this.syncLog.length - 1; index >= 0; index--) {
+      const action = this.syncLog[index]!
+      const age = now.getTime() - action.createdAt.getTime()
+      const isHint = action.action === "N"
+      if (age <= (isHint ? SYNC_HINT_RETENTION_MS : SYNC_ACTION_RETENTION_MS)) continue
+      this.syncLog.splice(index, 1)
+      deleted += 1
+      if (!isHint) {
+        this.syncFloors.set(
+          action.userId,
+          Math.max(this.syncFloors.get(action.userId) ?? 0, action.id),
+        )
+      }
+    }
+    return deleted
   }
 
   async cleanupProcessingHistory(now: Date): Promise<MaintenanceCleanupReport> {
@@ -678,6 +763,8 @@ export class MemoryDataStore implements DataStore {
       }
     }
 
+    const syncActionsDeleted = await this.cleanupSyncActions(now)
+
     let processingJobsDeleted = 0
     for (const [id, job] of this.processingJobs) {
       if (
@@ -702,6 +789,7 @@ export class MemoryDataStore implements DataStore {
       feedFetchAttemptsDeleted,
       processingAttemptsDeleted,
       processingJobsDeleted,
+      syncActionsDeleted,
     }
   }
 
@@ -719,13 +807,17 @@ export class MemoryDataStore implements DataStore {
   }
 
   async setEntriesRead(userId: string, entryIds: string[], read: boolean): Promise<void> {
+    const flipped: Array<{ entryId: string; feedId: string }> = []
     for (const entryId of new Set(entryIds)) {
       const entry = await this.getEntry(userId, entryId)
       if (!entry) continue
       const key = readKey(userId, entryId)
+      if (this.reads.has(key) === read) continue
       if (read) this.reads.add(key)
       else this.reads.delete(key)
+      flipped.push({ entryId, feedId: entry.feedId })
     }
+    this.recordSyncActions(timelineReadFlipped(userId, read, flipped))
   }
 
   async markAllAsRead(userId: string, filter: MarkAllReadFilter): Promise<Record<string, number>> {
@@ -735,6 +827,7 @@ export class MemoryDataStore implements DataStore {
         (filter.feedIdList === undefined || filter.feedIdList.includes(subscription.feedId)),
     )
     const marked: Record<string, number> = {}
+    const flipped: Array<{ entryId: string; feedId: string }> = []
 
     for (const subscription of subscriptions) {
       let count = 0
@@ -742,11 +835,13 @@ export class MemoryDataStore implements DataStore {
         const key = readKey(userId, entry.id)
         if (entry.feedId !== subscription.feedId || this.reads.has(key)) continue
         this.reads.add(key)
+        flipped.push({ entryId: entry.id, feedId: entry.feedId })
         count += 1
       }
       marked[subscription.feedId] = count
     }
 
+    this.recordSyncActions(timelineReadFlipped(userId, true, flipped))
     return marked
   }
 
@@ -755,10 +850,21 @@ export class MemoryDataStore implements DataStore {
   }
 
   async setEntryCollected(userId: string, entryId: string, collected: boolean): Promise<void> {
-    if (!(await this.getEntry(userId, entryId))) return
+    const entry = await this.getEntry(userId, entryId)
+    if (!entry) return
     const key = collectionKey(userId, entryId)
-    if (collected) this.collections.set(key, new Date())
-    else this.collections.delete(key)
+    if (collected) {
+      // Starring again keeps the original star time, as the PostgreSQL store does.
+      if (this.collections.has(key)) return
+      const createdAt = new Date()
+      this.collections.set(key, createdAt)
+      const view = this.subscriptions.get(subscriptionKey(userId, entry.feedId))?.view ?? 0
+      this.recordSyncActions([
+        collectionInserted(userId, { entryId, feedId: entry.feedId, view, createdAt }),
+      ])
+    } else if (this.collections.delete(key)) {
+      this.recordSyncActions([collectionDeleted(userId, entryId)])
+    }
   }
 
   async listSubscribedFeeds(): Promise<FeedRecord[]> {
@@ -817,9 +923,41 @@ export class MemoryDataStore implements DataStore {
     tab: SettingsTab,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    this.settings.set(`${userId}:${tab}`, {
-      payload: structuredClone(payload),
-      updatedAt: new Date(),
-    })
+    const updatedAt = new Date()
+    this.settings.set(`${userId}:${tab}`, { payload: structuredClone(payload), updatedAt })
+    this.recordSyncActions([settingsUpdated(userId, tab, payload, updatedAt)])
+  }
+
+  async getUnreadSnapshot(userId: string, view?: number): Promise<UnreadSnapshot> {
+    return {
+      counts: await this.getUnreadCounts(userId, view),
+      lastSyncId: await this.getSyncState(userId),
+    }
+  }
+
+  async getSyncState(userId: string): Promise<number> {
+    let lastSyncId = this.syncFloors.get(userId) ?? 0
+    for (const action of this.syncLog) {
+      if (action.userId === userId) lastSyncId = Math.max(lastSyncId, action.id)
+    }
+    return lastSyncId
+  }
+
+  async listSyncActions(userId: string, afterId: number, limit: number): Promise<SyncDelta> {
+    const lastSyncId = await this.getSyncState(userId)
+    // A cursor below the floor missed deleted rows; one above everything logged comes from
+    // another database (a restored or rebuilt instance). Both need a fresh snapshot.
+    if (afterId < (this.syncFloors.get(userId) ?? 0) || afterId > lastSyncId) {
+      return { actions: [], lastSyncId, hasMore: false, reset: true }
+    }
+    const pending = this.syncLog.filter((action) => action.userId === userId && action.id > afterId)
+    const actions = pending.slice(0, limit).map((action) => structuredClone(action))
+    const hasMore = pending.length > actions.length
+    return {
+      actions,
+      lastSyncId: hasMore ? actions.at(-1)!.id : lastSyncId,
+      hasMore,
+      reset: false,
+    }
   }
 }

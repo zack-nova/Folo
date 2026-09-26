@@ -14,6 +14,7 @@
 - [stage-1-minimum-loop.md](./stage-1-minimum-loop.md)：已完成的自有认证、PostgreSQL、RSS 订阅、阅读状态与收藏最小闭环，以及完整阶段一的剩余边界。
 - [stage-2-ai-processing-backend.md](./stage-2-ai-processing-backend.md)：自主 Provider、版本化评估、可靠 Processing Job 与范围重评后端。
 - [stage-3-frontend-fusion.md](./stage-3-frontend-fusion.md)：Featured 时间线、评估详情、失败恢复、范围重评和自主 AI 设置的 Folo 前端融合。
+- [stage-4-3-incremental-sync.md](./stage-4-3-incremental-sync.md)：上游 SDK 0.3.96 兼容修复（位置性分页游标、收藏分页、契约扫描）与服务端增量同步变更日志。
 - [stage-5a-autonomous-sources.md](./stage-5a-autonomous-sources.md)：自主数据源契约、自建 RSSHub、独立配置库、加密凭据、审计与后续切片。
 - [feeds-agent-CONTEXT.md](./feeds-agent-CONTEXT.md)：Feeds Agent 当前领域语言和已解决歧义快照。
 - [adr/0012-store-processing-results-by-content-version.md](./adr/0012-store-processing-results-by-content-version.md)：旧处理结果版本化 ADR，已被后续设计取代。
@@ -24,6 +25,7 @@
 - [adr/0027-materialize-confirmed-page-observations-as-feed-entries.md](./adr/0027-materialize-confirmed-page-observations-as-feed-entries.md)：空基线、去抖确认、不可变页面事件和调度隔离决策。
 - [adr/0028-publish-a-self-owned-source-route-catalog.md](./adr/0028-publish-a-self-owned-source-route-catalog.md)：自有路由目录、严格参数 schema、Owner 代理和管理密钥隔离决策。
 - [adr/0029-scale-source-acquisition-with-redis.md](./adr/0029-scale-source-acquisition-with-redis.md)：可重建 Redis 缓存、分布式限流/并发租约和失败关闭决策。
+- [adr/0030-log-user-changes-in-the-write-transaction.md](./adr/0030-log-user-changes-in-the-write-transaction.md)：变更日志与写入同事务、按用户 advisory lock 保证游标不越过未提交行的决策。
 
 ## 推荐开发阶段
 

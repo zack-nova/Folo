@@ -1,4 +1,19 @@
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm"
+import {
+  and,
+  arrayContains,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  max,
+  or,
+  sql,
+} from "drizzle-orm"
 
 import type { ApplicationDatabase } from "../db/database"
 import {
@@ -23,7 +38,27 @@ import {
   readStates,
   settings,
   subscriptions,
+  syncActions,
+  syncFloors,
 } from "../db/schema"
+import {
+  actionRulesUpdated,
+  collectionDeleted,
+  collectionInserted,
+  listDeleted,
+  listSubscriptionDeleted,
+  listSubscriptionInserted,
+  listSubscriptionUpdated,
+  listUpdated,
+  settingsUpdated,
+  subscriptionDeleted,
+  subscriptionInserted,
+  subscriptionUpdated,
+  SYNC_ACTION_RETENTION_MS,
+  SYNC_HINT_RETENTION_MS,
+  timelineEntriesArrived,
+  timelineReadFlipped,
+} from "../sync/actions"
 import type {
   ActionRulesRecord,
   AIProviderConfigRecord,
@@ -52,7 +87,174 @@ import type {
   SettingsTab,
   SubscriptionPatch,
   SubscriptionRecord,
+  SyncActionInput,
+  SyncActionType,
+  SyncDelta,
+  SyncModel,
+  UnreadSnapshot,
 } from "./types"
+
+type Transaction = Parameters<Parameters<ApplicationDatabase["transaction"]>[0]>[0]
+type Executor = ApplicationDatabase | Transaction
+
+/** Namespaces the per-user advisory locks that order the sync log. */
+const SYNC_LOCK_CLASS = 0x5f10
+
+/**
+ * Appends change log rows as the last statement of the caller's transaction. Holding a per-user
+ * lock until commit makes one user's ids commit in id order, so a client can never advance its
+ * cursor past a row that is not visible yet.
+ */
+const appendSyncActions = async (transaction: Transaction, actions: SyncActionInput[]) => {
+  if (actions.length === 0) return
+  // Sorted, so concurrent writers that touch several users cannot deadlock.
+  for (const userId of [...new Set(actions.map((action) => action.userId))].sort()) {
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(${SYNC_LOCK_CLASS}, hashtext(${userId}))`,
+    )
+  }
+  await transaction.insert(syncActions).values(
+    actions.map((action) => ({
+      userId: action.userId,
+      model: action.model,
+      modelId: action.modelId,
+      action: action.action,
+      data: action.data,
+    })),
+  )
+}
+
+const syncState = async (executor: Executor, userId: string): Promise<number> => {
+  const [[logged], [floor]] = await Promise.all([
+    executor
+      .select({ lastSyncId: max(syncActions.id) })
+      .from(syncActions)
+      .where(eq(syncActions.userId, userId)),
+    executor
+      .select({ floorId: syncFloors.floorId })
+      .from(syncFloors)
+      .where(eq(syncFloors.userId, userId)),
+  ])
+  return Math.max(Number(logged?.lastSyncId ?? 0), floor?.floorId ?? 0)
+}
+
+/**
+ * Deletes expired log rows. Deleting anything but "new entries" hints raises the user's floor,
+ * so a client whose cursor is older takes a fresh snapshot instead of missing the change.
+ */
+const deleteExpiredSyncActions = async (transaction: Transaction, now: Date) => {
+  const hintCutoff = new Date(now.getTime() - SYNC_HINT_RETENTION_MS)
+  const actionCutoff = new Date(now.getTime() - SYNC_ACTION_RETENTION_MS)
+  const hints = await transaction.execute<{ count: string }>(sql`
+    with deleted as (
+      delete from ${syncActions}
+      where ${syncActions.action} = 'N' and ${syncActions.createdAt} < ${hintCutoff}
+      returning 1
+    )
+    select count(*) as count from deleted
+  `)
+  const actions = await transaction.execute<{ count: string }>(sql`
+    with deleted as (
+      delete from ${syncActions}
+      where ${syncActions.createdAt} < ${actionCutoff}
+      returning ${syncActions.userId} as user_id, ${syncActions.id} as id
+    ),
+    floors as (
+      insert into ${syncFloors} (user_id, floor_id)
+      select user_id, max(id) from deleted group by user_id
+      on conflict (user_id) do update
+        set floor_id = greatest(${syncFloors.floorId}, excluded.floor_id)
+    )
+    select count(*) as count from deleted
+  `)
+  return Number(hints.rows[0]?.count ?? 0) + Number(actions.rows[0]?.count ?? 0)
+}
+
+const unreadCounts = async (
+  executor: Executor,
+  userId: string,
+  view?: number,
+): Promise<Record<string, number>> => {
+  const userSubscriptions = await executor
+    .select({ feedId: subscriptions.feedId })
+    .from(subscriptions)
+    .where(
+      view === undefined
+        ? eq(subscriptions.userId, userId)
+        : and(eq(subscriptions.userId, userId), eq(subscriptions.view, view)),
+    )
+  const result: Record<string, number> = Object.fromEntries(
+    userSubscriptions.map((subscription) => [subscription.feedId, 0]),
+  )
+  if (userSubscriptions.length === 0) return result
+
+  const rows = await executor
+    .select({
+      feedId: entries.feedId,
+      count: sql<number>`count(${entries.id})`.mapWith(Number),
+    })
+    .from(entries)
+    .leftJoin(readStates, and(eq(readStates.entryId, entries.id), eq(readStates.userId, userId)))
+    .where(
+      and(
+        inArray(
+          entries.feedId,
+          userSubscriptions.map((subscription) => subscription.feedId),
+        ),
+        isNull(readStates.readAt),
+      ),
+    )
+    .groupBy(entries.feedId)
+
+  for (const row of rows) result[row.feedId] = row.count
+  return result
+}
+
+/** Changes the read state of the user's entries and returns only the rows that really flipped. */
+const flipReadStates = async (
+  transaction: Transaction,
+  userId: string,
+  entryIds: string[],
+  read: boolean,
+): Promise<Array<{ entryId: string; feedId: string }>> => {
+  const allowed = await transaction
+    .select({ id: entries.id, feedId: entries.feedId })
+    .from(entries)
+    .innerJoin(
+      subscriptions,
+      and(eq(subscriptions.feedId, entries.feedId), eq(subscriptions.userId, userId)),
+    )
+    .where(inArray(entries.id, entryIds))
+  if (allowed.length === 0) return []
+  const feedIdByEntry = new Map(allowed.map((row) => [row.id, row.feedId]))
+
+  const changed = read
+    ? (
+        await transaction
+          .insert(readStates)
+          .values(allowed.map((row) => ({ userId, entryId: row.id, readAt: new Date() })))
+          .onConflictDoUpdate({
+            target: [readStates.userId, readStates.entryId],
+            set: { readAt: sql`excluded.read_at` },
+          })
+          // xmax is 0 for a row this statement inserted, i.e. an entry that was unread.
+          .returning({ entryId: readStates.entryId, inserted: sql<boolean>`xmax = 0` })
+      ).filter((row) => row.inserted)
+    : await transaction
+        .delete(readStates)
+        .where(
+          and(
+            eq(readStates.userId, userId),
+            inArray(
+              readStates.entryId,
+              allowed.map((row) => row.id),
+            ),
+          ),
+        )
+        .returning({ entryId: readStates.entryId })
+
+  return changed.map((row) => ({ entryId: row.entryId, feedId: feedIdByEntry.get(row.entryId)! }))
+}
 
 export class PostgresDataStore implements DataStore {
   constructor(private readonly database: ApplicationDatabase) {}
@@ -104,8 +306,9 @@ export class PostgresDataStore implements DataStore {
           },
         })
 
+      let inserted: Array<{ publishedAt: Date }> = []
       if (entryRecords.length > 0) {
-        await transaction
+        const saved = await transaction
           .insert(entries)
           .values(entryRecords)
           .onConflictDoUpdate({
@@ -129,6 +332,9 @@ export class PostgresDataStore implements DataStore {
               end`,
             },
           })
+          // xmax is 0 for a row this statement inserted rather than updated.
+          .returning({ publishedAt: entries.publishedAt, inserted: sql<boolean>`xmax = 0` })
+        inserted = saved.filter((row) => row.inserted)
       }
       if (attempt) {
         await transaction.insert(feedFetchAttempts).values(attempt)
@@ -144,23 +350,54 @@ export class PostgresDataStore implements DataStore {
             )
         `)
       }
+      if (inserted.length === 0) return
+      const [subscribers, containingLists] = await Promise.all([
+        transaction
+          .select({ userId: subscriptions.userId })
+          .from(subscriptions)
+          .where(eq(subscriptions.feedId, feed.id)),
+        transaction
+          .select({ id: lists.id, ownerUserId: lists.ownerUserId })
+          .from(lists)
+          .where(arrayContains(lists.feedIds, [feed.id])),
+      ])
+      await appendSyncActions(
+        transaction,
+        subscribers.map(({ userId }) =>
+          timelineEntriesArrived(
+            userId,
+            feed.id,
+            inserted,
+            containingLists.filter((list) => list.ownerUserId === userId).map((list) => list.id),
+          ),
+        ),
+      )
     })
   }
 
   async createSubscription(subscription: SubscriptionRecord): Promise<void> {
-    await this.database
-      .insert(subscriptions)
-      .values(subscription)
-      .onConflictDoUpdate({
-        target: [subscriptions.userId, subscriptions.feedId],
-        set: {
-          view: subscription.view,
-          category: subscription.category,
-          title: subscription.title,
-          isPrivate: subscription.isPrivate,
-          hideFromTimeline: subscription.hideFromTimeline,
-        },
-      })
+    await this.database.transaction(async (transaction) => {
+      const [saved] = await transaction
+        .insert(subscriptions)
+        .values(subscription)
+        .onConflictDoUpdate({
+          target: [subscriptions.userId, subscriptions.feedId],
+          set: {
+            view: subscription.view,
+            category: subscription.category,
+            title: subscription.title,
+            isPrivate: subscription.isPrivate,
+            hideFromTimeline: subscription.hideFromTimeline,
+          },
+        })
+        .returning()
+      const [feed] = await transaction
+        .select()
+        .from(feeds)
+        .where(eq(feeds.id, subscription.feedId))
+        .limit(1)
+      if (saved && feed) await appendSyncActions(transaction, [subscriptionInserted(saved, feed)])
+    })
   }
 
   async updateSubscription(
@@ -168,19 +405,31 @@ export class PostgresDataStore implements DataStore {
     feedId: string,
     patch: SubscriptionPatch,
   ): Promise<SubscriptionRecord | null> {
-    const [updated] = await this.database
-      .update(subscriptions)
-      .set(patch)
-      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
-      .returning()
-    return updated ?? null
+    return this.database.transaction(async (transaction) => {
+      const [updated] = await transaction
+        .update(subscriptions)
+        .set(patch)
+        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
+        .returning()
+      if (updated) {
+        await appendSyncActions(transaction, [subscriptionUpdated(userId, feedId, patch)])
+      }
+      return updated ?? null
+    })
   }
 
   async deleteSubscriptions(userId: string, feedIds: string[]): Promise<void> {
     if (feedIds.length === 0) return
-    await this.database
-      .delete(subscriptions)
-      .where(and(eq(subscriptions.userId, userId), inArray(subscriptions.feedId, feedIds)))
+    await this.database.transaction(async (transaction) => {
+      const deleted = await transaction
+        .delete(subscriptions)
+        .where(and(eq(subscriptions.userId, userId), inArray(subscriptions.feedId, feedIds)))
+        .returning({ feedId: subscriptions.feedId })
+      await appendSyncActions(
+        transaction,
+        deleted.map(({ feedId }) => subscriptionDeleted(userId, feedId)),
+      )
+    })
   }
 
   async listSubscriptions(userId: string, view?: number): Promise<SubscriptionRecord[]> {
@@ -198,6 +447,7 @@ export class PostgresDataStore implements DataStore {
     await this.database.transaction(async (transaction) => {
       await transaction.insert(lists).values(list)
       await transaction.insert(listSubscriptions).values(subscription)
+      await appendSyncActions(transaction, [listSubscriptionInserted(subscription, list)])
     })
   }
 
@@ -210,20 +460,40 @@ export class PostgresDataStore implements DataStore {
         .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
         .returning()
       if (!updated) return null
+      const actions = [listUpdated(userId, listId, patch)]
       if (patch.view !== undefined) {
-        await transaction
+        const changed = await transaction
           .update(listSubscriptions)
           .set({ view: patch.view })
           .where(and(eq(listSubscriptions.userId, userId), eq(listSubscriptions.listId, listId)))
+          .returning({ listId: listSubscriptions.listId })
+        if (changed.length > 0) {
+          actions.push(listSubscriptionUpdated(userId, listId, { view: patch.view }))
+        }
       }
+      await appendSyncActions(transaction, actions)
       return updated
     })
   }
 
   async deleteList(userId: string, listId: string): Promise<void> {
-    await this.database
-      .delete(lists)
-      .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
+    await this.database.transaction(async (transaction) => {
+      const subscribers = await transaction
+        .select({ userId: listSubscriptions.userId })
+        .from(listSubscriptions)
+        .where(eq(listSubscriptions.listId, listId))
+      const deleted = await transaction
+        .delete(lists)
+        .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
+        .returning({ id: lists.id })
+      if (deleted.length === 0) return
+      // Clients drop their subscription to the list along with it.
+      const userIds = new Set([userId, ...subscribers.map((subscriber) => subscriber.userId)])
+      await appendSyncActions(
+        transaction,
+        [...userIds].map((id) => listDeleted(id, listId)),
+      )
+    })
   }
 
   async getList(userId: string, listId: string): Promise<ListRecord | null> {
@@ -244,12 +514,19 @@ export class PostgresDataStore implements DataStore {
     listId: string,
     feedIds: string[],
   ): Promise<ListRecord | null> {
-    const [updated] = await this.database
-      .update(lists)
-      .set({ feedIds: [...new Set(feedIds)], updatedAt: new Date() })
-      .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
-      .returning()
-    return updated ?? null
+    return this.database.transaction(async (transaction) => {
+      const [updated] = await transaction
+        .update(lists)
+        .set({ feedIds: [...new Set(feedIds)], updatedAt: new Date() })
+        .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
+        .returning()
+      if (updated) {
+        await appendSyncActions(transaction, [
+          listUpdated(userId, listId, { feedIds: updated.feedIds }),
+        ])
+      }
+      return updated ?? null
+    })
   }
 
   async listListSubscriptions(userId: string, view?: number): Promise<ListSubscriptionRecord[]> {
@@ -268,18 +545,29 @@ export class PostgresDataStore implements DataStore {
     listId: string,
     patch: SubscriptionPatch,
   ): Promise<ListSubscriptionRecord | null> {
-    const [updated] = await this.database
-      .update(listSubscriptions)
-      .set(patch)
-      .where(and(eq(listSubscriptions.userId, userId), eq(listSubscriptions.listId, listId)))
-      .returning()
-    return updated ?? null
+    return this.database.transaction(async (transaction) => {
+      const [updated] = await transaction
+        .update(listSubscriptions)
+        .set(patch)
+        .where(and(eq(listSubscriptions.userId, userId), eq(listSubscriptions.listId, listId)))
+        .returning()
+      if (updated) {
+        await appendSyncActions(transaction, [listSubscriptionUpdated(userId, listId, patch)])
+      }
+      return updated ?? null
+    })
   }
 
   async deleteListSubscription(userId: string, listId: string): Promise<void> {
-    await this.database
-      .delete(listSubscriptions)
-      .where(and(eq(listSubscriptions.userId, userId), eq(listSubscriptions.listId, listId)))
+    await this.database.transaction(async (transaction) => {
+      const deleted = await transaction
+        .delete(listSubscriptions)
+        .where(and(eq(listSubscriptions.userId, userId), eq(listSubscriptions.listId, listId)))
+        .returning({ listId: listSubscriptions.listId })
+      if (deleted.length > 0) {
+        await appendSyncActions(transaction, [listSubscriptionDeleted(userId, listId)])
+      }
+    })
   }
 
   async listEntries({
@@ -900,13 +1188,16 @@ export class PostgresDataStore implements DataStore {
 
   async setActionRules(userId: string, rules: Array<Record<string, unknown>>): Promise<void> {
     const now = new Date()
-    await this.database
-      .insert(actionRules)
-      .values({ createdAt: now, rules, updatedAt: now, userId })
-      .onConflictDoUpdate({
-        target: actionRules.userId,
-        set: { rules, updatedAt: now },
-      })
+    await this.database.transaction(async (transaction) => {
+      await transaction
+        .insert(actionRules)
+        .values({ createdAt: now, rules, updatedAt: now, userId })
+        .onConflictDoUpdate({
+          target: actionRules.userId,
+          set: { rules, updatedAt: now },
+        })
+      await appendSyncActions(transaction, [actionRulesUpdated(userId, rules)])
+    })
   }
 
   async cleanupProcessingHistory(now: Date): Promise<MaintenanceCleanupReport> {
@@ -976,66 +1267,79 @@ export class PostgresDataStore implements DataStore {
         feedFetchAttemptsDeleted: deletedFeedAttempts.length,
         processingAttemptsDeleted: deletedAttempts.length,
         processingJobsDeleted: deletedJobs.length,
+        syncActionsDeleted: await deleteExpiredSyncActions(transaction, now),
       }
     })
   }
 
+  async cleanupSyncActions(now: Date): Promise<number> {
+    return this.database.transaction((transaction) => deleteExpiredSyncActions(transaction, now))
+  }
+
   async getUnreadCounts(userId: string, view?: number): Promise<Record<string, number>> {
-    const userSubscriptions = await this.listSubscriptions(userId, view)
-    const result: Record<string, number> = Object.fromEntries(
-      userSubscriptions.map((subscription) => [subscription.feedId, 0]),
+    return unreadCounts(this.database, userId, view)
+  }
+
+  async getUnreadSnapshot(userId: string, view?: number): Promise<UnreadSnapshot> {
+    return this.database.transaction(
+      async (transaction) => ({
+        counts: await unreadCounts(transaction, userId, view),
+        lastSyncId: await syncState(transaction, userId),
+      }),
+      { accessMode: "read only", isolationLevel: "repeatable read" },
     )
-    if (userSubscriptions.length === 0) return result
+  }
 
-    const rows = await this.database
-      .select({
-        feedId: entries.feedId,
-        count: sql<number>`count(${entries.id})`.mapWith(Number),
-      })
-      .from(entries)
-      .leftJoin(readStates, and(eq(readStates.entryId, entries.id), eq(readStates.userId, userId)))
-      .where(
-        and(
-          inArray(
-            entries.feedId,
-            userSubscriptions.map((subscription) => subscription.feedId),
-          ),
-          isNull(readStates.readAt),
-        ),
-      )
-      .groupBy(entries.feedId)
+  async getSyncState(userId: string): Promise<number> {
+    return syncState(this.database, userId)
+  }
 
-    for (const row of rows) result[row.feedId] = row.count
-    return result
+  async listSyncActions(userId: string, afterId: number, limit: number): Promise<SyncDelta> {
+    return this.database.transaction(
+      async (transaction) => {
+        const lastSyncId = await syncState(transaction, userId)
+        const [floor] = await transaction
+          .select({ floorId: syncFloors.floorId })
+          .from(syncFloors)
+          .where(eq(syncFloors.userId, userId))
+        // A cursor below the floor missed deleted rows; one above everything logged comes from
+        // another database (a restored or rebuilt instance). Both need a fresh snapshot.
+        if (afterId < (floor?.floorId ?? 0) || afterId > lastSyncId) {
+          return { actions: [], lastSyncId, hasMore: false, reset: true }
+        }
+        const rows = await transaction
+          .select()
+          .from(syncActions)
+          .where(and(eq(syncActions.userId, userId), gt(syncActions.id, afterId)))
+          .orderBy(asc(syncActions.id))
+          .limit(limit + 1)
+        const hasMore = rows.length > limit
+        const actions = rows.slice(0, limit).map((row) => ({
+          id: row.id,
+          userId: row.userId,
+          model: row.model as SyncModel,
+          modelId: row.modelId,
+          action: row.action as SyncActionType,
+          data: row.data,
+          createdAt: row.createdAt,
+        }))
+        return {
+          actions,
+          lastSyncId: hasMore ? actions.at(-1)!.id : lastSyncId,
+          hasMore,
+          reset: false,
+        }
+      },
+      { accessMode: "read only", isolationLevel: "repeatable read" },
+    )
   }
 
   async setEntriesRead(userId: string, entryIds: string[], read: boolean): Promise<void> {
     if (entryIds.length === 0) return
-    const allowed = await this.database
-      .select({ id: entries.id })
-      .from(entries)
-      .innerJoin(
-        subscriptions,
-        and(eq(subscriptions.feedId, entries.feedId), eq(subscriptions.userId, userId)),
-      )
-      .where(inArray(entries.id, entryIds))
-    const allowedIds = allowed.map((row) => row.id)
-    if (allowedIds.length === 0) return
-
-    if (read) {
-      const readAt = new Date()
-      await this.database
-        .insert(readStates)
-        .values(allowedIds.map((entryId) => ({ userId, entryId, readAt })))
-        .onConflictDoUpdate({
-          target: [readStates.userId, readStates.entryId],
-          set: { readAt },
-        })
-    } else {
-      await this.database
-        .delete(readStates)
-        .where(and(eq(readStates.userId, userId), inArray(readStates.entryId, allowedIds)))
-    }
+    await this.database.transaction(async (transaction) => {
+      const flipped = await flipReadStates(transaction, userId, entryIds, read)
+      await appendSyncActions(transaction, timelineReadFlipped(userId, read, flipped))
+    })
   }
 
   async markAllAsRead(userId: string, filter: MarkAllReadFilter): Promise<Record<string, number>> {
@@ -1045,23 +1349,29 @@ export class PostgresDataStore implements DataStore {
     if (filter.feedIdList !== undefined && filter.feedIdList.length > 0) {
       conditions.push(inArray(subscriptions.feedId, filter.feedIdList))
     }
-    const rows = await this.database
-      .select({ entryId: entries.id, feedId: entries.feedId })
-      .from(entries)
-      .innerJoin(subscriptions, eq(subscriptions.feedId, entries.feedId))
-      .leftJoin(readStates, and(eq(readStates.entryId, entries.id), eq(readStates.userId, userId)))
-      .where(and(...conditions))
-
-    if (rows.length > 0)
-      await this.setEntriesRead(
+    return this.database.transaction(async (transaction) => {
+      const rows = await transaction
+        .select({ entryId: entries.id })
+        .from(entries)
+        .innerJoin(subscriptions, eq(subscriptions.feedId, entries.feedId))
+        .leftJoin(
+          readStates,
+          and(eq(readStates.entryId, entries.id), eq(readStates.userId, userId)),
+        )
+        .where(and(...conditions))
+      if (rows.length === 0) return {}
+      const flipped = await flipReadStates(
+        transaction,
         userId,
         rows.map((row) => row.entryId),
         true,
       )
-    return rows.reduce<Record<string, number>>((counts, row) => {
-      counts[row.feedId] = (counts[row.feedId] ?? 0) + 1
-      return counts
-    }, {})
+      await appendSyncActions(transaction, timelineReadFlipped(userId, true, flipped))
+      return flipped.reduce<Record<string, number>>((counts, row) => {
+        counts[row.feedId] = (counts[row.feedId] ?? 0) + 1
+        return counts
+      }, {})
+    })
   }
 
   async isEntryCollected(userId: string, entryId: string): Promise<boolean> {
@@ -1074,17 +1384,38 @@ export class PostgresDataStore implements DataStore {
   }
 
   async setEntryCollected(userId: string, entryId: string, collected: boolean): Promise<void> {
-    if (!(await this.getEntry(userId, entryId))) return
-    if (collected) {
-      await this.database
-        .insert(collections)
-        .values({ userId, entryId, createdAt: new Date() })
-        .onConflictDoNothing()
-    } else {
-      await this.database
+    await this.database.transaction(async (transaction) => {
+      const [entry] = await transaction
+        .select({ feedId: entries.feedId, view: subscriptions.view })
+        .from(entries)
+        .innerJoin(
+          subscriptions,
+          and(eq(subscriptions.feedId, entries.feedId), eq(subscriptions.userId, userId)),
+        )
+        .where(eq(entries.id, entryId))
+        .limit(1)
+      if (!entry) return
+      if (collected) {
+        const [inserted] = await transaction
+          .insert(collections)
+          .values({ userId, entryId, createdAt: new Date() })
+          .onConflictDoNothing()
+          .returning({ createdAt: collections.createdAt })
+        if (inserted) {
+          await appendSyncActions(transaction, [
+            collectionInserted(userId, { entryId, ...entry, createdAt: inserted.createdAt }),
+          ])
+        }
+        return
+      }
+      const deleted = await transaction
         .delete(collections)
         .where(and(eq(collections.userId, userId), eq(collections.entryId, entryId)))
-    }
+        .returning({ entryId: collections.entryId })
+      if (deleted.length > 0) {
+        await appendSyncActions(transaction, [collectionDeleted(userId, entryId)])
+      }
+    })
   }
 
   async listSubscribedFeeds(): Promise<FeedRecord[]> {
@@ -1161,12 +1492,15 @@ export class PostgresDataStore implements DataStore {
     payload: Record<string, unknown>,
   ): Promise<void> {
     const updatedAt = new Date()
-    await this.database
-      .insert(settings)
-      .values({ userId, tab, payload, updatedAt })
-      .onConflictDoUpdate({
-        target: [settings.userId, settings.tab],
-        set: { payload, updatedAt },
-      })
+    await this.database.transaction(async (transaction) => {
+      await transaction
+        .insert(settings)
+        .values({ userId, tab, payload, updatedAt })
+        .onConflictDoUpdate({
+          target: [settings.userId, settings.tab],
+          set: { payload, updatedAt },
+        })
+      await appendSyncActions(transaction, [settingsUpdated(userId, tab, payload, updatedAt)])
+    })
   }
 }

@@ -100,6 +100,7 @@ describe("capability discovery", () => {
       provider: "local",
     })
     expect(data.capabilities).toContainEqual({ id: "entries.ai_fusion", provider: "local" })
+    expect(data.capabilities).toContainEqual({ id: "sync.incremental", provider: "local" })
     expect(data.capabilities).toContainEqual({
       id: "subscriptions.acquisition_diagnostics",
       provider: "local",

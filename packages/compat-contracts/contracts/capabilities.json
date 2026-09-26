@@ -309,9 +309,9 @@
     {
       "id": "sync.incremental",
       "title": "Incremental client synchronization",
-      "targetStage": null,
-      "provider": "unavailable",
-      "clientBehavior": "hidden",
+      "targetStage": 4,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
       "sdkApis": ["sync.delta", "sync.state"],
       "nonSdkRequests": [],
       "protocolRoutes": []

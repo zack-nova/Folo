@@ -43,6 +43,43 @@ export interface MaintenanceCleanupReport {
   feedFetchAttemptsDeleted: number
   processingAttemptsDeleted: number
   processingJobsDeleted: number
+  syncActionsDeleted: number
+}
+
+/** Models the client sync engine understands; see docs/feeds-agent-integration/stage-4-3-incremental-sync.md. */
+export type SyncModel =
+  "action" | "collection" | "list" | "list_subscription" | "setting" | "subscription" | "timeline"
+
+/** Insert, update, delete, and "new entries arrived" (a coalesced timeline insert). */
+export type SyncActionType = "D" | "I" | "N" | "U"
+
+export interface SyncActionInput {
+  userId: string
+  model: SyncModel
+  /** feedId, listId, entryId or settings tab; null for batch timeline updates */
+  modelId: string | null
+  action: SyncActionType
+  data: Record<string, unknown> | null
+}
+
+export interface SyncActionRecord extends SyncActionInput {
+  /** Monotonically increasing across all users */
+  id: number
+  createdAt: Date
+}
+
+export interface SyncDelta {
+  actions: SyncActionRecord[]
+  lastSyncId: number
+  hasMore: boolean
+  /** The cursor predates the retained log; the client must take a fresh snapshot */
+  reset: boolean
+}
+
+export interface UnreadSnapshot {
+  counts: Record<string, number>
+  /** Every action up to this id is reflected in `counts`, and none after it */
+  lastSyncId: number
 }
 
 export interface EntryRecord {
@@ -392,6 +429,12 @@ export interface DataStore {
   setActionRules(userId: string, rules: Array<Record<string, unknown>>): Promise<void>
   cleanupProcessingHistory(now: Date): Promise<MaintenanceCleanupReport>
   getUnreadCounts(userId: string, view?: number): Promise<Record<string, number>>
+  getUnreadSnapshot(userId: string, view?: number): Promise<UnreadSnapshot>
+  /** The newest sync id recorded for the user, 0 when nothing was logged yet */
+  getSyncState(userId: string): Promise<number>
+  listSyncActions(userId: string, afterId: number, limit: number): Promise<SyncDelta>
+  /** Deletes log rows past retention; part of the daily maintenance cleanup. */
+  cleanupSyncActions(now: Date): Promise<number>
   setEntriesRead(userId: string, entryIds: string[], read: boolean): Promise<void>
   markAllAsRead(userId: string, filter: MarkAllReadFilter): Promise<Record<string, number>>
   isEntryCollected(userId: string, entryId: string): Promise<boolean>

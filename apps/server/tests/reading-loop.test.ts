@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises"
 import { setTimeout as delay } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 
-import { FollowAPIError, FollowClient } from "@follow-app/client-sdk"
+import { FollowClient } from "@follow-app/client-sdk"
 import { memoryAdapter } from "better-auth/adapters/memory"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -190,15 +190,15 @@ describe("self-hosted reading loop", () => {
     expect(oldestFirstPage.data.map((item) => item.entries.title)).toEqual(["First entry"])
     expect(oldestSecondPage.data.map((item) => item.entries.title)).toEqual(["Second entry"])
 
-    // Without incremental sync the client sync engine needs a 404 to fall back to full refetches.
-    for (const request of [
-      () => client.api.sync.state(),
-      () => client.api.sync.delta({ lastSyncId: 0 }),
-    ]) {
-      const error = await request().catch((error: unknown) => error)
-      expect(error).toBeInstanceOf(FollowAPIError)
-      expect((error as FollowAPIError).status).toBe(404)
-    }
+    // The client sync engine reads the change log through the SDK's sync module.
+    const { lastSyncId } = (await client.api.sync.state()).data
+    expect(lastSyncId).toBeGreaterThan(0)
+    expect((await client.api.sync.delta({ lastSyncId })).data).toMatchObject({
+      actions: [],
+      hasMore: false,
+      lastSyncId,
+      reset: false,
+    })
 
     const entryId = entries.data[0]!.entries.id
     const detail = await client.api.entries.get({ id: entryId })
