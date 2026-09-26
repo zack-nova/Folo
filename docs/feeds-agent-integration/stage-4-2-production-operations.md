@@ -70,11 +70,16 @@ pnpm --filter @follow/server prod:lock:update
 docker build -f apps/server/Dockerfile -t folo-server:local .
 ```
 
+Feed Supplier 也使用独立的生产锁；修改 `apps/feed-supplier` 或 `packages/feed-source-contracts` 的运行依赖后，
+运行 `pnpm --filter @follow/feed-supplier prod:lock:update`，并构建
+`apps/feed-supplier/Dockerfile`。
+
 ## 发布门禁
 
 ```bash
 pnpm --filter @follow/server test
 pnpm --filter @follow/server prod:lock:check
+pnpm --filter @follow/feed-supplier prod:lock:check
 pnpm server:test:postgres
 pnpm server:e2e:web
 pnpm contracts:check

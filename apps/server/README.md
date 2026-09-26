@@ -111,6 +111,8 @@ docker build -f apps/server/Dockerfile -t folo-server:local .
 ```
 
 不要手工编辑生产锁。Docker 使用 frozen install，依赖清单和锁不同步时会停止构建。
+Feed Supplier 使用自己的生产锁，更新和检查命令见
+[`apps/feed-supplier/README.md`](../feed-supplier/README.md)。
 
 ## 已实现闭环
 
@@ -176,6 +178,7 @@ pnpm server:restore:drill backups/folo-2026-08-18.dump
 ```bash
 pnpm --filter @follow/server test
 pnpm --filter @follow/server prod:lock:check
+pnpm --filter @follow/feed-supplier prod:lock:check
 pnpm --filter @follow/server bench
 pnpm server:db:up
 pnpm server:test:postgres

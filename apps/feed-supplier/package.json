@@ -6,6 +6,8 @@
   "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "prod:lock:check": "tsx ../../scripts/update-production-lockfile.ts --app feed-supplier --check",
+    "prod:lock:update": "tsx ../../scripts/update-production-lockfile.ts --app feed-supplier",
     "start": "tsx --env-file-if-exists=.env src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

@@ -95,6 +95,17 @@ curl -fsS -X POST -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
 `ACCESS_KEY` 或路由秘密参数。Redis 使用 `noeviction`，内存耗尽会失败关闭，不能淘汰活动租约后绕过容量
 保护。
 
+生产镜像使用 [`pnpm-lock.production.yaml`](./pnpm-lock.production.yaml) 和独立的 isolated pnpm 工作区，
+只安装 feed-supplier 与 feed-source-contracts 的运行依赖。修改这两个包的运行依赖后，重新生成锁并构建镜像：
+
+```bash
+pnpm --filter @follow/feed-supplier prod:lock:update
+docker build -f apps/feed-supplier/Dockerfile -t folo-feed-supplier:local .
+```
+
+不要手工编辑生产锁。Docker 使用 frozen install；提交前运行
+`pnpm --filter @follow/feed-supplier prod:lock:check` 检查锁是否与运行依赖同步。
+
 默认策略：
 
 - 成功的 2xx RSSHub 响应缓存 60 秒，缓存正文仍受 `RSSHUB_FETCH_MAX_BYTES` 限制。

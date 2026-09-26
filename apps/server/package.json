@@ -9,8 +9,8 @@
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate-cli.ts",
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
     "start": "tsx --env-file-if-exists=.env src/index.ts",
-    "prod:lock:check": "tsx scripts/update-production-lockfile.ts --check",
-    "prod:lock:update": "tsx scripts/update-production-lockfile.ts",
+    "prod:lock:check": "tsx ../../scripts/update-production-lockfile.ts --app server --check",
+    "prod:lock:update": "tsx ../../scripts/update-production-lockfile.ts --app server",
     "bench": "vitest bench --run",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

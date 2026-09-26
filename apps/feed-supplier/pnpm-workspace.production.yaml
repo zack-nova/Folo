@@ -1,0 +1,8 @@
+packages:
+  - apps/feed-supplier
+  - packages/feed-source-contracts
+
+autoInstallPeers: false
+nodeLinker: isolated
+saveExact: true
+strictPeerDependencies: false

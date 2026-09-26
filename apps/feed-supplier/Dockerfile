@@ -13,11 +13,14 @@ RUN mkdir -p "$COREPACK_HOME" /build \
   && chown -R node:node /build
 
 WORKDIR /build
-COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY --chown=node:node patches ./patches
+COPY --chown=node:node apps/feed-supplier/package.production.json ./package.json
+COPY --chown=node:node apps/feed-supplier/pnpm-workspace.production.yaml ./pnpm-workspace.yaml
+COPY --chown=node:node apps/feed-supplier/pnpm-lock.production.yaml ./pnpm-lock.yaml
 COPY --chown=node:node apps/feed-supplier/package.json ./apps/feed-supplier/package.json
 COPY --chown=node:node packages/feed-source-contracts/package.json ./packages/feed-source-contracts/package.json
 USER node
+RUN cd apps/feed-supplier && pnpm pkg delete devDependencies \
+  && cd ../../packages/feed-source-contracts && pnpm pkg delete devDependencies
 RUN --mount=type=cache,id=folo-feed-supplier-pnpm,target=/pnpm/store,uid=1000,gid=1000 \
   pnpm --filter-prod @follow/feed-supplier... install --frozen-lockfile --prod --ignore-scripts \
   --package-import-method=copy --store-dir=/pnpm/store
