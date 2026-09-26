@@ -39,12 +39,14 @@ export const EntryNormalItem = memo(
     view,
     hasTopSeparator = false,
     testID,
+    isTimelineSource,
   }: {
     entryId: string
     extraData: EntryExtraData
     view: FeedViewType
     hasTopSeparator?: boolean
     testID?: string
+    isTimelineSource?: boolean
   }) => {
     const entry = useEntry(entryId, (state) => ({
       id: state.id,
@@ -93,7 +95,7 @@ export const EntryNormalItem = memo(
     }, [audioOrVideo?.duration_in_seconds])
     if (!entry) return <EntryItemSkeleton />
     return (
-      <EntryItemContextMenu id={entryId} view={view}>
+      <EntryItemContextMenu id={entryId} view={view} isTimelineSource={isTimelineSource}>
         <ItemPressable
           testID={testID ?? `entry-item-${entryId}`}
           itemStyle={ItemPressableStyle.Plain}

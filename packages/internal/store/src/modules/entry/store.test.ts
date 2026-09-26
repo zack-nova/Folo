@@ -83,6 +83,7 @@ const createCollectionResponseItem = (index: number) => ({
 })
 
 describe("entrySyncServices.fetchEntries", () => {
+  const inboxListEntriesMock = vi.fn()
   const listEntriesMock = vi.fn()
 
   beforeEach(() => {
@@ -114,6 +115,9 @@ describe("entrySyncServices.fetchEntries", () => {
     useFeedStore.setState({ feeds: {} })
     apiContext.provide({
       entries: {
+        inbox: {
+          list: inboxListEntriesMock,
+        },
         list: listEntriesMock,
       },
     } as unknown as FollowAPI)
@@ -148,5 +152,128 @@ describe("entrySyncServices.fetchEntries", () => {
 
     expect(Object.keys(useCollectionStore.getState().collections)).toHaveLength(25)
     expect(useCollectionStore.getState().collections["entry-1"]).toBeDefined()
+  })
+
+  it("uses the forward cursor when entries are sorted oldest first", async () => {
+    listEntriesMock.mockResolvedValue({ data: [] })
+
+    await entrySyncServices.fetchEntries({
+      feedId: "feed-1",
+      read: false,
+      pageParam: "2026-03-01T00:00:00.000Z",
+      sortOrder: "asc",
+    })
+
+    expect(listEntriesMock.mock.calls[0]?.[0]).toMatchObject({
+      feedId: "feed-1",
+      publishedBefore: "2026-03-01T00:00:00.000Z",
+      sortOrder: "asc",
+    })
+    expect(listEntriesMock.mock.calls[0]?.[0]).not.toHaveProperty("publishedAfter")
+  })
+
+  it("uses the forward cursor for oldest-first unread list timelines", async () => {
+    listEntriesMock.mockResolvedValue({ data: [] })
+
+    await entrySyncServices.fetchEntries({
+      listId: "list-1",
+      read: false,
+      pageParam: "2026-03-01T00:00:00.000Z",
+      sortOrder: "asc",
+    })
+
+    expect(listEntriesMock.mock.calls[0]?.[0]).toMatchObject({
+      listId: "list-1",
+      publishedBefore: "2026-03-01T00:00:00.000Z",
+      sortOrder: "asc",
+    })
+    expect(listEntriesMock.mock.calls[0]?.[0]).not.toHaveProperty("publishedAfter")
+  })
+
+  it("forces all-content timelines to newest first", async () => {
+    listEntriesMock.mockResolvedValue({ data: [] })
+
+    await entrySyncServices.fetchEntries({
+      feedId: "feed-1",
+      pageParam: "2026-03-01T00:00:00.000Z",
+      sortOrder: "asc",
+    })
+
+    expect(listEntriesMock.mock.calls[0]?.[0]).toMatchObject({
+      feedId: "feed-1",
+      publishedAfter: "2026-03-01T00:00:00.000Z",
+      sortOrder: "desc",
+    })
+    expect(listEntriesMock.mock.calls[0]?.[0]).not.toHaveProperty("publishedBefore")
+  })
+
+  it("uses the backward cursor when entries are sorted newest first", async () => {
+    listEntriesMock.mockResolvedValue({ data: [] })
+
+    await entrySyncServices.fetchEntries({
+      feedId: "feed-1",
+      pageParam: "2026-03-01T00:00:00.000Z",
+      sortOrder: "desc",
+    })
+
+    expect(listEntriesMock.mock.calls[0]?.[0]).toMatchObject({
+      feedId: "feed-1",
+      publishedAfter: "2026-03-01T00:00:00.000Z",
+      sortOrder: "desc",
+    })
+    expect(listEntriesMock.mock.calls[0]?.[0]).not.toHaveProperty("publishedBefore")
+  })
+
+  it("forces inbox entries to newest first", async () => {
+    inboxListEntriesMock.mockResolvedValue({ data: [] })
+
+    await entrySyncServices.fetchEntries({
+      inboxId: "inbox-1",
+      read: false,
+      pageParam: "2026-03-01T00:00:00.000Z",
+      sortOrder: "asc",
+    })
+
+    expect(inboxListEntriesMock.mock.calls[0]?.[0]).toMatchObject({
+      inboxId: "inbox-1",
+      publishedAfter: "2026-03-01T00:00:00.000Z",
+    })
+    expect(inboxListEntriesMock.mock.calls[0]?.[0]).not.toHaveProperty("publishedBefore")
+    expect(inboxListEntriesMock.mock.calls[0]?.[0]).not.toHaveProperty("sortOrder")
+  })
+
+  it("uses the backward cursor when inbox entries are sorted newest first", async () => {
+    inboxListEntriesMock.mockResolvedValue({ data: [] })
+
+    await entrySyncServices.fetchEntries({
+      inboxId: "inbox-1",
+      pageParam: "2026-03-01T00:00:00.000Z",
+      sortOrder: "desc",
+    })
+
+    expect(inboxListEntriesMock.mock.calls[0]?.[0]).toMatchObject({
+      inboxId: "inbox-1",
+      publishedAfter: "2026-03-01T00:00:00.000Z",
+    })
+    expect(inboxListEntriesMock.mock.calls[0]?.[0]).not.toHaveProperty("publishedBefore")
+    expect(inboxListEntriesMock.mock.calls[0]?.[0]).not.toHaveProperty("sortOrder")
+  })
+
+  it("forces collection queries to newest first", async () => {
+    listEntriesMock.mockResolvedValue({ data: [] })
+
+    await entrySyncServices.fetchEntries({
+      isCollection: true,
+      read: false,
+      pageParam: "2026-03-01T00:00:00.000Z",
+      sortOrder: "asc",
+    })
+
+    expect(listEntriesMock.mock.calls[0]?.[0]).toMatchObject({
+      isCollection: true,
+      publishedAfter: "2026-03-01T00:00:00.000Z",
+      sortOrder: "desc",
+    })
+    expect(listEntriesMock.mock.calls[0]?.[0]).not.toHaveProperty("publishedBefore")
   })
 })

@@ -73,6 +73,10 @@ export async function extractMirroredFiles(input: {
 
       stream.on("data", (chunk) => {
         if (matchingRequests) {
+          if (!(chunk instanceof Uint8Array)) {
+            rejectOnce(new Error("Archive stream returned a non-binary chunk"))
+            return
+          }
           chunks.push(new Uint8Array(chunk))
         }
       })
@@ -133,7 +137,7 @@ export async function extractMirroredFiles(input: {
       }
 
       if (final) {
-        tarExtract.end()
+        tarExtract.end(null)
       }
     })
 

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
-import { describe, it } from "node:test"
+
+import { describe, it } from "vitest"
 
 describe("mobile tts service", () => {
   it("extracts normalized plain text from entry content", async () => {

@@ -4,7 +4,7 @@ import type { FlashListRef } from "@shopify/flash-list"
 import type { RefObject } from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
-import { useGeneralSettingKey } from "@/src/atoms/settings/general"
+import { useEffectiveEntrySortOrder, useGeneralSettingKey } from "@/src/atoms/settings/general"
 import { withErrorBoundary } from "@/src/components/common/ErrorBoundary"
 import { NoLoginInfo } from "@/src/components/common/NoLoginInfo"
 import { ListErrorView } from "@/src/components/errors/ListErrorView"
@@ -13,12 +13,11 @@ import { useNavigation } from "@/src/lib/navigation/hooks"
 import { EntryListContentPicture } from "@/src/modules/entry-list/EntryListContentPicture"
 import { EntryDetailScreen } from "@/src/screens/(stack)/entries/[entryId]/EntryDetailScreen"
 
-import { useEntries, useEntryListContext } from "../screen/atoms"
+import { useEntries, useEntryListContext, useIsTimelineEntrySource } from "../screen/atoms"
 import { shouldSuspendMarkReadForScrollReset } from "../screen/scroll-reset"
 import { EntryListContentArticle } from "./EntryListContentArticle"
 import { EntryListContentSocial } from "./EntryListContentSocial"
 import { EntryListContentVideo } from "./EntryListContentVideo"
-import { shouldScrollEntryListToTopOnRefreshStateChange } from "./refresh-reset"
 
 const NoLoginGuard = ({ children }: { children: React.ReactNode }) => {
   const whoami = useWhoami()
@@ -79,31 +78,13 @@ function EntryListSelectorImpl({ entryIds, viewId, active = true }: EntryListSel
   }
 
   const unreadOnly = useGeneralSettingKey("unreadOnly")
+  const isTimelineSource = useIsTimelineEntrySource()
+  const sortOrder = useEffectiveEntrySortOrder({ isTimelineSource })
   useEffect(() => {
     requestScrollToTop()
-  }, [requestScrollToTop, unreadOnly])
+  }, [requestScrollToTop, sortOrder, unreadOnly])
 
-  const { isFetching, isFetchingNextPage, isReady } = useEntries({ viewId, active })
-  const isRefreshing = isFetching && !isFetchingNextPage
-  const wasRefreshingRef = useRef(isRefreshing)
-  useEffect(() => {
-    if (!active) return
-
-    const wasRefreshing = wasRefreshingRef.current
-    wasRefreshingRef.current = isRefreshing
-
-    if (
-      !shouldScrollEntryListToTopOnRefreshStateChange({
-        wasRefreshing,
-        isRefreshing,
-      })
-    ) {
-      return
-    }
-
-    requestScrollToTop()
-  }, [active, isRefreshing, requestScrollToTop])
-
+  const { isReady } = useEntries({ viewId, active })
   const hasResetAfterReadyRef = useRef(false)
   useEffect(() => {
     if (!active) return
@@ -117,12 +98,6 @@ function EntryListSelectorImpl({ entryIds, viewId, active = true }: EntryListSel
     requestScrollToTop()
     hasResetAfterReadyRef.current = true
   }, [active, entryIds, isReady, requestScrollToTop, viewId])
-
-  useEffect(() => {
-    if (!active) return
-
-    requestScrollToTop()
-  }, [active, requestScrollToTop, viewId])
 
   useAutoScrollToEntryAfterPullUpToNext(ref, entryIds || [])
 

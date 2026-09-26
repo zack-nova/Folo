@@ -5,6 +5,7 @@ import { isEntryStarred } from "@follow/store/collection/getter"
 import { collectionSyncService } from "@follow/store/collection/store"
 import { getEntry } from "@follow/store/entry/getter"
 import { entrySyncServices } from "@follow/store/entry/store"
+import { getMarkReadTimeRange } from "@follow/store/entry/utils"
 import { unreadSyncService } from "@follow/store/unread/store"
 import { cn, resolveUrlWithBase } from "@follow/utils/utils"
 import { useMutation } from "@tanstack/react-query"
@@ -13,6 +14,7 @@ import { toast } from "sonner"
 
 import { AudioPlayer, getAudioPlayerAtomValue } from "~/atoms/player"
 import { showPopover } from "~/atoms/popover"
+import { getGeneralSettings } from "~/atoms/settings/general"
 import {
   getShowSourceContent,
   toggleShowSourceContent,
@@ -24,6 +26,8 @@ import { navigateEntry } from "~/hooks/biz/useNavigateEntry"
 import { getRouteParams } from "~/hooks/biz/useRouteParams"
 import { copyToClipboard } from "~/lib/clipboard"
 import { exportPageAsPdf } from "~/lib/export"
+import { getEffectiveRouteEntrySortOrder } from "~/modules/entry-column/hooks/entry-sort-order"
+import { getIsPreviewFeed } from "~/modules/entry-column/hooks/useIsPreviewFeed"
 import { markAllByRoute } from "~/modules/entry-column/hooks/useMarkAll"
 import { useGalleryModal } from "~/modules/entry-content/hooks"
 import { playEntryTts } from "~/modules/player/entry-tts"
@@ -33,6 +37,23 @@ import type { Command, CommandCategory } from "../types"
 import { COMMAND_ID } from "./id"
 
 const category: CommandCategory = "category.entry"
+const getCurrentEntrySortOrder = () => {
+  const routeParams = getRouteParams()
+  const { timelineSortOrder, unreadOnly } = getGeneralSettings()
+
+  return {
+    routeParams,
+    sortOrder: getEffectiveRouteEntrySortOrder({
+      sortOrder: timelineSortOrder,
+      unreadOnly,
+      feedId: routeParams.feedId,
+      inboxId: routeParams.inboxId,
+      isCollection: routeParams.isCollection,
+      isPreview: getIsPreviewFeed(routeParams),
+    }),
+  }
+}
+
 const useCollect = () => {
   const { t } = useTranslation()
   return useMutation({
@@ -280,10 +301,15 @@ export const useRegisterEntryCommands = () => {
         label: t("entry_actions.mark_above_as_read"),
         category,
         run: ({ publishedAt }: { publishedAt: string }) => {
-          return markAllByRoute(getRouteParams(), {
-            startTime: new Date(publishedAt).getTime() + 1,
-            endTime: Date.now(),
-          })
+          const { routeParams, sortOrder } = getCurrentEntrySortOrder()
+          return markAllByRoute(
+            routeParams,
+            getMarkReadTimeRange({
+              publishedAt,
+              position: "above",
+              sortOrder,
+            }),
+          )
         },
       },
       {
@@ -311,10 +337,15 @@ export const useRegisterEntryCommands = () => {
         label: t("entry_actions.mark_below_as_read"),
         category,
         run: ({ publishedAt }: { publishedAt: string }) => {
-          return markAllByRoute(getRouteParams(), {
-            startTime: 1,
-            endTime: new Date(publishedAt).getTime() - 1,
-          })
+          const { routeParams, sortOrder } = getCurrentEntrySortOrder()
+          return markAllByRoute(
+            routeParams,
+            getMarkReadTimeRange({
+              publishedAt,
+              position: "below",
+              sortOrder,
+            }),
+          )
         },
       },
       {

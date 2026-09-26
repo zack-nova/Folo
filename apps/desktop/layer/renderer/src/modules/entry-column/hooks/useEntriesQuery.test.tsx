@@ -210,4 +210,110 @@ describe("useEntriesQuery", () => {
     })
     expect(fetchEntriesSpy.mock.calls[1]?.[0].pageParam).toBe("2026-03-02T00:00:00.000Z")
   })
+
+  test("uses newest-first cache and request order for all-content timelines", async () => {
+    const fetchEntriesSpy = vi
+      .spyOn(entrySyncServices, "fetchEntries")
+      .mockResolvedValue(createEntriesResponse("entry-1", "2026-05-14T00:00:00.000Z"))
+
+    let entriesQuery: ReturnType<typeof useEntriesQuery> | undefined
+    const EntriesQueryConsumer = ({ sortOrder }: { sortOrder: "asc" | "desc" }) => {
+      entriesQuery = useEntriesQuery({
+        feedId: "feed-1",
+        sortOrder,
+      })
+
+      return null
+    }
+
+    container = document.createElement("div")
+    document.body.append(container)
+    root = createRoot(container)
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    })
+
+    await act(async () => {
+      root?.render(
+        <QueryClientProvider client={queryClient!}>
+          <EntriesQueryConsumer sortOrder="asc" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await vi.waitFor(() => {
+      expect(entriesQuery?.isSuccess).toBe(true)
+    })
+    expect(entriesQuery?.queryKey.at(-1)).toBe("desc")
+    expect(fetchEntriesSpy.mock.calls[0]?.[0].sortOrder).toBe("desc")
+
+    await act(async () => {
+      root?.render(
+        <QueryClientProvider client={queryClient!}>
+          <EntriesQueryConsumer sortOrder="desc" />
+        </QueryClientProvider>,
+      )
+    })
+
+    expect(fetchEntriesSpy).toHaveBeenCalledTimes(1)
+    expect(entriesQuery?.queryKey.at(-1)).toBe("desc")
+  })
+
+  test("isolates unread timeline pages by effective sort order", async () => {
+    const fetchEntriesSpy = vi
+      .spyOn(entrySyncServices, "fetchEntries")
+      .mockResolvedValue(createEntriesResponse("entry-1", "2026-05-14T00:00:00.000Z"))
+
+    let entriesQuery: ReturnType<typeof useEntriesQuery> | undefined
+    const EntriesQueryConsumer = ({ sortOrder }: { sortOrder: "asc" | "desc" }) => {
+      entriesQuery = useEntriesQuery({
+        feedId: "feed-1",
+        unreadOnly: true,
+        sortOrder,
+      })
+
+      return null
+    }
+
+    container = document.createElement("div")
+    document.body.append(container)
+    root = createRoot(container)
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    })
+
+    await act(async () => {
+      root?.render(
+        <QueryClientProvider client={queryClient!}>
+          <EntriesQueryConsumer sortOrder="desc" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await vi.waitFor(() => {
+      expect(entriesQuery?.isSuccess).toBe(true)
+    })
+    expect(entriesQuery?.queryKey.at(-1)).toBe("desc")
+
+    await act(async () => {
+      root?.render(
+        <QueryClientProvider client={queryClient!}>
+          <EntriesQueryConsumer sortOrder="asc" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await vi.waitFor(() => {
+      expect(fetchEntriesSpy).toHaveBeenCalledTimes(2)
+      expect(entriesQuery?.queryKey.at(-1)).toBe("asc")
+    })
+  })
 })

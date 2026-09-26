@@ -413,7 +413,9 @@ export const buildServer = async ({
       : false,
     requestTimeout: 120_000,
     routerOptions: { ignoreTrailingSlash: true, maxParamLength: 512 },
-    trustProxy: trustProxyHops,
+    // Fastify 5.12 no longer honours a numeric hop count, so express it as a function.
+    // This relies on the API port only being reachable through the Compose reverse proxy.
+    trustProxy: trustProxyHops > 0 ? (_address, hop) => hop < trustProxyHops : false,
   })
   const pendingReadability = new Map<string, Promise<string | null>>()
   const pendingSummaries = new Map<string, Promise<string>>()

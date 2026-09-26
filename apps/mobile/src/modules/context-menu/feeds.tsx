@@ -398,12 +398,21 @@ export const SubscriptionFeedCategoryContextMenu = ({
 const PreviewFeeds = (props: { id: string; view: FeedViewType }) => {
   const { id: feedId } = props
   const entryIds = useEntryIdsByFeedId(feedId)
-  const options = useFetchEntriesSettings()
+  const options = useFetchEntriesSettings({
+    isTimelineSource: false,
+    unreadOnlyEnabled: false,
+  })
   const { isLoading } = useEntriesQuery({ feedId, limit: 5, ...options })
+  const previewEntryIds = useMemo(() => entryIds?.slice(0, 5), [entryIds])
 
   const renderItem = useCallback(
     ({ item: id }: ListRenderItemInfo<string>) => (
-      <EntryNormalItem entryId={id} extraData={{ entryIds: null }} view={props.view} />
+      <EntryNormalItem
+        entryId={id}
+        extraData={{ entryIds: null }}
+        view={props.view}
+        isTimelineSource={false}
+      />
     ),
     [props.view],
   )
@@ -414,7 +423,7 @@ const PreviewFeeds = (props: { id: string; view: FeedViewType }) => {
       )}
       <FlatList
         scrollEnabled={false}
-        data={useMemo(() => entryIds?.slice(0, 5), [entryIds])}
+        data={previewEntryIds}
         renderItem={renderItem}
         ItemSeparatorComponent={ItemSeparator}
       />

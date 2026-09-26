@@ -48,7 +48,6 @@ const { defineSettingItem: _defineSettingItem, SettingBuilder } = createSetting(
 const saveLoginSetting = (checked: boolean) => {
   ipcServices?.setting.setLoginItemSettings({
     openAtLogin: checked,
-    openAsHidden: true,
     args: ["--startup"],
   })
   setGeneralSetting("appLaunchOnStartup", checked)

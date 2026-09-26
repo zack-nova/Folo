@@ -1,4 +1,4 @@
-import { expoClient } from "@better-auth/expo/client"
+import { expoClient, storageAdapter } from "@better-auth/expo/client"
 import type { BaseAuthPlugins } from "@follow/shared/auth"
 import { baseAuthPlugins } from "@follow/shared/auth"
 import { isNewUserQueryKey } from "@follow/store/user/constants"
@@ -16,12 +16,16 @@ import DeviceInfo from "react-native-device-info"
 
 import { getDbPath } from "@/src/database"
 
-import { createMobileAuthCookieSyncPlugin } from "./auth-cookie-sync"
+import {
+  createMobileAuthCookieSyncPlugin,
+  createSessionAwareAuthCookieStorage,
+} from "./auth-cookie-sync"
 import { getClientId, getSessionId } from "./client-session"
 import { getUserAgent } from "./native/user-agent"
 import { Navigation } from "./navigation/Navigation"
 import { getEnvProfile, proxyEnv } from "./proxy-env"
 import { queryClient } from "./query-client"
+import { reloadApp } from "./reload-app"
 import { safeSecureStore } from "./secure-store"
 
 const storagePrefix = "follow_auth"
@@ -64,9 +68,8 @@ type MobileAuthClientOptions = Omit<BetterAuthClientOptions, "plugins"> & {
   plugins: MobileAuthPlugins
 }
 
-const authCookieStorage = {
+const secureAuthCookieStorage = {
   setItem(key: string, value: string) {
-    const previousValue = key === cookieKey ? safeSecureStore.getItem(key) : null
     try {
       safeSecureStore.setItem(key, value)
     } catch (e) {
@@ -83,11 +86,6 @@ const authCookieStorage = {
           // Keychain may be unavailable in background
         }
       }
-      bumpAuthStateRevision()
-      const authStateChanged = previousValue !== value
-      if (authStateChanged) {
-        void refreshSessionQueries()
-      }
     }
   },
   getItem(key: string) {
@@ -99,7 +97,6 @@ const authCookieStorage = {
     }
   },
   removeItem(key: string) {
-    const previousValue = key === cookieKey ? safeSecureStore.getItem(key) : null
     try {
       safeSecureStore.removeItem(key)
     } catch (e) {
@@ -112,19 +109,32 @@ const authCookieStorage = {
         const env = getEnvProfile()
         safeSecureStore.removeItem(`${cookieKey}_${env}`)
       }
-      bumpAuthStateRevision()
-      if (previousValue) {
-        void refreshSessionQueries()
-      }
     }
   },
 }
+
+const authCookieStorage = createSessionAwareAuthCookieStorage({
+  cookieKey,
+  storage: secureAuthCookieStorage,
+  onSessionChange() {
+    bumpAuthStateRevision()
+    void refreshSessionQueries()
+  },
+})
+
+// Share Better Auth's write queue and recoverable UTF-8 chunk storage with its
+// Expo plugin so a two-factor cookie update cannot race a session refresh.
+const expoCookieStorage = storageAdapter(authCookieStorage)
 
 const plugins = [
   ...baseAuthPlugins,
   createMobileAuthCookieSyncPlugin({
     cookieKey,
     storage: authCookieStorage,
+    cookieStorage: {
+      getItem: expoCookieStorage.getItem,
+      setItem: expoCookieStorage.setItemAsync,
+    },
   }),
   expoClient({
     scheme: "folo",
@@ -252,7 +262,7 @@ export const signOut = async () => {
   await refreshSessionQueries()
   const dbPath = getDbPath()
   await FileSystem.deleteAsync(dbPath, { idempotent: true })
-  await expo.reloadAppAsync("User sign out")
+  await reloadApp("User sign out")
 }
 
 export const deleteUser = async ({ TOTPCode }: { TOTPCode?: string }) => {

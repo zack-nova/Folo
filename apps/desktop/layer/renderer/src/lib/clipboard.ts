@@ -1,8 +1,11 @@
 import { toast } from "sonner"
 
-export const copyToClipboard = async (content: string): Promise<void> => {
+export type ClipboardContent = string | (() => string | Promise<string>)
+
+export const copyToClipboard = async (content: ClipboardContent): Promise<void> => {
   try {
-    await navigator.clipboard.writeText(content)
+    const resolvedContent = typeof content === "function" ? await content() : content
+    await navigator.clipboard.writeText(resolvedContent)
   } catch (e) {
     const message = "Unable to copy to clipboard. Please ensure clipboard permissions are granted."
     console.error(e)

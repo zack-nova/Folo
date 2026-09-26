@@ -18,7 +18,7 @@ import { useNavigate } from "react-router"
 
 import { useAdvertisedCapability } from "~/atoms/capabilities"
 import { previewBackPath } from "~/atoms/preview"
-import { useGeneralSettingKey } from "~/atoms/settings/general"
+import { setGeneralSetting, useGeneralSettingKey } from "~/atoms/settings/general"
 import { useSubscriptionColumnShow } from "~/atoms/sidebar"
 import { ROUTE_ENTRY_PENDING } from "~/constants"
 import { useFeature } from "~/hooks/biz/useFeature"
@@ -37,6 +37,10 @@ import { useFeedHeaderIcon, useFeedHeaderTitle } from "~/store/feed/hooks"
 
 import { aiTimelineEnabledAtom } from "../atoms/ai-timeline"
 import { MarkAllReadButton } from "../components/mark-all-button"
+import {
+  getEffectiveRouteEntrySortOrder,
+  isTimelineEntrySortScope,
+} from "../hooks/entry-sort-order"
 import { useIsPreviewFeed } from "../hooks/useIsPreviewFeed"
 import { useEntryRootState } from "../store/EntryColumnContext"
 import { AppendTaildingDivider } from "./AppendTaildingDivider"
@@ -52,12 +56,29 @@ export const EntryListHeader: FC<{
   const { t } = useTranslation()
 
   const unreadOnly = useGeneralSettingKey("unreadOnly")
+  const savedSortOrder = useGeneralSettingKey("timelineSortOrder")
   const [aiTimelineEnabled, setAiTimelineEnabled] = useAtom(aiTimelineEnabledAtom)
   const aiEnabled = useFeature("ai")
   const aiProcessingEnabled = useAdvertisedCapability("entries.ai_fusion")
 
-  const { feedId, entryId, view, isCollection } = routerParams
+  const { feedId, entryId, view, inboxId, isCollection } = routerParams
   const isPreview = useIsPreviewFeed()
+  const isTimelineSource = isTimelineEntrySortScope({
+    feedId,
+    inboxId,
+    isCollection,
+    isPreview,
+  })
+  const effectiveSortOrder = getEffectiveRouteEntrySortOrder({
+    sortOrder: savedSortOrder,
+    unreadOnly,
+    feedId,
+    inboxId,
+    isCollection,
+    isPreview,
+  })
+  const effectiveAiTimelineEnabled = aiTimelineEnabled && effectiveSortOrder === "desc"
+  const showSortOrderButton = unreadOnly && isTimelineSource
   const isWideMode = !!getView(view)?.wideMode
 
   const headerTitle = useFeedHeaderTitle()
@@ -111,8 +132,25 @@ export const EntryListHeader: FC<{
   const showAiTimelineToggle = aiEnabled || aiProcessingEnabled
 
   const handleAiTimelineButtonClick = useCallback(() => {
-    setAiTimelineEnabled((prev) => !prev)
-  }, [setAiTimelineEnabled])
+    if (!effectiveAiTimelineEnabled) {
+      if (effectiveSortOrder === "asc") {
+        onBeforeRefresh?.()
+        setGeneralSetting("timelineSortOrder", "desc")
+      }
+      setAiTimelineEnabled(true)
+      return
+    }
+    setAiTimelineEnabled(false)
+  }, [effectiveAiTimelineEnabled, effectiveSortOrder, onBeforeRefresh, setAiTimelineEnabled])
+
+  const handleSortOrderButtonClick = useCallback(() => {
+    onBeforeRefresh?.()
+    const nextSortOrder = effectiveSortOrder === "desc" ? "asc" : "desc"
+    setGeneralSetting("timelineSortOrder", nextSortOrder)
+    if (nextSortOrder === "asc" && aiTimelineEnabled) {
+      setAiTimelineEnabled(false)
+    }
+  }, [aiTimelineEnabled, effectiveSortOrder, onBeforeRefresh, setAiTimelineEnabled])
 
   const renderAiTimelineButton = () => {
     if (!showAiTimelineToggle) return null
@@ -123,10 +161,10 @@ export const EntryListHeader: FC<{
             ? t("ai_processing.featured_timeline")
             : t("entry_list_header.ai_timeline")
         }
-        active={aiTimelineEnabled}
+        active={effectiveAiTimelineEnabled}
         onClick={handleAiTimelineButtonClick}
       >
-        {aiTimelineEnabled ? (
+        {effectiveAiTimelineEnabled ? (
           <i className="i-mgc-refresh-4-ai-cute-re text-purple-600 dark:text-purple-400" />
         ) : (
           <i className="i-mgc-refresh-4-ai-cute-re text-purple-600 dark:text-purple-400" />
@@ -214,6 +252,24 @@ export const EntryListHeader: FC<{
                   <RotatingRefreshIcon isRefreshing={isRefreshing} />
                 </ActionButton>
               ))}
+            {showSortOrderButton && (
+              <ActionButton
+                tooltip={
+                  effectiveSortOrder === "desc"
+                    ? t("entry_list_header.sort_oldest_first")
+                    : t("entry_list_header.sort_newest_first")
+                }
+                onClick={handleSortOrderButtonClick}
+              >
+                <i
+                  className={
+                    effectiveSortOrder === "desc"
+                      ? "i-mgc-sort-descending-cute-re"
+                      : "i-mgc-sort-ascending-cute-re"
+                  }
+                />
+              </ActionButton>
+            )}
             {!isCollection && (
               <>
                 <ActionButton
@@ -223,7 +279,10 @@ export const EntryListHeader: FC<{
                       : t("entry_list_header.show_all")
                   }
                   shortcut={toggleUnreadOnlyShortcut}
-                  onClick={() => runCmdFn(COMMAND_ID.timeline.unreadOnly, [!unreadOnly])()}
+                  onClick={() => {
+                    onBeforeRefresh?.()
+                    runCmdFn(COMMAND_ID.timeline.unreadOnly, [!unreadOnly])()
+                  }}
                 >
                   {unreadOnly ? (
                     <i className="i-mgc-round-cute-fi" />

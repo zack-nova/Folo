@@ -22,7 +22,7 @@
     "@follow/configs": "workspace:*",
     "fast-glob": "3.3.3",
     "pathe": "2.0.3",
-    "prettier": "3.9.4",
+    "prettier": "3.9.8",
     "tsx": "4.23.0",
     "typescript": "catalog:",
     "vitest": "4.1.10"

@@ -15,7 +15,7 @@ import type {
   UseEntriesProps,
   UseEntriesReturn,
 } from "@follow/store/entry/types"
-import { fallbackReturn } from "@follow/store/entry/utils"
+import { fallbackReturn, isTimelineEntriesSource } from "@follow/store/entry/utils"
 import { useFeedById } from "@follow/store/feed/hooks"
 import { useInboxById } from "@follow/store/inbox/hooks"
 import { useListById } from "@follow/store/list/hooks"
@@ -66,9 +66,10 @@ const selectedTimelineAtom = atom<SelectedTimeline>({
 
 const selectedFeedAtom = atom<SelectedFeed>(null)
 
-export const EntryListContext = createContext<{ type: "timeline" | "feed" | "subscriptions" }>({
-  type: "timeline",
-})
+export const EntryListContext = createContext<{
+  type: "timeline" | "feed" | "subscriptions"
+  isPreview?: boolean
+}>({ type: "timeline" })
 export const useEntryListContext = () => {
   return use(EntryListContext)
 }
@@ -152,7 +153,17 @@ export const getFetchEntryPayload = (
   return payload
 }
 
+export function useIsTimelineEntrySource() {
+  const entryListContext = useEntryListContext()
+  const selectedFeed = useSelectedFeed()
+  const selectedView = useSelectedView()
+  const payload = getFetchEntryPayload(selectedFeed, selectedView)
+
+  return !entryListContext.isPreview && payload !== null && isTimelineEntriesSource(payload)
+}
+
 function useRemoteEntries(props?: UseEntriesProps): UseEntriesReturn {
+  const entryListContext = useEntryListContext()
   const selectedFeed = useSelectedFeed()
   const selectedView = useSelectedView()
   const view = props?.viewId ?? selectedView
@@ -165,9 +176,15 @@ function useRemoteEntries(props?: UseEntriesProps): UseEntriesReturn {
       : selectedFeed,
     view,
   )
-  const options = useFetchEntriesSettings()
+  const options = useFetchEntriesSettings({
+    isTimelineSource:
+      !entryListContext.isPreview && payload !== null && isTimelineEntriesSource(payload),
+    unreadOnlyEnabled: !entryListContext.isPreview,
+  })
 
-  const query = useEntriesQuery(props?.active ? { ...payload, ...options } : undefined)
+  const query = useEntriesQuery(payload ? { ...payload, ...options } : undefined, {
+    subscribed: props?.active !== false,
+  })
 
   const [fetchedTime, setFetchedTime] = useState<number>()
   useEffect(() => {
@@ -200,6 +217,7 @@ function useRemoteEntries(props?: UseEntriesProps): UseEntriesReturn {
 }
 
 function useLocalEntries(props?: UseEntriesProps): UseEntriesReturn {
+  const entryListContext = useEntryListContext()
   const selectedFeed = useSelectedFeed()
   const selectedView = useSelectedView()
   const view = props?.viewId ?? selectedView
@@ -212,10 +230,14 @@ function useLocalEntries(props?: UseEntriesProps): UseEntriesReturn {
       : selectedFeed,
     view,
   )
-  const options = useFetchEntriesSettings()
+  const options = useFetchEntriesSettings({
+    isTimelineSource:
+      !entryListContext.isPreview && payload !== null && isTimelineEntriesSource(payload),
+    unreadOnlyEnabled: !entryListContext.isPreview,
+  })
 
   const { feedId, feedIdList, listId, inboxId, isCollection } = payload || {}
-  const { hidePrivateSubscriptionsInTimeline, unreadOnly } = options
+  const { hidePrivateSubscriptionsInTimeline, sortOrder, unreadOnly } = options
 
   const entryIdsByView = useEntryIdsByView(view, hidePrivateSubscriptionsInTimeline)
   const entryIdsByCollections = useCollectionEntryList(view)
@@ -241,7 +263,9 @@ function useLocalEntries(props?: UseEntriesProps): UseEntriesReturn {
                 entryIdsByInboxId,
               ) ?? [])
 
-        return ids
+        const orderedIds = sortOrder === "asc" ? [...ids].reverse() : ids
+
+        return orderedIds
           .map((id) => {
             const entry = state.data[id]
             if (!entry) return null
@@ -259,7 +283,9 @@ function useLocalEntries(props?: UseEntriesProps): UseEntriesReturn {
         entryIdsByInboxId,
         entryIdsByListId,
         entryIdsByView,
+        isCollection,
         showEntriesByView,
+        sortOrder,
         unreadOnly,
       ],
     ),
@@ -293,7 +319,7 @@ function useLocalEntries(props?: UseEntriesProps): UseEntriesReturn {
 
   useEffect(() => {
     setPage(0)
-  }, [view, feedId])
+  }, [view, feedId, sortOrder, unreadOnly])
 
   return {
     entriesIds: entries,

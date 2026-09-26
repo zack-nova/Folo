@@ -442,15 +442,26 @@ export const logoutFromProfileMenu = async (page: Page) => {
     await waitForBetterAuthSessionCookieCleared(page, new URL(response.url()).origin)
   }
 
+  // Signing out already navigates the app. Observe that transition before issuing
+  // another same-URL navigation, which can race the application's reload.
+  const loggedOut = await expect
+    .poll(() => isLoggedOutUiReady(page), { timeout: 15_000 })
+    .toBe(true)
+    .then(() => true)
+    .catch(() => false)
+  if (loggedOut) return
+
   if (isElectron) {
     await page.waitForLoadState("domcontentloaded", { timeout: 30_000 }).catch(() => {})
   } else {
-    await page.goto(appHomeURL, { waitUntil: "domcontentloaded" }).catch(() => {})
+    await page.goto(appHomeURL, { waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => {})
   }
   await waitForRenderedAppShell(page, 60_000)
   if (!(await isLoggedOutUiReady(page))) {
     if (!isElectron) {
-      await page.goto(appHomeURL, { waitUntil: "domcontentloaded" }).catch(() => {})
+      await page
+        .goto(appHomeURL, { waitUntil: "domcontentloaded", timeout: 30_000 })
+        .catch(() => {})
     } else {
       await page.reload({ waitUntil: "domcontentloaded" }).catch(() => {})
     }

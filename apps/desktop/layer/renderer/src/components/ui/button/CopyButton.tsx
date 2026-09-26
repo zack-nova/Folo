@@ -1,20 +1,18 @@
-import { useCallback, useRef } from "react"
+import { useCallback } from "react"
 
 import { m } from "~/components/common/Motion"
+import type { ClipboardContent } from "~/lib/clipboard"
 import { copyToClipboard } from "~/lib/clipboard"
 
 import { AnimatedCommandButton } from "./AnimatedCommandButton"
 
 export const CopyButton: Component<{
-  value: string
+  value: ClipboardContent
   style?: React.CSSProperties
   variant?: "solid" | "outline" | "ghost"
 }> = ({ value, className, style, variant = "solid" }) => {
-  const copiedTimerRef = useRef<any>(undefined)
   const handleCopy = useCallback(() => {
-    copyToClipboard(value)
-
-    clearTimeout(copiedTimerRef.current)
+    void copyToClipboard(value).catch(() => undefined)
   }, [value])
   return (
     <AnimatedCommandButton

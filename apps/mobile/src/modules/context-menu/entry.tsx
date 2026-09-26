@@ -3,6 +3,7 @@ import { useIsEntryStarred } from "@follow/store/collection/hooks"
 import { collectionSyncService } from "@follow/store/collection/store"
 import { getEntry } from "@follow/store/entry/getter"
 import { useEntry } from "@follow/store/entry/hooks"
+import { getMarkReadTimeRange } from "@follow/store/entry/utils"
 import { unreadSyncService } from "@follow/store/unread/store"
 import { useIsLoggedIn } from "@follow/store/user/hooks"
 import { PortalProvider } from "@gorhom/portal"
@@ -11,7 +12,10 @@ import { useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { Platform, Share, View } from "react-native"
 
-import { getHideAllReadSubscriptions } from "@/src/atoms/settings/general"
+import {
+  getHideAllReadSubscriptions,
+  useEffectiveEntrySortOrder,
+} from "@/src/atoms/settings/general"
 import { EntryContentWebView } from "@/src/components/native/webview/EntryContentWebView"
 import { WebViewManager } from "@/src/components/native/webview/webview-manager"
 import { ContextMenu } from "@/src/components/ui/context-menu"
@@ -22,20 +26,30 @@ import { toast } from "@/src/lib/toast"
 import { playEntryTts } from "@/src/modules/player/entry-tts"
 import { EntryDetailScreen } from "@/src/screens/(stack)/entries/[entryId]/EntryDetailScreen"
 
-import { getFetchEntryPayload, useSelectedFeed, useSelectedView } from "../screen/atoms"
+import {
+  getFetchEntryPayload,
+  useIsTimelineEntrySource,
+  useSelectedFeed,
+  useSelectedView,
+} from "../screen/atoms"
 
 export const EntryItemContextMenu = ({
   id,
   children,
   view,
+  isTimelineSource: isTimelineSourceOverride,
 }: PropsWithChildren<{
   id: string
   view: FeedViewType
+  isTimelineSource?: boolean
 }>) => {
   const { t } = useTranslation()
   const selectedView = useSelectedView()
   const selectedFeed = useSelectedFeed()
   const isLoggedIn = useIsLoggedIn()
+  const currentIsTimelineSource = useIsTimelineEntrySource()
+  const isTimelineSource = isTimelineSourceOverride ?? currentIsTimelineSource
+  const sortOrder = useEffectiveEntrySortOrder({ isTimelineSource })
   const entry = useEntry(id, (state) => ({
     read: state.read,
     feedId: state.feedId,
@@ -87,10 +101,11 @@ export const EntryItemContextMenu = ({
                 unreadSyncService.markBatchAsRead({
                   view: selectedView,
                   filter: payload,
-                  time: {
-                    startTime: new Date(publishedAt).getTime() + 1,
-                    endTime: Date.now(),
-                  },
+                  time: getMarkReadTimeRange({
+                    publishedAt,
+                    position: "above",
+                    sortOrder,
+                  }),
                   excludePrivate: getHideAllReadSubscriptions(),
                 })
               }}
@@ -133,10 +148,11 @@ export const EntryItemContextMenu = ({
                 unreadSyncService.markBatchAsRead({
                   view: selectedView,
                   filter: payload,
-                  time: {
-                    startTime: 1,
-                    endTime: new Date(publishedAt).getTime() - 1,
-                  },
+                  time: getMarkReadTimeRange({
+                    publishedAt,
+                    position: "below",
+                    sortOrder,
+                  }),
                   excludePrivate: getHideAllReadSubscriptions(),
                 })
               }}

@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs"
 
 import { describe, expect, it } from "vitest"
 
-const workflow = (name: string) => readFileSync(`.github/workflows/${name}`, "utf8")
+const workflow = (name: string) =>
+  readFileSync(new URL(`../workflows/${name}`, import.meta.url), "utf8")
 
 describe("release build workflow guards", () => {
   it("skips direct mobile push builds for desktop release commits on main", () => {

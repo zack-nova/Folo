@@ -1,6 +1,7 @@
 import { defaultGeneralSettings } from "@follow/shared/settings/defaults"
 import type { GeneralSettings } from "@follow/shared/settings/interface"
 import type { FetchEntriesPropsSettings } from "@follow/store/entry/types"
+import { getEffectiveEntrySortOrder } from "@follow/store/entry/utils"
 import type { SupportedLanguages } from "@follow-app/client-sdk"
 import { useMemo } from "react"
 
@@ -58,16 +59,41 @@ export function getHideAllReadSubscriptions() {
   return hideAllReadSubscriptions && unreadOnly
 }
 
-export function useFetchEntriesSettings(): FetchEntriesPropsSettings {
+export function useEffectiveEntrySortOrder({ isTimelineSource }: { isTimelineSource: boolean }) {
+  const unreadOnly = useGeneralSettingKey("unreadOnly")
+  const sortOrder = useGeneralSettingKey("timelineSortOrder")
+
+  return getEffectiveEntrySortOrder({
+    isTimelineSource,
+    sortOrder,
+    unreadOnly,
+  })
+}
+
+export function useFetchEntriesSettings({
+  isTimelineSource,
+  unreadOnlyEnabled = true,
+}: {
+  isTimelineSource: boolean
+  unreadOnlyEnabled?: boolean
+}): FetchEntriesPropsSettings {
   const hidePrivateSubscriptionsInTimeline = useGeneralSettingKey(
     "hidePrivateSubscriptionsInTimeline",
   )
-  const unreadOnly = useGeneralSettingKey("unreadOnly")
+  const savedUnreadOnly = useGeneralSettingKey("unreadOnly")
+  const unreadOnly = unreadOnlyEnabled && savedUnreadOnly
+  const savedSortOrder = useGeneralSettingKey("timelineSortOrder")
+  const sortOrder = getEffectiveEntrySortOrder({
+    isTimelineSource,
+    sortOrder: savedSortOrder,
+    unreadOnly,
+  })
   return useMemo(
     () => ({
       hidePrivateSubscriptionsInTimeline,
       unreadOnly,
+      sortOrder,
     }),
-    [hidePrivateSubscriptionsInTimeline, unreadOnly],
+    [hidePrivateSubscriptionsInTimeline, sortOrder, unreadOnly],
   )
 }

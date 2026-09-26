@@ -14,6 +14,8 @@ import { CheckCircleCuteReIcon } from "@/src/icons/check_circle_cute_re"
 import { RoundCuteFiIcon } from "@/src/icons/round_cute_fi"
 import { RoundCuteReIcon } from "@/src/icons/round_cute_re"
 import { ShareForwardCuteReIcon } from "@/src/icons/share_forward_cute_re"
+import { SortAscendingCuteReIcon } from "@/src/icons/sort_ascending_cute_re"
+import { SortDescendingCuteReIcon } from "@/src/icons/sort_descending_cute_re"
 import { Dialog } from "@/src/lib/dialog"
 import { useNavigation } from "@/src/lib/navigation/hooks"
 import { proxyEnv } from "@/src/lib/proxy-env"
@@ -104,6 +106,40 @@ export const UnreadOnlyActionButton = ({ variant = "secondary" }: HeaderActionBu
         )
       }}
       selected={unreadOnly}
+      overlay={false}
+    />
+  )
+}
+
+export const EntrySortOrderActionButton = ({ variant = "secondary" }: HeaderActionButtonProps) => {
+  const { t } = useTranslation()
+  const sortOrder = useGeneralSettingKey("timelineSortOrder")
+  const { size, color } = useButtonVariant({ variant })
+  const nextSortOrder = sortOrder === "desc" ? "asc" : "desc"
+
+  return (
+    <UIBarButton
+      label={
+        nextSortOrder === "asc"
+          ? t("operation.sort_entries.oldest_unread_first.label")
+          : t("operation.sort_entries.newest_first.label")
+      }
+      normalIcon={
+        sortOrder === "asc" ? (
+          <SortAscendingCuteReIcon height={size} width={size} color={color} />
+        ) : (
+          <SortDescendingCuteReIcon height={size} width={size} color={color} />
+        )
+      }
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+        setGeneralSetting("timelineSortOrder", nextSortOrder)
+        toast.success(
+          nextSortOrder === "asc"
+            ? t("operation.sort_entries.oldest_unread_first.success")
+            : t("operation.sort_entries.newest_first.success"),
+        )
+      }}
       overlay={false}
     />
   )

@@ -26,15 +26,17 @@ export const FeedScreen: NavigationControllerView<{
   const feed = useFeedById(feedIdentifier)
   const navigation = useNavigation()
   const isSubscribed = useIsSubscribed(feedIdentifier)
+  const isPreview = !isSubscribed && isBizId(feedIdentifier)
   const { t } = useTranslation("common")
+  const entryListContextValue = useMemo(() => ({ type: "feed" as const, isPreview }), [isPreview])
 
   return (
-    <EntryListContext value={useMemo(() => ({ type: "feed" }), [])}>
+    <EntryListContext value={entryListContextValue}>
       <RootSiblingParent>
         <BottomTabBarHeightContext value={insets.bottom}>
           <TimelineHeader feedId={feed?.id} />
           <FeedScreenEntryList />
-          {!isSubscribed && isBizId(feedIdentifier) && (
+          {isPreview && (
             <Pressable
               className="absolute left-1/2 z-10 min-w-[112px] -translate-x-1/2 items-center justify-center overflow-hidden rounded-full bg-accent px-5 py-3"
               hitSlop={12}

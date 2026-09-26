@@ -2501,6 +2501,10 @@ async function createTarArchive(
 
   const archivePromise = new Promise<Uint8Array>((resolve, reject) => {
     pack.on("data", (chunk) => {
+      if (!(chunk instanceof Uint8Array)) {
+        reject(new Error("Archive stream returned a non-binary chunk"))
+        return
+      }
       archiveChunks.push(new Uint8Array(chunk))
     })
     pack.on("error", reject)

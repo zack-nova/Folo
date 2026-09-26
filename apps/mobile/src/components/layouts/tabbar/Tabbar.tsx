@@ -80,15 +80,15 @@ export const Tabbar: FC<{
 
       <PlayerTabBar />
       <Grid columns={renderTabScreens.length} gap={10} className="mt-[7]">
-        {renderTabScreens.map((route, index) => {
-          const focused = index === selectedIndex
+        {renderTabScreens.map((route) => {
+          const focused = route.tabScreenIndex === selectedIndex
           const label = route.title ?? ""
           return (
             <MemoedTabItem
               key={route.tabScreenIndex}
               focused={focused}
               identifier={route.identifier ?? String(route.tabScreenIndex)}
-              index={index}
+              index={route.tabScreenIndex}
               label={label}
               renderIcon={route.icon}
               onPress={onPress}
