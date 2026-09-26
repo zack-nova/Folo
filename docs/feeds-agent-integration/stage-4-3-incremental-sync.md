@@ -16,6 +16,13 @@
 - **契约扫描覆盖同步模块。** 同步引擎通过 `syncApiContext.provide(followApi.sync)` 间接调用 SDK，
   扫描器现在追踪这种模块传递，`/sync/state`、`/sync/delta` 进入冻结的 API 使用面。
 
+## 反向代理信任
+
+Fastify 5.12 不再接受数字形式的 `trustProxy`：按跳数信任无法校验直接连入的对端，客户端绕过代理即可
+伪造 `X-Forwarded-For`。`TRUST_PROXY_HOPS` 因此改为 `TRUST_PROXY` 地址列表，仍设置非 0 跳数时服务
+拒绝启动并给出迁移提示，而不是静默地把所有客户端都当作代理地址限流。生产模板使用
+`loopback,uniquelocal`。
+
 ## 变更日志
 
 `sync_actions` 是按用户追加的变更日志，id 来自全局序列；`sync_floors` 记录每个用户被清理掉的最大 id。

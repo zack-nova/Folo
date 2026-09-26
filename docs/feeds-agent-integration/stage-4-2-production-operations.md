@@ -9,7 +9,7 @@
   `ALLOW_INSECURE_HTTP=true` 才能临时绕过。
 - 认证密钥、AI 加密密钥和 Metrics Bearer Token 必须分别配置，拒绝明显占位值和复用密钥。
 - 公共注册不能与私网 Feed 访问同时开启，避免不可信账号借 RSS 获取能力访问内网。
-- 全局 API 和认证写请求按客户端 IP 限流；反向代理只按有限跳数信任转发头。
+- 全局 API 和认证写请求按客户端 IP 限流；只采信 `TRUST_PROXY` 所列反向代理地址发来的转发头（阶段 4.3 起取代按跳数信任）。
 - 写请求拒绝非白名单 Origin 和 `Sec-Fetch-Site: cross-site`；响应启用安全头，日志脱敏认证信息。
 - 请求正文、路由参数、头像和 OPML 均有大小上限；Metrics 使用恒定时间令牌比较并返回 Bearer challenge。
 - 生产 Compose 默认只绑定回环地址。API 以非 root、只读根文件系统、无 Linux capabilities、禁止提权、

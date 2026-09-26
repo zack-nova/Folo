@@ -63,7 +63,7 @@ pnpm server:db:down
 - `CLIENT_ORIGINS`：允许携带登录 Cookie 的前端 origin，多个值用逗号分隔。
 - `UPLOADS_DIRECTORY`：头像文件目录；生产环境应放在持久卷中并单独备份。
 - `METRICS_TOKEN`：生产环境必填；Prometheus 请求 `/metrics` 时使用 Bearer Token。
-- `TRUST_PROXY_HOPS`：反向代理跳数，生产 Compose 默认拓扑建议设为 `1`；不要无条件信任所有代理头。
+- `TRUST_PROXY`：可信反向代理的地址，逗号分隔，支持 IP、CIDR 以及 `loopback`、`linklocal`、`uniquelocal`。只有来自这些地址的连接，其 `X-Forwarded-For` 才会被采信；生产 Compose 默认拓扑使用 `loopback,uniquelocal`（宿主机代理经 Docker 网桥网关进入容器）。旧的 `TRUST_PROXY_HOPS` 已移除，仍设置非 0 值时服务拒绝启动。
 - `API_RATE_LIMIT_MAX`、`AUTH_RATE_LIMIT_MAX`：按客户端 IP 的每分钟 API 和认证写请求上限。
 - `ALLOW_PUBLIC_REGISTRATION`：默认 `false`；只应在明确需要多人注册时临时开启。
 - `FEED_POLL_INTERVAL_MS`：已订阅 Feed 的刷新周期，默认 15 分钟。
@@ -84,8 +84,8 @@ pnpm server:db:down
 
 生产 Compose 默认只监听 `127.0.0.1:3000`，并以只读根文件系统、无 Linux capabilities、
 `no-new-privileges`、进程数限制和滚动日志启动 API。请在宿主机上使用 Caddy、Nginx 或同类反向代理终止
-TLS，只把可信公网域名转发到 `127.0.0.1:3000`。若代理链不是一跳，必须相应调整
-`TRUST_PROXY_HOPS`；不要把 API 端口改为 `0.0.0.0` 后直接暴露公网。
+TLS，只把可信公网域名转发到 `127.0.0.1:3000`。代理链上还有其他代理（例如 CDN）时，把它们的地址段加入
+`TRUST_PROXY`；不要把 API 端口改为 `0.0.0.0` 后直接暴露公网。
 
 Prometheus 抓取配置需要携带认证：
 

@@ -84,7 +84,8 @@ export interface BuildServerOptions {
   processingWorkerPollIntervalMs?: number
   serverURL?: string
   sourceCatalogClient?: SourceCatalogClient
-  trustProxyHops?: number
+  /** Addresses, CIDR ranges or proxy-addr presets whose forwarding headers are trusted */
+  trustProxy?: readonly string[]
   uploadsDirectory?: string
 }
 
@@ -357,7 +358,7 @@ export const buildServer = async ({
   processingWorkerPollIntervalMs,
   serverURL = "http://localhost:3000",
   sourceCatalogClient,
-  trustProxyHops = 0,
+  trustProxy = [],
   uploadsDirectory = "./data/uploads",
 }: BuildServerOptions) => {
   const server = Fastify({
@@ -377,9 +378,9 @@ export const buildServer = async ({
       : false,
     requestTimeout: 120_000,
     routerOptions: { ignoreTrailingSlash: true, maxParamLength: 512 },
-    // Fastify 5.12 no longer honours a numeric hop count, so express it as a function.
-    // This relies on the API port only being reachable through the Compose reverse proxy.
-    trustProxy: trustProxyHops > 0 ? (_address, hop) => hop < trustProxyHops : false,
+    // Forwarding headers are only believed from these peers, so a client that reaches the API
+    // directly cannot choose the address it is rate limited by.
+    trustProxy: trustProxy.length > 0 ? trustProxy.join(",") : false,
   })
   const pendingReadability = new Map<string, Promise<string | null>>()
   const pendingSummaries = new Map<string, Promise<string>>()

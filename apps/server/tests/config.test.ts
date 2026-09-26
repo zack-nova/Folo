@@ -67,13 +67,13 @@ describe("server configuration", () => {
       METRICS_TOKEN: "strong-production-metrics-token-22222222222",
       NODE_ENV: "production",
       SERVER_URL: "https://api.reader.example.com",
-      TRUST_PROXY_HOPS: "1",
+      TRUST_PROXY: "loopback, uniquelocal",
     }
 
     expect(loadServerConfig(productionEnvironment)).toMatchObject({
       metricsToken: productionEnvironment.METRICS_TOKEN,
       nodeEnvironment: "production",
-      trustProxyHops: 1,
+      trustProxy: ["loopback", "uniquelocal"],
     })
     expect(() =>
       loadServerConfig({
@@ -137,5 +137,27 @@ describe("server configuration", () => {
         NODE_ENV: "test",
       }),
     ).not.toThrow()
+  })
+
+  it("accepts reverse proxy addresses and rejects the removed hop count", () => {
+    const environment = {
+      BETTER_AUTH_SECRET: "development-secret-that-is-at-least-32-characters",
+      DATABASE_URL: "postgres://folo:folo@localhost:5432/folo",
+    }
+
+    expect(loadServerConfig(environment).trustProxy).toEqual([])
+    expect(
+      loadServerConfig({
+        ...environment,
+        TRUST_PROXY: "10.0.0.2, 172.16.0.0/12,fd00::/8,::1,linklocal",
+      }).trustProxy,
+    ).toEqual(["10.0.0.2", "172.16.0.0/12", "fd00::/8", "::1", "linklocal"])
+    for (const TRUST_PROXY of ["true", "10.0.0.0/33", "::/129", "10.0.0.0/8/1", "proxy.local"]) {
+      expect(() => loadServerConfig({ ...environment, TRUST_PROXY })).toThrow(/TRUST_PROXY/)
+    }
+    expect(() => loadServerConfig({ ...environment, TRUST_PROXY_HOPS: "1" })).toThrow(
+      /TRUST_PROXY_HOPS is no longer supported/,
+    )
+    expect(loadServerConfig({ ...environment, TRUST_PROXY_HOPS: "0" }).trustProxy).toEqual([])
   })
 })

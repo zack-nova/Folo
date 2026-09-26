@@ -56,7 +56,7 @@ const server = await buildServer({
   readabilityFetcher: standardFeedFetcher,
   serverURL: config.serverURL,
   sourceCatalogClient: feedSupplierFetcher ?? undefined,
-  trustProxyHops: config.trustProxyHops,
+  trustProxy: config.trustProxy,
   uploadsDirectory: config.uploadsDirectory,
 })
 

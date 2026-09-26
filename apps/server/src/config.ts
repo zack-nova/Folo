@@ -1,3 +1,5 @@
+import { isIP } from "node:net"
+
 import { z } from "zod"
 
 const integer = (defaultValue: number, minimum: number) =>
@@ -26,6 +28,41 @@ const internalServiceURL = z.url().transform((value, context) => {
   }
   return url.toString().replace(/\/$/, "")
 })
+
+/** Named ranges understood by proxy-addr, which Fastify uses to evaluate `trustProxy`. */
+const trustedProxyPresets = new Set(["linklocal", "loopback", "uniquelocal"])
+
+const isTrustedProxyEntry = (entry: string) => {
+  if (trustedProxyPresets.has(entry) || isIP(entry) !== 0) return true
+  const [address, prefix, ...rest] = entry.split("/")
+  const version = address ? isIP(address) : 0
+  if (version === 0 || prefix === undefined || rest.length > 0 || !/^\d+$/.test(prefix)) {
+    return false
+  }
+  return Number(prefix) <= (version === 4 ? 32 : 128)
+}
+
+/** Comma-separated addresses, CIDR ranges or presets of the reverse proxies to trust. */
+const trustedProxies = z
+  .string()
+  .default("")
+  .transform((value, context) => {
+    const entries = value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+    const invalid = entries.filter((entry) => !isTrustedProxyEntry(entry))
+    if (invalid.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: `TRUST_PROXY entries must be IP addresses, CIDR ranges or one of ${[
+          ...trustedProxyPresets,
+        ].join(", ")}: ${invalid.join(", ")}`,
+      })
+      return z.NEVER
+    }
+    return entries
+  })
 
 const serverEnvironment = z
   .object({
@@ -69,10 +106,23 @@ const serverEnvironment = z
     PROCESSING_RETRY_BASE_DELAY_MS: integer(1_000, 1),
     PROCESSING_WORKER_POLL_INTERVAL_MS: integer(1_000, 10),
     SERVER_URL: z.url().default("http://localhost:3000"),
-    TRUST_PROXY_HOPS: integer(0, 0).pipe(z.number().max(8)),
+    TRUST_PROXY: trustedProxies,
+    /** Removed; kept in the schema only to reject configurations that still set it. */
+    TRUST_PROXY_HOPS: z.string().optional(),
     UPLOADS_DIRECTORY: z.string().min(1).default("./data/uploads"),
   })
   .superRefine((environment, context) => {
+    // Fastify 5.12 ignores hop counts because they trust whoever connects directly. Fail
+    // loudly instead of silently rate limiting every client as the proxy.
+    if (environment.TRUST_PROXY_HOPS && environment.TRUST_PROXY_HOPS !== "0") {
+      context.addIssue({
+        code: "custom",
+        message:
+          "TRUST_PROXY_HOPS is no longer supported; list the reverse proxy addresses in " +
+          "TRUST_PROXY instead (for the production Compose topology: loopback,uniquelocal)",
+        path: ["TRUST_PROXY_HOPS"],
+      })
+    }
     if (Boolean(environment.FEED_SUPPLIER_URL) !== Boolean(environment.FEED_SUPPLIER_TOKEN)) {
       context.addIssue({
         code: "custom",
@@ -216,7 +266,7 @@ export const loadServerConfig = (environment: NodeJS.ProcessEnv) => {
     processingRetryBaseDelayMs: parsed.PROCESSING_RETRY_BASE_DELAY_MS,
     processingWorkerPollIntervalMs: parsed.PROCESSING_WORKER_POLL_INTERVAL_MS,
     serverURL: parsed.SERVER_URL,
-    trustProxyHops: parsed.TRUST_PROXY_HOPS,
+    trustProxy: parsed.TRUST_PROXY,
     uploadsDirectory: parsed.UPLOADS_DIRECTORY,
   }
 }
