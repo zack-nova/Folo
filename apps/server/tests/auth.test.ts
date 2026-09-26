@@ -79,7 +79,7 @@ describe("capability discovery", () => {
     expect(response.json()).toMatchObject({
       code: 0,
       data: {
-        compatibilityVersion: "folo-client-sdk-0.3.95",
+        compatibilityVersion: "folo-client-sdk-0.3.96",
         stage: 4,
       },
     })
