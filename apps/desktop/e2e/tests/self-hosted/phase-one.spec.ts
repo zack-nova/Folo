@@ -177,6 +177,10 @@ test("registers, subscribes, renders, and persists read state against the local 
             at: new Date().toISOString(),
             result: { deferred: 2, errors: [], failed: 1, refreshed: 8 },
           },
+          source_providers: [
+            { configured: false, id: "rsshub", message: null, status: "disabled" },
+            { configured: false, id: "page_change", message: null, status: "disabled" },
+          ],
           stats: {
             feedAcquisitionFailures: 1,
             feedsDue: 2,
@@ -216,6 +220,8 @@ test("registers, subscribes, renders, and persists read state against the local 
   await expect(page.getByTestId("operations-status-banner")).toBeVisible()
   await expect(page.getByTestId(`operations-feed-failure-${feedId}`)).toBeVisible()
   await expect(page.getByTestId(`operations-failed-job-${failedJobId}`)).toBeVisible()
+  await expect(page.getByTestId("operations-source-provider-rsshub")).toBeVisible()
+  await expect(page.getByTestId("operations-source-provider-page_change")).toBeVisible()
 
   const operationsPage = page.getByTestId("operations-settings")
   await operationsPage.evaluate((element) => element.scrollIntoView({ block: "start" }))
