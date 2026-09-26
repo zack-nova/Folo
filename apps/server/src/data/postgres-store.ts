@@ -312,8 +312,9 @@ export class PostgresDataStore implements DataStore {
     if (read === true) conditions.push(isNotNull(readStates.readAt))
     if (read === false) conditions.push(isNull(readStates.readAt))
     if (isCollection === true) conditions.push(isNotNull(collections.createdAt))
-    if (publishedAfter !== undefined) conditions.push(gt(entries.publishedAt, publishedAfter))
-    if (publishedBefore !== undefined) conditions.push(lt(entries.publishedAt, publishedBefore))
+    const orderColumn = isCollection === true ? collections.createdAt : entries.publishedAt
+    if (publishedAfter !== undefined) conditions.push(gt(orderColumn, publishedAfter))
+    if (publishedBefore !== undefined) conditions.push(lt(orderColumn, publishedBefore))
 
     const rows = await this.database
       .select({
@@ -330,7 +331,7 @@ export class PostgresDataStore implements DataStore {
         and(eq(collections.entryId, entries.id), eq(collections.userId, userId)),
       )
       .where(and(...conditions))
-      .orderBy(sortOrder === "asc" ? asc(entries.publishedAt) : desc(entries.publishedAt))
+      .orderBy(sortOrder === "asc" ? asc(orderColumn) : desc(orderColumn))
       .limit(limit)
 
     return rows.map((row) => ({

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises"
+import { setTimeout as delay } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 
 import { FollowAPIError, FollowClient } from "@follow-app/client-sdk"
@@ -10,6 +11,8 @@ import { MemoryDataStore } from "../src/data/memory-store"
 import { buildServer } from "../src/server"
 
 const fixturePath = fileURLToPath(new URL("fixtures/phase-one.rss.xml", import.meta.url))
+const collectionCursor = (createdAt: Date | string) =>
+  typeof createdAt === "string" ? createdAt : createdAt.toISOString()
 
 describe("self-hosted reading loop", () => {
   const servers: Array<{ close: () => Promise<void> }> = []
@@ -230,15 +233,34 @@ describe("self-hosted reading loop", () => {
     expect((await client.api.collections.get({ entryId })).data).toBe(false)
     await client.api.collections.post({ entryId, view: 0 })
     expect((await client.api.collections.get({ entryId })).data).toBe(true)
+    await delay(10)
+    const olderEntryId = entries.data[1]!.entries.id
+    await client.api.collections.post({ entryId: olderEntryId, view: 0 })
 
-    const collectionEntries = await client.api.entries.list({ isCollection: true, view: 0 })
-    expect(collectionEntries.data).toHaveLength(1)
-    expect(collectionEntries.data[0]).toMatchObject({
-      collections: { createdAt: expect.any(String) },
-      entries: { id: entryId },
+    const firstCollectionPage = await client.api.entries.list({
+      isCollection: true,
+      limit: 1,
+      view: 0,
     })
+    const secondCollectionPage = await client.api.entries.list({
+      isCollection: true,
+      limit: 1,
+      publishedAfter: collectionCursor(firstCollectionPage.data[0]!.collections!.createdAt),
+      view: 0,
+    })
+    const thirdCollectionPage = await client.api.entries.list({
+      isCollection: true,
+      limit: 1,
+      publishedAfter: collectionCursor(secondCollectionPage.data[0]!.collections!.createdAt),
+      view: 0,
+    })
+    expect(
+      [...firstCollectionPage.data, ...secondCollectionPage.data].map((item) => item.entries.id),
+    ).toEqual([olderEntryId, entryId])
+    expect(thirdCollectionPage.data).toEqual([])
 
     await client.api.collections.delete({ entryId })
+    await client.api.collections.delete({ entryId: olderEntryId })
     expect((await client.api.collections.get({ entryId })).data).toBe(false)
 
     fetchedXML = feedXML.replace(

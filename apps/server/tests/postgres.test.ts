@@ -14,6 +14,8 @@ import { buildServer } from "../src/server"
 
 const databaseURL = process.env.TEST_DATABASE_URL
 const fixturePath = fileURLToPath(new URL("fixtures/phase-one.rss.xml", import.meta.url))
+const collectionCursor = (createdAt: Date | string) =>
+  typeof createdAt === "string" ? createdAt : createdAt.toISOString()
 
 describe.runIf(databaseURL)("PostgreSQL authority", () => {
   const database = createPostgresDatabase(databaseURL!)
@@ -118,6 +120,31 @@ describe.runIf(databaseURL)("PostgreSQL authority", () => {
         await pageEntries({ publishedBefore: oldest!.publishedAt, read: false, sortOrder: "asc" })
       ).map((entry) => entry.title),
     ).toEqual(["Second entry"])
+
+    await client.api.collections.post({ entryId: newest!.id, view: 0 })
+    await delay(10)
+    await client.api.collections.post({ entryId: oldest!.id, view: 0 })
+    const firstCollectionPage = await client.api.entries.list({
+      isCollection: true,
+      limit: 1,
+      view: 0,
+    })
+    const secondCollectionPage = await client.api.entries.list({
+      isCollection: true,
+      limit: 1,
+      publishedAfter: collectionCursor(firstCollectionPage.data[0]!.collections!.createdAt),
+      view: 0,
+    })
+    const thirdCollectionPage = await client.api.entries.list({
+      isCollection: true,
+      limit: 1,
+      publishedAfter: collectionCursor(secondCollectionPage.data[0]!.collections!.createdAt),
+      view: 0,
+    })
+    expect(
+      [...firstCollectionPage.data, ...secondCollectionPage.data].map((item) => item.entries.id),
+    ).toEqual([oldest!.id, newest!.id])
+    expect(thirdCollectionPage.data).toEqual([])
 
     const emptyList = await client.api.lists.create({
       title: "Empty list",

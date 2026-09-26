@@ -223,6 +223,10 @@ export class MemoryDataStore implements DataStore {
       collectionCreatedAt: Date | null
     }>
   > {
+    const orderTime = (entry: EntryRecord) =>
+      isCollection === true
+        ? this.collections.get(collectionKey(userId, entry.id))!.getTime()
+        : entry.publishedAt.getTime()
     const allowedFeeds = new Map(
       [...this.subscriptions.values()]
         .filter(
@@ -242,17 +246,15 @@ export class MemoryDataStore implements DataStore {
         (entry) => isCollection !== true || this.collections.has(collectionKey(userId, entry.id)),
       )
       .filter(
-        (entry) =>
-          publishedAfter === undefined || entry.publishedAt.getTime() > publishedAfter.getTime(),
+        (entry) => publishedAfter === undefined || orderTime(entry) > publishedAfter.getTime(),
       )
       .filter(
-        (entry) =>
-          publishedBefore === undefined || entry.publishedAt.getTime() < publishedBefore.getTime(),
+        (entry) => publishedBefore === undefined || orderTime(entry) < publishedBefore.getTime(),
       )
       .sort((left, right) =>
         sortOrder === "asc"
-          ? left.publishedAt.getTime() - right.publishedAt.getTime()
-          : right.publishedAt.getTime() - left.publishedAt.getTime(),
+          ? orderTime(left) - orderTime(right)
+          : orderTime(right) - orderTime(left),
       )
       .slice(0, limit)
       .map((entry) => ({
