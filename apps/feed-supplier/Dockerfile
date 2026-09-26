@@ -6,7 +6,9 @@ ENV COREPACK_HOME=/opt/corepack
 
 RUN mkdir -p "$COREPACK_HOME" /build \
   && corepack enable \
-  && corepack prepare pnpm@10.17.0 --activate \
+  && corepack prepare pnpm@12.5.1 --activate \
+  # pnpm 12 fetches its native binary on first run; do it before the cache becomes read-only.
+  && pnpm --version \
   && chmod -R a+rX "$COREPACK_HOME" \
   && chown -R node:node /build
 

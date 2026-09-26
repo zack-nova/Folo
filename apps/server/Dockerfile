@@ -6,13 +6,14 @@ ENV COREPACK_HOME=/opt/corepack
 
 RUN mkdir -p "$COREPACK_HOME" /build \
   && corepack enable \
-  && corepack prepare pnpm@10.17.0 --activate \
+  && corepack prepare pnpm@12.5.1 --activate \
+  # pnpm 12 fetches its native binary on first run; do it before the cache becomes read-only.
+  && pnpm --version \
   && chmod -R a+rX "$COREPACK_HOME" \
   && chown -R node:node /build
 
 WORKDIR /build
 COPY --chown=node:node apps/server/package.production.json ./package.json
-COPY --chown=node:node apps/server/.npmrc.production ./.npmrc
 COPY --chown=node:node apps/server/pnpm-workspace.production.yaml ./pnpm-workspace.yaml
 COPY --chown=node:node apps/server/pnpm-lock.production.yaml ./pnpm-lock.yaml
 COPY --chown=node:node patches/@mozilla__readability@0.6.0.patch ./patches/@mozilla__readability@0.6.0.patch

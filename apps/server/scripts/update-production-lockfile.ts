@@ -33,7 +33,6 @@ try {
       resolve(serverRoot, "package.production.json"),
       resolve(temporaryRoot, "package.json"),
     ),
-    copyFile(resolve(serverRoot, ".npmrc.production"), resolve(temporaryRoot, ".npmrc")),
     copyFile(
       resolve(serverRoot, "pnpm-workspace.production.yaml"),
       resolve(temporaryRoot, "pnpm-workspace.yaml"),

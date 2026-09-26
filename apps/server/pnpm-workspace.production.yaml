@@ -4,10 +4,13 @@ packages:
   - packages/feed-source-contracts
   - packages/readability
 
-ignorePatchFailures: false
+autoInstallPeers: false
+nodeLinker: isolated
+saveExact: true
+strictPeerDependencies: false
 
 overrides:
-  drizzle-orm: 0.45.2
+  drizzle-orm: 0.45.3
 
 patchedDependencies:
   "@mozilla/readability@0.6.0": patches/@mozilla__readability@0.6.0.patch
