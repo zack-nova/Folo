@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 
-import { FollowClient } from "@follow-app/client-sdk"
+import { FollowAPIError, FollowClient } from "@follow-app/client-sdk"
 import { memoryAdapter } from "better-auth/adapters/memory"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -161,6 +161,41 @@ describe("self-hosted reading loop", () => {
     })
     expect(firstPage.data[0]!.entries.title).toBe("Second entry")
     expect(secondPage.data[0]!.entries.title).toBe("First entry")
+
+    // The clients page newest-first timelines with `publishedAfter` as the cursor.
+    const clientSecondPage = await client.api.entries.list({
+      limit: 1,
+      publishedAfter: firstPage.data[0]!.entries.publishedAt,
+      view: 0,
+    })
+    expect(clientSecondPage.data.map((item) => item.entries.title)).toEqual(["First entry"])
+
+    // Oldest-first timelines page forward with `publishedBefore` as the cursor.
+    const oldestFirstPage = await client.api.entries.list({
+      limit: 1,
+      read: false,
+      sortOrder: "asc",
+      view: 0,
+    })
+    const oldestSecondPage = await client.api.entries.list({
+      limit: 1,
+      publishedBefore: oldestFirstPage.data[0]!.entries.publishedAt,
+      read: false,
+      sortOrder: "asc",
+      view: 0,
+    })
+    expect(oldestFirstPage.data.map((item) => item.entries.title)).toEqual(["First entry"])
+    expect(oldestSecondPage.data.map((item) => item.entries.title)).toEqual(["Second entry"])
+
+    // Without incremental sync the client sync engine needs a 404 to fall back to full refetches.
+    for (const request of [
+      () => client.api.sync.state(),
+      () => client.api.sync.delta({ lastSyncId: 0 }),
+    ]) {
+      const error = await request().catch((error: unknown) => error)
+      expect(error).toBeInstanceOf(FollowAPIError)
+      expect((error as FollowAPIError).status).toBe(404)
+    }
 
     const entryId = entries.data[0]!.entries.id
     const detail = await client.api.entries.get({ id: entryId })

@@ -132,6 +132,8 @@ export interface EntryListFilter {
   isCollection?: boolean
   publishedAfter?: Date
   publishedBefore?: Date
+  /** Order by publish time; newest first unless set to "asc". */
+  sortOrder?: "asc" | "desc"
   limit: number
 }
 

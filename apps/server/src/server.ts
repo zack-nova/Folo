@@ -2766,6 +2766,11 @@ export const buildServer = async ({
     const body = (request.body ?? {}) as Record<string, unknown>
     const aiSort = body.aiSort === true
     const requestedLimit = limitFromUnknown(body.limit, 20, 100)
+    const sortOrder = !aiSort && body.sortOrder === "asc" ? "asc" : "desc"
+    // The Folo API cursor is positional: clients send the last entry they saw as
+    // `publishedAfter` (newest first) or `publishedBefore` (oldest first), and expect
+    // the entries that follow it in the requested order.
+    const cursor = dateFromUnknown(body.publishedAfter) ?? dateFromUnknown(body.publishedBefore)
     let rows = await dataStore.listEntries({
       userId,
       view: numberFromUnknown(body.view),
@@ -2775,8 +2780,9 @@ export const buildServer = async ({
         : undefined,
       read: typeof body.read === "boolean" ? body.read : undefined,
       isCollection: body.isCollection === true,
-      publishedAfter: dateFromUnknown(body.publishedAfter),
-      publishedBefore: dateFromUnknown(body.publishedBefore),
+      ...(cursor &&
+        (sortOrder === "asc" ? { publishedAfter: cursor } : { publishedBefore: cursor })),
+      sortOrder,
       limit: aiSort ? 1_000 : requestedLimit,
     })
     if (aiSort) {
@@ -3103,6 +3109,11 @@ export const buildServer = async ({
 
   server.setNotFoundHandler((request, reply) => {
     const path = request.url.split("?", 1)[0] ?? request.url
+    // The client sync engine treats only a 404 on /sync as "no incremental sync" and falls
+    // back to full refetches; any other status aborts its bootstrap and keeps it retrying.
+    if (path === "/sync" || path.startsWith("/sync/")) {
+      return reply.status(404).send({ code: "not_found", message: "Route not found" })
+    }
     const capability =
       path.startsWith("/wallets") || path.startsWith("/billing")
         ? "billing_and_wallet"

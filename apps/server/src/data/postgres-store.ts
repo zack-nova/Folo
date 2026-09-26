@@ -291,6 +291,7 @@ export class PostgresDataStore implements DataStore {
     isCollection,
     publishedAfter,
     publishedBefore,
+    sortOrder,
     limit,
   }: EntryListFilter): Promise<
     Array<{
@@ -329,7 +330,7 @@ export class PostgresDataStore implements DataStore {
         and(eq(collections.entryId, entries.id), eq(collections.userId, userId)),
       )
       .where(and(...conditions))
-      .orderBy(desc(entries.publishedAt))
+      .orderBy(sortOrder === "asc" ? asc(entries.publishedAt) : desc(entries.publishedAt))
       .limit(limit)
 
     return rows.map((row) => ({

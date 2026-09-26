@@ -102,6 +102,23 @@ describe.runIf(databaseURL)("PostgreSQL authority", () => {
       expect.objectContaining({ feedId: created.feed!.id, userId: registration.json().user.id }),
     )
 
+    const pageEntries = async (query: Parameters<typeof client.api.entries.list>[0]) =>
+      (
+        await client.api.entries.list({ feedId: created.feed!.id, limit: 1, view: 0, ...query })
+      ).data.map((item) => item.entries)
+    const [newest] = await pageEntries({})
+    const [oldest] = await pageEntries({ read: false, sortOrder: "asc" })
+    expect(newest?.title).toBe("Second entry")
+    expect(oldest?.title).toBe("First entry")
+    expect(
+      (await pageEntries({ publishedAfter: newest!.publishedAt })).map((entry) => entry.title),
+    ).toEqual(["First entry"])
+    expect(
+      (
+        await pageEntries({ publishedBefore: oldest!.publishedAt, read: false, sortOrder: "asc" })
+      ).map((entry) => entry.title),
+    ).toEqual(["Second entry"])
+
     const emptyList = await client.api.lists.create({
       title: "Empty list",
       description: null,

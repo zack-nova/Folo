@@ -213,6 +213,7 @@ export class MemoryDataStore implements DataStore {
     isCollection,
     publishedAfter,
     publishedBefore,
+    sortOrder,
     limit,
   }: EntryListFilter): Promise<
     Array<{
@@ -248,7 +249,11 @@ export class MemoryDataStore implements DataStore {
         (entry) =>
           publishedBefore === undefined || entry.publishedAt.getTime() < publishedBefore.getTime(),
       )
-      .sort((left, right) => right.publishedAt.getTime() - left.publishedAt.getTime())
+      .sort((left, right) =>
+        sortOrder === "asc"
+          ? left.publishedAt.getTime() - right.publishedAt.getTime()
+          : right.publishedAt.getTime() - left.publishedAt.getTime(),
+      )
       .slice(0, limit)
       .map((entry) => ({
         entry: structuredClone(entry),
