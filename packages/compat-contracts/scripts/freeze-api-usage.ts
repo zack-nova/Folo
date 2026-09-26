@@ -347,18 +347,53 @@ const collectUsage = async (
   const routeSegments = allRoutes
     .map((route) => ({ route, segments: route.api.split(".") }))
     .sort((left, right) => right.segments.length - left.segments.length)
+  const sourceFileEntries = await Promise.all(
+    (await sourceFiles(repositoryRoot)).map(async (absoluteFile) => {
+      const file = relative(repositoryRoot, absoluteFile)
+      const source = await readFile(absoluteFile, "utf8")
+      return {
+        file,
+        sourceFile: ts.createSourceFile(
+          file,
+          source,
+          ts.ScriptTarget.Latest,
+          true,
+          file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+        ),
+      }
+    }),
+  )
+  const contextModules = new Map<string, string>()
+  const contextConsumers = new Map<string, string>()
 
-  for (const absoluteFile of await sourceFiles(repositoryRoot)) {
-    const file = relative(repositoryRoot, absoluteFile)
-    const source = await readFile(absoluteFile, "utf8")
-    const sourceFile = ts.createSourceFile(
-      file,
-      source,
-      ts.ScriptTarget.Latest,
-      true,
-      file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-    )
+  for (const { sourceFile } of sourceFileEntries) {
+    const visitContext = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) {
+        const chain = propertyChain(node.expression)
+        const module = node.arguments[0] && propertyChain(node.arguments[0])
+        if (
+          chain?.length === 2 &&
+          chain[0] !== undefined &&
+          chain[1] === "provide" &&
+          module?.length === 2 &&
+          module[0] === "followApi" &&
+          module[1] !== undefined &&
+          routeSegments.some(({ segments }) => segments[0] === module[1])
+        ) {
+          contextModules.set(chain[0], module[1])
+        }
+      } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+        const chain = propertyChain(node.initializer)
+        if (chain?.length === 2 && chain[0] !== undefined && chain[1] === "consumer") {
+          contextConsumers.set(node.name.text, chain[0])
+        }
+      }
+      ts.forEachChild(node, visitContext)
+    }
+    visitContext(sourceFile)
+  }
 
+  for (const { file, sourceFile } of sourceFileEntries) {
     const addCallsite = (collection: Map<string, FrozenCallsite[]>, key: string, node: ts.Node) => {
       const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
       const callsite = { file, line, target: targetForFile(file) }
@@ -372,8 +407,13 @@ const collectUsage = async (
     const visit = (node: ts.Node) => {
       if (ts.isCallExpression(node)) {
         const chain = propertyChain(node.expression)
-        if (chain) {
-          const matchedRoute = routeSegments.find(({ segments }) => chainEndsWith(chain, segments))
+        if (chain?.[0]) {
+          const context = contextConsumers.get(chain[0])
+          const module = context && contextModules.get(context)
+          const resolvedChain = module ? [module, ...chain.slice(1)] : chain
+          const matchedRoute = routeSegments.find(({ segments }) =>
+            chainEndsWith(resolvedChain, segments),
+          )
           const matchedBetterAuthRoute = betterAuthClientRoutes.find((route) =>
             route.callChains.some((callChain) => chainEndsWith(chain, callChain)),
           )

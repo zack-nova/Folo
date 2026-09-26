@@ -14,7 +14,13 @@ import {
 interface FrozenApiUsage {
   sdkVersion: string
   sdkCodeHash: string
-  routes: Array<{ api: string }>
+  routes: Array<{
+    api: string
+    method: string
+    path: string
+    remainingInputPlacement: string
+    callsites: Array<{ file: string; line: number; target: string }>
+  }>
   nonSdkRequests: Array<{ method: string; path: string }>
 }
 
@@ -114,6 +120,28 @@ describe("stage 0 baseline", () => {
 })
 
 describe("capability manifest", () => {
+  it("freezes the indirect incremental sync calls from shared store code", async () => {
+    const usage = await readJson<FrozenApiUsage>(join(contractsRoot, "api-usage.generated.json"))
+    const syncRoutes = usage.routes.filter((route) => route.api.startsWith("sync."))
+
+    expect(syncRoutes.map((route) => `${route.method} ${route.path}`)).toEqual([
+      "GET /sync/delta",
+      "GET /sync/state",
+    ])
+    for (const route of syncRoutes) {
+      expect(route.remainingInputPlacement).toBe("query")
+      expect(route.callsites.length).toBeGreaterThan(0)
+      expect(route.callsites).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            file: "packages/internal/store/src/sync/sync-engine.ts",
+            target: "shared",
+          }),
+        ]),
+      )
+    }
+  })
+
   it("classifies every production SDK and non-SDK request exactly once", async () => {
     const usage = await readJson<FrozenApiUsage>(join(contractsRoot, "api-usage.generated.json"))
     const manifest = await readJson<CapabilityManifest>(join(contractsRoot, "capabilities.json"))
@@ -134,7 +162,7 @@ describe("capability manifest", () => {
     const manifest = await readJson<CapabilityManifest>(join(contractsRoot, "capabilities.json"))
 
     expect(manifest.schemaVersion).toBe(5)
-    expect(manifest.compatibilityVersion).toBe("folo-client-sdk-0.3.95")
+    expect(manifest.compatibilityVersion).toBe("folo-client-sdk-0.3.96")
     expect(manifest.extensionContractVersion).toBe("feeds-agent-extensions-v5")
     expect(manifest.manifestEndpoint).toBe("/api/extensions/capabilities")
     expect(manifest.capabilities).toContainEqual(
@@ -182,6 +210,22 @@ describe("capability manifest", () => {
         id: "rsshub.hosted",
         provider: "unavailable",
         clientBehavior: "hidden",
+      }),
+    )
+    expect(manifest.capabilities).toContainEqual(
+      expect.objectContaining({
+        id: "sync.incremental",
+        targetStage: null,
+        provider: "unavailable",
+        clientBehavior: "hidden",
+        sdkApis: ["sync.delta", "sync.state"],
+      }),
+    )
+    expect(manifest.capabilities).toContainEqual(
+      expect.objectContaining({
+        id: "inboxes.core",
+        targetStage: 4,
+        sdkApis: expect.arrayContaining(["inboxes.get", "inboxes.list"]),
       }),
     )
     expect(manifest.capabilities.map((capability) => capability.id)).toHaveLength(

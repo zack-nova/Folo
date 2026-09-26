@@ -1,6 +1,6 @@
 {
   "schemaVersion": 5,
-  "compatibilityVersion": "folo-client-sdk-0.3.95",
+  "compatibilityVersion": "folo-client-sdk-0.3.96",
   "extensionContractVersion": "feeds-agent-extensions-v5",
   "manifestEndpoint": "/api/extensions/capabilities",
   "capabilities": [
@@ -298,9 +298,21 @@
         "entries.inbox.get",
         "entries.inbox.list",
         "inboxes.delete",
+        "inboxes.get",
+        "inboxes.list",
         "inboxes.post",
         "inboxes.put"
       ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "sync.incremental",
+      "title": "Incremental client synchronization",
+      "targetStage": null,
+      "provider": "unavailable",
+      "clientBehavior": "hidden",
+      "sdkApis": ["sync.delta", "sync.state"],
       "nonSdkRequests": [],
       "protocolRoutes": []
     },
@@ -544,17 +556,13 @@
       "targetStage": null,
       "provider": "unavailable",
       "clientBehavior": "hidden",
-      "sdkApis": [
-        "wallets.get",
-        "wallets.post",
-        "wallets.transactions.get",
-        "wallets.transactions.withdraw"
-      ],
+      "sdkApis": ["wallets.get", "wallets.transactions.get", "wallets.transactions.withdraw"],
       "nonSdkRequests": [
         "GET /billing/subscription",
         "POST /better-auth/subscription/upgrade",
         "POST /billing/apple/verify",
-        "POST /billing/portal"
+        "POST /billing/portal",
+        "POST /wallets"
       ],
       "protocolRoutes": []
     },
