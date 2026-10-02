@@ -47,24 +47,40 @@ const detail = z
     ignoreSelectors: z.array(z.string().min(1).max(512)).max(16).default([]),
   })
   .strict()
+// Field schemas without defaults: defaults belong to creation only, so a PATCH that omits a
+// field must leave the stored value alone instead of resetting it.
+const sourceFields = {
+  name: z.string().trim().min(1).max(128),
+  targetURL: z.string().trim().min(1).max(2048),
+  format: z.enum(["html", "json"]),
+  html: html.nullable(),
+  json: json.nullable(),
+  filters,
+  detail,
+  maxItems: z.number().int().min(1).max(100),
+  maxPages: z.number().int().min(1).max(10),
+  timeZone: z.string().min(1).max(64),
+  enabled: z.boolean(),
+  intervalMinutes: z.number().int().min(15).max(525600).nullable(),
+}
 export const webListCreateSchema = z
   .object({
-    name: z.string().trim().min(1).max(128),
-    targetURL: z.string().trim().min(1).max(2048),
-    format: z.enum(["html", "json"]),
-    html: html.nullable().optional(),
-    json: json.nullable().optional(),
-    filters: filters.prefault({}),
-    detail: detail.prefault({}),
-    maxItems: z.number().int().min(1).max(100).default(20),
-    maxPages: z.number().int().min(1).max(10).default(1),
-    timeZone: z.string().min(1).max(64).default("UTC"),
-    enabled: z.boolean().default(false),
-    intervalMinutes: z.number().int().min(15).max(525600).nullable().default(null),
+    ...sourceFields,
+    html: sourceFields.html.optional(),
+    json: sourceFields.json.optional(),
+    filters: sourceFields.filters.prefault({}),
+    detail: sourceFields.detail.prefault({}),
+    maxItems: sourceFields.maxItems.default(20),
+    maxPages: sourceFields.maxPages.default(1),
+    timeZone: sourceFields.timeZone.default("UTC"),
+    enabled: sourceFields.enabled.default(false),
+    intervalMinutes: sourceFields.intervalMinutes.default(null),
   })
   .strict()
-export const webListUpdateSchema = webListCreateSchema
+export const webListUpdateSchema = z
+  .object(sourceFields)
   .partial()
+  .strict()
   .refine((value) => Object.keys(value).length > 0, "At least one field is required")
 export type CreateWebListSourceInput = z.input<typeof webListCreateSchema>
 export type UpdateWebListSourceInput = z.input<typeof webListUpdateSchema>
