@@ -479,3 +479,63 @@ describe("self-owned source catalog", () => {
     await server.close()
   })
 })
+
+describe("owner catalog tests", () => {
+  it("tests a disabled template in managed_only mode without exposing it", async () => {
+    const upstream = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("<rss><channel><item><title>A</title></item></channel></rss>", {
+        headers: { "content-type": "application/rss+xml" },
+      }),
+    )
+    const server = await buildFeedSupplier({ config, fetchImplementation: upstream })
+    try {
+      const created = await server.inject({
+        headers: adminHeaders,
+        method: "POST",
+        payload: {
+          category: "Community",
+          enabled: false,
+          key: "community-topics",
+          parameters: [
+            { key: "type", label: "Type", location: "path", required: true, type: "string" },
+          ],
+          routePathTemplate: "/community/topics/:type",
+          title: "Community topics",
+        },
+        url: "/v1/admin/catalog/routes",
+      })
+      const routeId = created.json<{ route: { id: string } }>().route.id
+      const parameters = { parameters: { type: "hot" } }
+
+      const ownerTest = await server.inject({
+        headers: adminHeaders,
+        method: "POST",
+        payload: parameters,
+        url: `/v1/admin/catalog/routes/${routeId}/test`,
+      })
+      expect(ownerTest.statusCode, ownerTest.body).toBe(200)
+      expect(ownerTest.json()).toMatchObject({
+        logicalURL: "rsshub://community/topics/hot",
+        upstreamStatus: 200,
+      })
+      expect(String(upstream.mock.calls[0]?.[0])).toContain(
+        "http://rsshub:1200/community/topics/hot",
+      )
+
+      const internalTest = await server.inject({
+        headers: internalHeaders,
+        method: "POST",
+        payload: parameters,
+        url: `/v1/catalog/routes/${routeId}/test`,
+      })
+      expect(internalTest.statusCode).toBe(404)
+      const feed = await server.inject({
+        headers: internalHeaders,
+        url: `/v1/feeds/rsshub?url=${encodeURIComponent("rsshub://community/topics/hot")}`,
+      })
+      expect(feed.json()).toMatchObject({ code: "source_not_registered" })
+    } finally {
+      await server.close()
+    }
+  })
+})

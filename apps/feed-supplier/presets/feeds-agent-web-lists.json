@@ -5,6 +5,33 @@
   },
   "sources": [
     {
+      "key": "aihot-items",
+      "description": "AI HOT 精选条目。旧 /api/public/feed 已于 2026-09-28 停用，改用公开 API v1。",
+      "source": {
+        "name": "AI HOT 精选",
+        "targetURL": "https://aihot.news/api/v1/items?limit=50",
+        "maxItems": 50,
+        "timeZone": "UTC",
+        "detail": {
+          "enabled": false
+        },
+        "format": "json",
+        "json": {
+          "itemsPath": "items",
+          "titlePath": "title",
+          "urlPath": "links.aihot",
+          "idPath": "id",
+          "summaryPath": "summary",
+          "publishedAtPath": "publishedAt",
+          "metadataPaths": {
+            "来源": "source.name",
+            "原文": "links.original",
+            "分类": "category"
+          }
+        }
+      }
+    },
+    {
       "key": "china-gov-latest-policy-json",
       "description": "国务院及部门最新政策聚合 JSON，用于国家级政策查漏。",
       "source": {

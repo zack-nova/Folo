@@ -13,6 +13,7 @@ import { PostgresSupplierRepository } from "./postgres-repository"
 import { RedisSourceResponseCache } from "./redis-source-response-cache"
 import type { SupplierRepository } from "./repository"
 import { SourceCatalogService } from "./source-catalog"
+import type { ResolvedRssHubSource } from "./source-registry"
 import { SourceRegistry, SourceRegistryError } from "./source-registry"
 import type { CachedRssHubResponse, SourceResponseCache } from "./source-scaling"
 import {
@@ -194,8 +195,8 @@ export const buildFeedSupplier = async ({
     await repository.close()
   })
 
-  const upstreamURL = async (input: string) => {
-    const resolved = await registry.resolve(input)
+  const upstreamURL = async (input: string, preResolved?: ResolvedRssHubSource) => {
+    const resolved = preResolved ?? (await registry.resolve(input))
     const { source } = resolved
     const target = new URL(source.routePath.replace(/^\//, ""), baseURL)
     target.search = source.search
@@ -312,9 +313,11 @@ export const buildFeedSupplier = async ({
     }
   }
 
-  const testRoute = async (sourceURL: string) => {
+  // `preResolved` lets the owner test a template that registry resolution would not accept yet,
+  // such as a disabled catalog route.
+  const testRoute = async (sourceURL: string, preResolved?: ResolvedRssHubSource) => {
     try {
-      const { resolved, target, diagnosticURL } = await upstreamURL(sourceURL)
+      const { resolved, target, diagnosticURL } = await upstreamURL(sourceURL, preResolved)
       return await withScalingCapacity(resolved.policyKey, async () => {
         const response = await fetchUpstream(
           target,

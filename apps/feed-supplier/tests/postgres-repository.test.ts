@@ -88,6 +88,21 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
     })
     expect(catalogResponse.statusCode, catalogResponse.body).toBe(201)
     const catalogRouteId = catalogResponse.json<{ route: { id: string } }>().route.id
+    const disabledCatalog = await firstServer.inject({
+      headers,
+      method: "PATCH",
+      payload: { enabled: false },
+      url: `/v1/admin/catalog/routes/${catalogRouteId}`,
+    })
+    expect(disabledCatalog.statusCode, disabledCatalog.body).toBe(200)
+    expect(disabledCatalog.json<{ route: { enabled: boolean } }>().route.enabled).toBe(false)
+    const enabledCatalog = await firstServer.inject({
+      headers,
+      method: "PATCH",
+      payload: { enabled: true },
+      url: `/v1/admin/catalog/routes/${catalogRouteId}`,
+    })
+    expect(enabledCatalog.statusCode, enabledCatalog.body).toBe(200)
     const pageSourceResponse = await firstServer.inject({
       headers,
       method: "POST",

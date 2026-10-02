@@ -13,7 +13,7 @@ import type {
   SourceCatalogService,
   UpdateCatalogRouteInput,
 } from "./source-catalog"
-import type { SourceRegistry } from "./source-registry"
+import type { ResolvedRssHubSource, SourceRegistry } from "./source-registry"
 import { SourceRegistryError } from "./source-registry"
 import { SourceScalingError } from "./source-scaling"
 import type { WebListService } from "./web-list-service"
@@ -33,7 +33,7 @@ export interface RegisterSourceAdminRoutesOptions {
   webLists: WebListService
   pageChanges: PageChangeService
   server: FastifyInstance
-  testRoute: (sourceURL: string) => Promise<RouteTestResult>
+  testRoute: (sourceURL: string, preResolved?: ResolvedRssHubSource) => Promise<RouteTestResult>
 }
 
 const credentialName = z.string().trim().min(1).max(128)
@@ -297,10 +297,14 @@ export const registerSourceAdminRoutes = ({
       const parsed = catalogRender.safeParse(request.body)
       if (!parsed.success) return invalidBody(reply, parsed.error)
       try {
-        const rendered = await catalog.render(request.params.routeId, parsed.data.parameters)
-        const result = await testRoute(rendered.logicalURL)
+        // Owners may test a disabled template before enabling it.
+        const { logicalURL, resolved } = await catalog.prepareTest(
+          request.params.routeId,
+          parsed.data.parameters,
+        )
+        const result = await testRoute(logicalURL, resolved)
         await catalog.recordTest(request.params.routeId, actorFor(request), true)
-        return { ...result, ...rendered }
+        return { ...result, logicalURL }
       } catch (error) {
         await catalog.recordTest(request.params.routeId, actorFor(request), false)
         return handleAdminError(error, reply)

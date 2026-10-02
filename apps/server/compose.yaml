@@ -97,6 +97,11 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # Platform credentials (TWITTER_AUTH_TOKEN, cookies, API keys) only reach RSSHub. The file is
+    # optional because RSSHub treats an empty variable as configured.
+    env_file:
+      - path: ${RSSHUB_ENV_FILE:-../feed-supplier/.env.rsshub}
+        required: false
     environment:
       CACHE_TYPE: redis
       NODE_ENV: production
