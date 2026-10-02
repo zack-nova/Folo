@@ -297,7 +297,7 @@ folo_web_list_sources_due <count>
   停用模板；核心使用的内部目录接口和 Feed 读取仍只接受启用模板。
 - 平台凭据（`TWITTER_AUTH_TOKEN`、Cookie、API Key）是 RSSHub 自身配置，通过可选 `env_file` 只交给 RSSHub 容器；
   它们不进入核心、供给端数据库或浏览器。需要浏览器的路由要求 chromium-bundled 镜像。
-- 旧核心中仍启用的 68 个订阅导出为 OPML，旧 `group` 成为 Folo 分类；网页列表源在导出时按名称解析为实际的
+- 订阅清单（仓库外的本地预设）导出为 OPML，旧 `group` 成为 Folo 分类；网页列表源在导出时按名称解析为实际的
   `weblist://` 地址。核心 OPML 导入现在接受经过校验的 `rsshub://`、`pagechange://` 和 `weblist://` 地址，
   未配置供给端时这些条目会出现在导入失败列表中；属性中的 `&amp;` 等预定义实体会被解码，DOCTYPE 实体仍不展开。
 

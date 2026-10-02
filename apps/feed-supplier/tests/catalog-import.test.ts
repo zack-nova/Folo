@@ -11,6 +11,7 @@ import {
 import { parseWebListPreset } from "../src/web-list-import"
 
 const preset = (name: string) => readFile(new URL(`../presets/${name}`, import.meta.url), "utf8")
+const fixture = (name: string) => readFile(new URL(`fixtures/${name}`, import.meta.url), "utf8")
 
 const route = (key: string, template = `/example/${key}`) => ({
   route: {
@@ -154,26 +155,22 @@ describe("RSSHub catalog import", () => {
   })
 })
 
-describe("Feeds Agent subscription export", () => {
-  it("maps every enabled subscription to a subscribable address", async () => {
-    const subscriptions = parseSubscriptionPreset(await preset("feeds-agent-subscriptions.json"))
-    const webLists = parseWebListPreset(await preset("feeds-agent-web-lists.json"))
+describe("subscription export", () => {
+  it("maps every subscription to a subscribable address", async () => {
+    const subscriptions = parseSubscriptionPreset(await fixture("subscriptions.example.json"))
+    const webLists = parseWebListPreset(await fixture("web-lists.example.json"))
     const listKeys = new Set(webLists.entries.map((entry) => entry.key))
 
-    expect(subscriptions.subscriptions).toHaveLength(68)
-    expect(
-      subscriptions.subscriptions.filter(
-        (subscription) =>
-          "url" in subscription && subscription.url.startsWith("rsshub://twitter/user/"),
-      ),
-    ).toHaveLength(26)
+    expect(subscriptions.subscriptions.map((subscription) => subscription.key)).toEqual([
+      "example-blog",
+      "example-x-user",
+      "example-notices",
+      "example-items",
+    ])
     for (const subscription of subscriptions.subscriptions) {
       if ("webList" in subscription) expect(listKeys.has(subscription.webList)).toBe(true)
     }
-    expect(subscriptions.skipped.map((entry) => entry.key)).toEqual([
-      "icj-rss",
-      "wechat-ai-minjiezhe",
-    ])
+    expect(subscriptions.skipped.map((entry) => entry.key)).toEqual(["example-retired"])
   })
 
   it("resolves web lists by name on the supplier and reports the rest", async () => {
@@ -188,17 +185,17 @@ describe("Feeds Agent subscription export", () => {
             title: "Blog & Notes",
             url: "https://example.com/feed.xml",
           },
-          { category: "政治社会", key: "ndrc", title: "发改委", webList: "ndrc-policy-notices" },
-          { category: "政治社会", key: "moe", title: "教育部", webList: "moe-latest-documents" },
+          { category: "政治社会", key: "notices", title: "通知", webList: "example-html-notices" },
+          { category: "政治社会", key: "items", title: "列表", webList: "example-json-list" },
         ],
       }),
     )
-    const webLists = parseWebListPreset(await preset("feeds-agent-web-lists.json"))
-    const ndrc = webLists.entries.find((entry) => entry.key === "ndrc-policy-notices")!
+    const webLists = parseWebListPreset(await fixture("web-lists.example.json"))
+    const notices = webLists.entries.find((entry) => entry.key === "example-html-notices")!
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValueOnce(
       Response.json({
         sources: [
-          { feedURL: "weblist://5f0c1d7e-2a8b-4c3d-9e1f-0a2b3c4d5e6f", name: ndrc.input.name },
+          { feedURL: "weblist://5f0c1d7e-2a8b-4c3d-9e1f-0a2b3c4d5e6f", name: notices.input.name },
         ],
       }),
     )
@@ -214,7 +211,7 @@ describe("Feeds Agent subscription export", () => {
       "weblist://5f0c1d7e-2a8b-4c3d-9e1f-0a2b3c4d5e6f",
     ])
     expect(unresolved).toEqual([
-      expect.objectContaining({ key: "moe", reason: expect.stringContaining("does not exist") }),
+      expect.objectContaining({ key: "items", reason: expect.stringContaining("does not exist") }),
     ])
     const opml = renderSubscriptionOpml(resolved, "Feeds Agent")
     expect(opml).toContain('<outline text="AI" title="AI">')
@@ -224,11 +221,14 @@ describe("Feeds Agent subscription export", () => {
 
   it("leaves web lists out when no supplier token is given", async () => {
     const { resolved, unresolved } = await resolveSubscriptions(
-      parseSubscriptionPreset(await preset("feeds-agent-subscriptions.json")),
-      parseWebListPreset(await preset("feeds-agent-web-lists.json")),
+      parseSubscriptionPreset(await fixture("subscriptions.example.json")),
+      parseWebListPreset(await fixture("web-lists.example.json")),
       null,
     )
-    expect(resolved).toHaveLength(50)
-    expect(unresolved).toHaveLength(18)
+    expect(resolved.map((item) => item.url)).toEqual([
+      "https://blog.example.com/feed.xml",
+      "rsshub://twitter/user/example",
+    ])
+    expect(unresolved).toHaveLength(2)
   })
 })

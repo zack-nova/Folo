@@ -193,18 +193,19 @@ FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
 路径），只保留填写了值的行：RSSHub 会把空字符串当作已配置。两个 Compose 文件都以可选 `env_file` 读取它，重启 RSSHub
 后重跑带 `--enable` 的导入即可启用之前留下的停用模板。
 
-[`presets/feeds-agent-subscriptions.json`](./presets/feeds-agent-subscriptions.json) 把旧 Feeds Agent 中仍启用的 68 个订阅
-映射为 Folo 可订阅地址，并用旧 `group` 作为 Folo 分类：23 个 HTTPS 与 1 个 HTTP RSS、26 个 `rsshub://twitter/user/…`、
-18 个网页列表源。先导入网页列表预设，再导出 OPML，在 Folo“导入 OPML”中导入：
+订阅清单同样保存在仓库外的本地预设文件中，格式见
+[`tests/fixtures/subscriptions.example.json`](./tests/fixtures/subscriptions.example.json)：每个订阅写明 Folo
+分类，以及 `url`（HTTP(S)、`rsshub://`、`pagechange://`）或引用网页列表预设 `key` 的 `webList`。先导入网页列表
+预设，再导出 OPML，在 Folo“导入 OPML”中导入：
 
 ```bash
 FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
-  pnpm --filter @follow/feed-supplier sources:export:opml --out feeds-agent.opml
+  pnpm --filter @follow/feed-supplier sources:export:opml \
+  --subscriptions ~/presets/subscriptions.json --web-lists ~/presets/web-lists.json --out subscriptions.opml
 ```
 
 网页列表条目按名称在供给端查到实际的 `weblist://` 地址；尚未创建的来源会被列出并以非零退出码提示。X 订阅在配置
-`TWITTER_AUTH_TOKEN` 前导入会出现在 OPML 导入结果的失败列表中，配置后重新导入即可。未迁移：ICJ RSS（已 404）和
-微信公众号“Ai敏捷者”（RSSHub 公众号路由需要 biz ID 且有反爬限制）。旧配置中西北大学的三个来源没有分组，迁移后归入“高校”。
+`TWITTER_AUTH_TOKEN` 前导入会出现在 OPML 导入结果的失败列表中，配置后重新导入即可。
 
 ## 生产规模化
 

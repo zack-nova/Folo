@@ -1,0 +1,30 @@
+{
+  "description": "Example subscription preset. Real presets list personal subscriptions: keep them outside the repository.",
+  "subscriptions": [
+    {
+      "key": "example-blog",
+      "title": "Example Blog",
+      "category": "Reading",
+      "url": "https://blog.example.com/feed.xml"
+    },
+    {
+      "key": "example-x-user",
+      "title": "Example on X",
+      "category": "Reading",
+      "url": "rsshub://twitter/user/example"
+    },
+    {
+      "key": "example-notices",
+      "title": "Example notices",
+      "category": "Notices",
+      "webList": "example-html-notices"
+    },
+    {
+      "key": "example-items",
+      "title": "Example JSON list",
+      "category": "Notices",
+      "webList": "example-json-list"
+    }
+  ],
+  "skipped": [{ "key": "example-retired", "reason": "The feed returns 404" }]
+}
