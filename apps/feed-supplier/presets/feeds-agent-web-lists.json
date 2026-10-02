@@ -14,14 +14,19 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#UCAP-CONTENT"]
+          "contentSelectors": [
+            "#UCAP-CONTENT"
+          ]
         },
         "format": "json",
         "json": {
           "itemsPath": "",
           "titlePath": "TITLE",
           "urlPath": "URL",
-          "publishedAtPath": "DOCRELPUBTIME"
+          "publishedAtPath": "DOCRELPUBTIME",
+          "metadataPaths": {
+            "副标题": "SUB_TITLE"
+          }
         }
       }
     },
@@ -35,7 +40,10 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#con_con", ".ccontent"]
+          "contentSelectors": [
+            "#con_con",
+            ".ccontent"
+          ]
         },
         "format": "json",
         "json": {
@@ -43,7 +51,14 @@
           "titlePath": "title",
           "urlPath": "url",
           "publishedAtPath": "deploytime",
-          "publishedAtFormat": "unix_milliseconds"
+          "publishedAtFormat": "unix_milliseconds",
+          "metadataPaths": {
+            "文号": "filenumbername",
+            "发文机关": "publishgroupname",
+            "文件类型": "typename",
+            "主题": "themename",
+            "栏目": "columnname"
+          }
         }
       }
     },
@@ -57,7 +72,10 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": [".detail", ".txt"]
+          "contentSelectors": [
+            ".detail",
+            ".txt"
+          ]
         },
         "format": "json",
         "json": {
@@ -65,7 +83,11 @@
           "titlePath": "title",
           "urlTemplate": "https://zjtx.miit.gov.cn/zxqySy/tzggView?id={id}",
           "publishedAtPath": "fbsj",
-          "idPath": "id"
+          "idPath": "id",
+          "metadataPaths": {
+            "通知类型": "fblx",
+            "发布单位": "llrjgmc"
+          }
         }
       }
     },
@@ -79,7 +101,10 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#detail-editor", "#downloadContent"]
+          "contentSelectors": [
+            "#detail-editor",
+            "#downloadContent"
+          ]
         },
         "format": "html",
         "html": {
@@ -97,7 +122,10 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": [".detail .article", ".article"]
+          "contentSelectors": [
+            ".detail .article",
+            ".article"
+          ]
         },
         "format": "html",
         "html": {
@@ -115,10 +143,15 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": [".article_con", ".TRS_Editor"]
+          "contentSelectors": [
+            ".article_con",
+            ".TRS_Editor"
+          ]
         },
         "filters": {
-          "includeURLPatterns": ["/xxgk/zcfb/tz/"]
+          "includeURLPatterns": [
+            "/xxgk/zcfb/tz/"
+          ]
         },
         "format": "html",
         "html": {
@@ -136,12 +169,22 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": [".gb_detail-article", ".TRS_Editor", ".article"]
+          "contentSelectors": [
+            ".gb_detail-article",
+            ".TRS_Editor",
+            ".article"
+          ]
         },
         "filters": {
-          "includeURLPatterns": ["/zfxxgk/zfgb/"],
-          "excludeURLPatterns": ["\\.pdf$"],
-          "excludeTextPatterns": ["英文目录"]
+          "includeURLPatterns": [
+            "/zfxxgk/zfgb/"
+          ],
+          "excludeURLPatterns": [
+            "\\.pdf$"
+          ],
+          "excludeTextPatterns": [
+            "英文目录"
+          ]
         },
         "format": "html",
         "html": {
@@ -159,10 +202,16 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": [".news-detail", ".TRS_Editor", ".article"]
+          "contentSelectors": [
+            ".news-detail",
+            ".TRS_Editor",
+            ".article"
+          ]
         },
         "filters": {
-          "includeURLPatterns": ["/zfxxgk/fdzdgknr/zcwj/"]
+          "includeURLPatterns": [
+            "/zfxxgk/fdzdgknr/zcwj/"
+          ]
         },
         "format": "html",
         "html": {
@@ -186,7 +235,9 @@
           "includeURLPatterns": [
             "/world-development-indicators/release-note/[a-z]+-[0-9]{4}\\.html$"
           ],
-          "includeTextPatterns": ["Quarterly Update"]
+          "includeTextPatterns": [
+            "Quarterly Update"
+          ]
         },
         "format": "html",
         "html": {
@@ -204,7 +255,10 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#vsb_content", ".v_news_content"]
+          "contentSelectors": [
+            "#vsb_content",
+            ".v_news_content"
+          ]
         },
         "format": "html",
         "html": {
@@ -224,10 +278,16 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#article", ".m-txt-article", ".article"]
+          "contentSelectors": [
+            "#article",
+            ".m-txt-article",
+            ".article"
+          ]
         },
         "filters": {
-          "includeURLPatterns": ["/gk/zcfg/gfxwj/bmgfxwj/"]
+          "includeURLPatterns": [
+            "/gk/zcfg/gfxwj/bmgfxwj/"
+          ]
         },
         "format": "html",
         "html": {
@@ -245,10 +305,16 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#article", ".m-txt-article", ".article"]
+          "contentSelectors": [
+            "#article",
+            ".m-txt-article",
+            ".article"
+          ]
         },
         "filters": {
-          "includeURLPatterns": ["/gk/zcfg/zcwj/xaszfwj/"]
+          "includeURLPatterns": [
+            "/gk/zcfg/zcwj/xaszfwj/"
+          ]
         },
         "format": "html",
         "html": {
@@ -267,10 +333,16 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#zfgb_lst", ".m-lst", "#article"]
+          "contentSelectors": [
+            "#zfgb_lst",
+            ".m-lst",
+            "#article"
+          ]
         },
         "filters": {
-          "includeURLPatterns": ["/gk/zfgb/"]
+          "includeURLPatterns": [
+            "/gk/zfgb/"
+          ]
         },
         "format": "html",
         "html": {
@@ -288,10 +360,16 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#article", ".m-txt-article", ".article"]
+          "contentSelectors": [
+            "#article",
+            ".m-txt-article",
+            ".article"
+          ]
         },
         "filters": {
-          "includeURLPatterns": ["/gk/zcfg/gfxwj/zfgfxwj/"]
+          "includeURLPatterns": [
+            "/gk/zcfg/gfxwj/zfgfxwj/"
+          ]
         },
         "format": "html",
         "html": {
@@ -309,7 +387,11 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#article", ".m-txt-article", ".article"]
+          "contentSelectors": [
+            "#article",
+            ".m-txt-article",
+            ".article"
+          ]
         },
         "format": "json",
         "json": {
@@ -331,7 +413,10 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#vsb_content", ".v_news_content"]
+          "contentSelectors": [
+            "#vsb_content",
+            ".v_news_content"
+          ]
         },
         "format": "html",
         "html": {
@@ -349,7 +434,10 @@
         "timeZone": "Asia/Shanghai",
         "detail": {
           "enabled": true,
-          "contentSelectors": ["#vsb_content", ".v_news_content"]
+          "contentSelectors": [
+            "#vsb_content",
+            ".v_news_content"
+          ]
         },
         "format": "html",
         "html": {

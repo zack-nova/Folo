@@ -117,6 +117,7 @@ describe("web list pure extraction", () => {
     const html = `<ul><li><a href="/wrong">other</a><a class="notice" href="../one#fragment" title="Notice complete title">Notice...</a><span class="summary">Summary</span><time>2026/09/01</time></li><li><a class="notice" href="/one">Notice duplicate</a></li><li><a class="notice" href="/skip">Notice skip</a></li><li><a class="notice" href="/draft">Notice Draft</a></li><li><a class="notice" href="javascript:alert(1)">Notice unsafe</a></li><li><a class="notice" href="mailto:x@example.com">Notice email</a></li></ul>`
     expect(extractHTMLList(html, source, source.targetURL, now).items).toEqual([
       {
+        metadata: [],
         title: "Notice complete title",
         summary: "Summary",
         url: "https://example.com/one",
@@ -372,7 +373,7 @@ describe("safe list fetching", () => {
     await expect(fetcher.fetch(source)).rejects.toMatchObject({ code: "page_private_address" })
     expect(
       await fetcher.detail(
-        { title: "A", url, identity: url, publishedAt: null, summary: null },
+        { metadata: [], title: "A", url, identity: url, publishedAt: null, summary: null },
         source,
       ),
     ).toMatchObject({ detailStatus: "failed" })
@@ -580,7 +581,7 @@ describe("web list state machine", () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(initial)
     vi.spyOn(fetcher, "detail").mockImplementation(async (item) => {
       clock.mockReturnValue(initial + 61000)
-      return { title: item.title, content: "<p>A</p>", detailStatus: "fetched" }
+      return { title: item.title, content: "<p>A</p>", detailStatus: "fetched", publishedAt: null }
     })
     try {
       const source = await service.createSource({ ...input, detail: { enabled: true } }, "test")

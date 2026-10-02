@@ -13,6 +13,10 @@ import {
 } from "./web-list-extraction"
 import type { StoredWebListSource } from "./web-list-repository"
 
+export interface WebListDetail extends Pick<WebListItem, "content" | "detailStatus" | "title"> {
+  /** Publication date found on the detail page, used when the list had none. */
+  publishedAt: string | null
+}
 export interface WebListFetchResult {
   items: ExtractedListItem[]
   finalURL: string
@@ -119,8 +123,14 @@ export class WebListFetcher {
   async detail(
     item: ExtractedListItem,
     source: WebListSource,
-  ): Promise<Pick<WebListItem, "content" | "detailStatus" | "title">> {
-    const skipped = { title: item.title, content: null, detailStatus: "skipped" as const }
+    now = new Date(),
+  ): Promise<WebListDetail> {
+    const skipped = {
+      title: item.title,
+      content: null,
+      detailStatus: "skipped" as const,
+      publishedAt: null,
+    }
     // Government lists often link straight to PDF or Office attachments; never download them.
     if (attachmentPath.test(new URL(item.url).pathname)) return skipped
     try {
@@ -134,12 +144,17 @@ export class WebListFetcher {
       )
       const type = response.headers.get("content-type")?.toLowerCase() ?? ""
       if (!isHTMLContentType(type)) return skipped
-      return {
-        ...extractDetail(decodeBody(response.bytes, type), source, response.finalURL, item.title),
-        detailStatus: "fetched",
-      }
+      const { content, publishedAt, title } = extractDetail(
+        decodeBody(response.bytes, type),
+        source,
+        response.finalURL,
+        item.title,
+        undefined,
+        { metadata: item.metadata, now },
+      )
+      return { content, detailStatus: "fetched", publishedAt, title }
     } catch {
-      return { title: item.title, content: null, detailStatus: "failed" }
+      return { title: item.title, content: null, detailStatus: "failed", publishedAt: null }
     }
   }
   async waitForOrigin(url: string, lastRequests: Map<string, number>): Promise<void> {
