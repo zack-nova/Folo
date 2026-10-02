@@ -11,6 +11,7 @@ next-env.d.ts
 .env.*
 !.env.example
 !.env.production.example
+!.env.rsshub.example
 
 # Sentry Config File
 .env.sentry-build-plugin

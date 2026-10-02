@@ -36,13 +36,15 @@ describe("Feeds Agent web list preset", () => {
   it("validates all migrated sources with the admin API rules", () => {
     const preset = parseWebListPreset(presetText)
 
-    expect(preset.entries).toHaveLength(17)
+    expect(preset.entries).toHaveLength(18)
     expect(preset.intervalMinutes).toBe(360)
-    expect(preset.entries.filter((entry) => entry.input.format === "json")).toHaveLength(4)
+    expect(preset.entries.filter((entry) => entry.input.format === "json")).toHaveLength(5)
     expect(preset.entries.every((entry) => entry.input.enabled === false)).toBe(true)
     expect(
       preset.entries.every(
-        (entry) => entry.input.timeZone === "Asia/Shanghai" || entry.key.startsWith("world-bank"),
+        (entry) =>
+          entry.input.timeZone === "Asia/Shanghai" ||
+          ["aihot-", "world-bank-"].some((prefix) => entry.key.startsWith(prefix)),
       ),
     ).toBe(true)
   })

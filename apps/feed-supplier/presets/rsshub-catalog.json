@@ -1,0 +1,337 @@
+{
+  "description": "RSSHub route templates for the platforms the Feeds Agent supplier collected. Verified against diygod/rsshub@sha256:eda756a26478e94a34155748f8c6fe7030f3fe8ade30544ed53d4984bef4051e (2026-10-01). Import with scripts/import-catalog-routes.ts.",
+  "routes": [
+    {
+      "route": {
+        "key": "twitter-user",
+        "title": "X 用户时间线",
+        "category": "社交媒体",
+        "routePathTemplate": "/twitter/user/:id",
+        "parameters": [
+          {
+            "key": "id",
+            "label": "用户名",
+            "location": "path",
+            "required": true,
+            "type": "string",
+            "description": "不带 @ 的 X 用户名"
+          }
+        ],
+        "description": "需要在 .env.rsshub 中为 RSSHub 配置 TWITTER_AUTH_TOKEN。",
+        "documentationURL": "https://docs.rsshub.app/routes/twitter"
+      },
+      "testParameters": {
+        "id": "OpenAI"
+      }
+    },
+    {
+      "route": {
+        "key": "v2ex-topics",
+        "title": "V2EX 最热 / 最新主题",
+        "category": "社区",
+        "routePathTemplate": "/v2ex/topics/:type",
+        "parameters": [
+          {
+            "key": "type",
+            "label": "类型",
+            "location": "path",
+            "required": true,
+            "type": "enum",
+            "options": [
+              {
+                "label": "最热",
+                "value": "hot"
+              },
+              {
+                "label": "最新",
+                "value": "latest"
+              }
+            ]
+          }
+        ],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/v2ex"
+      },
+      "testParameters": {
+        "type": "hot"
+      }
+    },
+    {
+      "route": {
+        "key": "v2ex-tab",
+        "title": "V2EX 标签",
+        "category": "社区",
+        "routePathTemplate": "/v2ex/tab/:tabid",
+        "parameters": [
+          {
+            "key": "tabid",
+            "label": "标签 ID",
+            "location": "path",
+            "required": true,
+            "type": "string",
+            "description": "如 tech、creative、play"
+          }
+        ],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/v2ex"
+      },
+      "testParameters": {
+        "tabid": "tech"
+      }
+    },
+    {
+      "route": {
+        "key": "zhihu-hot",
+        "title": "知乎热榜",
+        "category": "社区",
+        "routePathTemplate": "/zhihu/hot",
+        "parameters": [],
+        "description": "可在 .env.rsshub 中配置 ZHIHU_COOKIES 提高稳定性。",
+        "documentationURL": "https://docs.rsshub.app/routes/zhihu"
+      },
+      "testParameters": {}
+    },
+    {
+      "route": {
+        "key": "zhihu-pin-hotlist",
+        "title": "知乎想法热榜",
+        "category": "社区",
+        "routePathTemplate": "/zhihu/pin/hotlist",
+        "parameters": [],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/zhihu"
+      },
+      "testParameters": {}
+    },
+    {
+      "route": {
+        "key": "zhihu-daily",
+        "title": "知乎日报",
+        "category": "社区",
+        "routePathTemplate": "/zhihu/daily",
+        "parameters": [],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/zhihu"
+      },
+      "testParameters": {}
+    },
+    {
+      "route": {
+        "key": "wallstreetcn-hot",
+        "title": "华尔街见闻最热文章",
+        "category": "财经",
+        "routePathTemplate": "/wallstreetcn/hot",
+        "parameters": [],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/wallstreetcn"
+      },
+      "testParameters": {}
+    },
+    {
+      "route": {
+        "key": "wallstreetcn-live",
+        "title": "华尔街见闻实时快讯",
+        "category": "财经",
+        "routePathTemplate": "/wallstreetcn/live",
+        "parameters": [],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/wallstreetcn"
+      },
+      "testParameters": {}
+    },
+    {
+      "route": {
+        "key": "cls-telegraph",
+        "title": "财联社电报",
+        "category": "财经",
+        "routePathTemplate": "/cls/telegraph",
+        "parameters": [],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/cls"
+      },
+      "testParameters": {}
+    },
+    {
+      "route": {
+        "key": "cls-hot",
+        "title": "财联社热门文章",
+        "category": "财经",
+        "routePathTemplate": "/cls/hot",
+        "parameters": [],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/cls"
+      },
+      "testParameters": {}
+    },
+    {
+      "route": {
+        "key": "cls-depth",
+        "title": "财联社深度",
+        "category": "财经",
+        "routePathTemplate": "/cls/depth",
+        "parameters": [],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/cls"
+      },
+      "testParameters": {}
+    },
+    {
+      "route": {
+        "key": "xueqiu-stock-info",
+        "title": "雪球股票信息",
+        "category": "财经",
+        "routePathTemplate": "/xueqiu/stock_info/:id",
+        "parameters": [
+          {
+            "key": "id",
+            "label": "股票代码",
+            "location": "path",
+            "required": true,
+            "type": "string",
+            "description": "如 SH000001、AAPL"
+          }
+        ],
+        "description": "需要 RSSHub chromium-bundled 镜像（RSSHUB_IMAGE）。2026-10-01 的 RSSHub 镜像实测因站点反爬返回空结果，导入时会保持停用。",
+        "documentationURL": "https://docs.rsshub.app/routes/xueqiu"
+      },
+      "testParameters": {
+        "id": "SH000001"
+      }
+    },
+    {
+      "route": {
+        "key": "xueqiu-stock-comments",
+        "title": "雪球股票评论",
+        "category": "财经",
+        "routePathTemplate": "/xueqiu/stock_comments/:id",
+        "parameters": [
+          {
+            "key": "id",
+            "label": "股票代码",
+            "location": "path",
+            "required": true,
+            "type": "string",
+            "description": "如 SH000001、AAPL"
+          }
+        ],
+        "description": "需要 RSSHub chromium-bundled 镜像（RSSHUB_IMAGE）。2026-10-01 的 RSSHub 镜像实测因站点反爬返回空结果，导入时会保持停用。",
+        "documentationURL": "https://docs.rsshub.app/routes/xueqiu"
+      },
+      "testParameters": {
+        "id": "SH000001"
+      }
+    },
+    {
+      "route": {
+        "key": "github-repos",
+        "title": "GitHub 用户仓库",
+        "category": "开发",
+        "routePathTemplate": "/github/repos/:user",
+        "parameters": [
+          {
+            "key": "user",
+            "label": "用户或组织",
+            "location": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/github"
+      },
+      "testParameters": {
+        "user": "DIYgod"
+      }
+    },
+    {
+      "route": {
+        "key": "github-topics",
+        "title": "GitHub 主题",
+        "category": "开发",
+        "routePathTemplate": "/github/topics/:name",
+        "parameters": [
+          {
+            "key": "name",
+            "label": "主题",
+            "location": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "description": null,
+        "documentationURL": "https://docs.rsshub.app/routes/github"
+      },
+      "testParameters": {
+        "name": "rss"
+      }
+    },
+    {
+      "route": {
+        "key": "bilibili-user-video",
+        "title": "B 站 UP 主投稿",
+        "category": "视频",
+        "routePathTemplate": "/bilibili/user/video/:uid",
+        "parameters": [
+          {
+            "key": "uid",
+            "label": "UP 主 UID",
+            "location": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "description": "需要 RSSHub chromium-bundled 镜像（RSSHUB_IMAGE）。",
+        "documentationURL": "https://docs.rsshub.app/routes/bilibili"
+      },
+      "testParameters": {
+        "uid": "2"
+      }
+    },
+    {
+      "route": {
+        "key": "bilibili-hot-search",
+        "title": "B 站热搜",
+        "category": "视频",
+        "routePathTemplate": "/bilibili/hot-search",
+        "parameters": [],
+        "description": "需要 RSSHub chromium-bundled 镜像（RSSHUB_IMAGE）。",
+        "documentationURL": "https://docs.rsshub.app/routes/bilibili"
+      },
+      "testParameters": {}
+    },
+    {
+      "route": {
+        "key": "bilibili-video-search",
+        "title": "B 站视频搜索",
+        "category": "视频",
+        "routePathTemplate": "/bilibili/vsearch/:kw",
+        "parameters": [
+          {
+            "key": "kw",
+            "label": "关键词",
+            "location": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "description": "需要在 .env.rsshub 中为 RSSHub 配置 BILIBILI_COOKIE_<uid>。",
+        "documentationURL": "https://docs.rsshub.app/routes/bilibili"
+      },
+      "testParameters": {
+        "kw": "OpenAI"
+      }
+    },
+    {
+      "route": {
+        "key": "weibo-hot-search",
+        "title": "微博热搜榜",
+        "category": "社交媒体",
+        "routePathTemplate": "/weibo/search/hot",
+        "parameters": [],
+        "description": "需要 RSSHub chromium-bundled 镜像（RSSHUB_IMAGE）。可选在 .env.rsshub 中配置 WEIBO_COOKIES。",
+        "documentationURL": "https://docs.rsshub.app/routes/weibo"
+      },
+      "testParameters": {}
+    }
+  ]
+}

@@ -148,7 +148,7 @@ curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
 ## 迁移 Feeds Agent 列表源
 
 [`presets/feeds-agent-web-lists.json`](./presets/feeds-agent-web-lists.json) 保存从旧 Feeds Agent
-`config/supplier/sources` 迁移的 17 个列表源（13 个 HTML 列表、4 个列表 JSON）。
+`config/supplier/sources` 迁移的 18 个列表源（13 个 HTML 列表、5 个列表 JSON，含改用公开 API v1 的 AI HOT 精选）。
 导入脚本默认只校验预设并与供给端已有来源（按名称）比较，不写入任何数据：
 
 ```bash
@@ -169,6 +169,48 @@ FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
 - `www.nwu.edu.cn` 通知列表使用 `h3` 标题和院系摘要，避免日期数字混入标题。
 - 工信部政策接口的 `request.query` 已写入目标 URL；`metadata_paths` 转为带中文显示名的 `json.metadataPaths`。
 - 国内来源使用 `Asia/Shanghai`，世界银行来源使用 `UTC`。
+
+## 平台源目录与订阅迁移
+
+[`presets/rsshub-catalog.json`](./presets/rsshub-catalog.json) 是旧 Feeds Agent 平台采集对应的 19 个自建 RSSHub
+目录模板（X 用户、V2EX、知乎、华尔街见闻、财联社、雪球、GitHub、B 站、微博），已对照
+`diygod/rsshub@sha256:eda756a2…`（2026-10-01）的路由清单逐个核对。导入方式与网页列表源一致，默认只校验和比较：
+
+```bash
+FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
+  pnpm --filter @follow/feed-supplier sources:import:catalog --apply --enable
+```
+
+`--apply` 以停用状态创建缺失模板；`--enable` 会在模板仍停用时用预设样例参数做一次真实连接测试，只有测试通过才启用，
+失败的模板保持停用并以非零退出码提示。管理接口 `POST /v1/admin/catalog/routes/:routeId/test` 可以测试停用模板，
+内部令牌的目录接口与 Feed 读取仍只接受启用模板。
+
+部分路由需要 RSSHub 自身的配置，这些凭据只进入 RSSHub 容器，核心和供给端都不读取：
+
+| 模板                                                             | 需要                                                                                                                  |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `twitter-user`                                                   | `TWITTER_AUTH_TOKEN`                                                                                                  |
+| `bilibili-video-search`                                          | `BILIBILI_COOKIE_<uid>`                                                                                               |
+| `bilibili-user-video`、`bilibili-hot-search`、`weibo-hot-search` | chromium-bundled 镜像（`RSSHUB_IMAGE=diygod/rsshub@sha256:cacaf98a…`，2026-10-01 实测可用）；微博可选 `WEIBO_COOKIES` |
+| `xueqiu-*`                                                       | chromium-bundled 镜像；2026-10-01 实测因站点反爬仍返回空结果，导入时保持停用                                          |
+| `zhihu-hot`                                                      | 可选 `ZHIHU_COOKIES`，提高稳定性                                                                                      |
+
+复制 [`.env.rsshub.example`](./.env.rsshub.example) 为 `apps/feed-supplier/.env.rsshub`（或用 `RSSHUB_ENV_FILE` 指向其他
+路径），只保留填写了值的行：RSSHub 会把空字符串当作已配置。两个 Compose 文件都以可选 `env_file` 读取它，重启 RSSHub
+后重跑带 `--enable` 的导入即可启用之前留下的停用模板。
+
+[`presets/feeds-agent-subscriptions.json`](./presets/feeds-agent-subscriptions.json) 把旧 Feeds Agent 中仍启用的 68 个订阅
+映射为 Folo 可订阅地址，并用旧 `group` 作为 Folo 分类：23 个 HTTPS 与 1 个 HTTP RSS、26 个 `rsshub://twitter/user/…`、
+18 个网页列表源。先导入网页列表预设，再导出 OPML，在 Folo“导入 OPML”中导入：
+
+```bash
+FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
+  pnpm --filter @follow/feed-supplier sources:export:opml --out feeds-agent.opml
+```
+
+网页列表条目按名称在供给端查到实际的 `weblist://` 地址；尚未创建的来源会被列出并以非零退出码提示。X 订阅在配置
+`TWITTER_AUTH_TOKEN` 前导入会出现在 OPML 导入结果的失败列表中，配置后重新导入即可。未迁移：ICJ RSS（已 404）和
+微信公众号“Ai敏捷者”（RSSHub 公众号路由需要 biz ID 且有反爬限制）。旧配置中西北大学的三个来源没有分组，迁移后归入“高校”。
 
 ## 生产规模化
 
