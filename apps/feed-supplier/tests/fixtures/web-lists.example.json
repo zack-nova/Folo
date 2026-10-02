@@ -1,0 +1,38 @@
+{
+  "description": "Example web list preset. Real presets list personal sources: keep them outside the repository.",
+  "defaults": { "intervalMinutes": 360 },
+  "sources": [
+    {
+      "key": "example-html-notices",
+      "description": "An HTML notice list with detail pages.",
+      "source": {
+        "name": "Example notices",
+        "targetURL": "https://www.example.org/notices/",
+        "format": "html",
+        "html": { "itemSelector": ".notice-list li" },
+        "filters": { "includeURLPatterns": ["/notices/"] },
+        "detail": { "enabled": true, "contentSelectors": [".article"] },
+        "maxItems": 20,
+        "timeZone": "Asia/Shanghai"
+      }
+    },
+    {
+      "key": "example-json-list",
+      "description": "A JSON list API without detail pages.",
+      "source": {
+        "name": "Example JSON list",
+        "targetURL": "https://api.example.org/items?limit=20",
+        "format": "json",
+        "json": {
+          "itemsPath": "items",
+          "titlePath": "title",
+          "urlPath": "url",
+          "publishedAtPath": "publishedAt"
+        },
+        "detail": { "enabled": false },
+        "maxItems": 20,
+        "timeZone": "UTC"
+      }
+    }
+  ]
+}

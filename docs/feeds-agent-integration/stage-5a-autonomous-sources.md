@@ -283,10 +283,9 @@ folo_web_list_sources_due <count>
 
 第一版不支持 JavaScript 渲染、登录 Cookie、自定义请求头和 POST 接口。
 
-旧 Feeds Agent 的 17 个政务、高校与国际组织列表源已转换为
-[`apps/feed-supplier/presets/feeds-agent-web-lists.json`](../../apps/feed-supplier/presets/feeds-agent-web-lists.json)，
-通过 `pnpm sources:import:web-lists` 先停用创建、逐个预览，再只启用预览成功的来源。迁移时已按站点现状修正
-两个改版的西安来源和西北大学通知标题；旧清洗脚本中的文号、发文机关等元数据、正文日期与页面杂项清理已迁移。
+批量来源通过仓库外的本地预设文件导入（来源清单属于个人信息，与 AI 用户画像一样不进入仓库），
+`pnpm sources:import:web-lists <preset.json>` 先停用创建、逐个预览，再只启用预览成功的来源；格式见
+`apps/feed-supplier/tests/fixtures/web-lists.example.json`。
 
 ## 5A.7 平台源目录与订阅迁移
 
@@ -298,7 +297,7 @@ folo_web_list_sources_due <count>
   停用模板；核心使用的内部目录接口和 Feed 读取仍只接受启用模板。
 - 平台凭据（`TWITTER_AUTH_TOKEN`、Cookie、API Key）是 RSSHub 自身配置，通过可选 `env_file` 只交给 RSSHub 容器；
   它们不进入核心、供给端数据库或浏览器。需要浏览器的路由要求 chromium-bundled 镜像。
-- 旧核心中仍启用的 68 个订阅导出为 OPML，旧 `group` 成为 Folo 分类；网页列表源在导出时按名称解析为实际的
+- 订阅清单（仓库外的本地预设）导出为 OPML，旧 `group` 成为 Folo 分类；网页列表源在导出时按名称解析为实际的
   `weblist://` 地址。核心 OPML 导入现在接受经过校验的 `rsshub://`、`pagechange://` 和 `weblist://` 地址，
   未配置供给端时这些条目会出现在导入失败列表中；属性中的 `&amp;` 等预定义实体会被解码，DOCTYPE 实体仍不展开。
 

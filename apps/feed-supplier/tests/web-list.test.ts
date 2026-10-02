@@ -969,7 +969,7 @@ describe("web list JSON text fields", () => {
       JSON.stringify([
         {
           summary: "<p>公示  期五日 &amp; 欢迎监督</p>",
-          title: "西安市生态环境保护委员会办公室<br/>关于申报名单的公示",
+          title: "市生态环境保护委员会办公室<br/>关于申报名单的公示",
           url: "/xw/gsgg/1.html",
         },
       ]),
@@ -978,7 +978,7 @@ describe("web list JSON text fields", () => {
     )
     expect(item).toMatchObject({
       summary: "公示 期五日 & 欢迎监督",
-      title: "西安市生态环境保护委员会办公室 关于申报名单的公示",
+      title: "市生态环境保护委员会办公室 关于申报名单的公示",
     })
   })
 })
@@ -989,13 +989,13 @@ describe("web list detail containers", () => {
       detail: { enabled: true, contentSelectors: ["#vsb_content", ".v_news_content"] },
     })
     const result = extractDetail(
-      '<html><body><form name="_newscontent_fromname"><div class="nav">首页 学校概况</div><div id="vsb_content"><div class="v_news_content"><p>第一届西北大学中亚研究青年学者论坛将于十月举行。</p><input type="hidden" value="x"></div></div></form></body></html>',
+      '<html><body><form name="_newscontent_fromname"><div class="nav">首页 学校概况</div><div id="vsb_content"><div class="v_news_content"><p>第一届区域与国别研究青年学者论坛将于本月下旬举行。</p><input type="hidden" value="x"></div></div></form></body></html>',
       source,
-      "https://www.nwu.edu.cn/info/1227/22448.htm",
+      "https://www.example.edu/info/1227/22448.htm",
       "论坛通知",
     )
     expect(result.content).toBe(
-      "<div><p>第一届西北大学中亚研究青年学者论坛将于十月举行。</p></div>",
+      "<div><p>第一届区域与国别研究青年学者论坛将于本月下旬举行。</p></div>",
     )
   })
 })
