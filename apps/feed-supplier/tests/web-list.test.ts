@@ -1011,3 +1011,55 @@ describe("web list detail form controls", () => {
     expect(result.content).not.toContain("留言")
   })
 })
+
+describe("web list partial updates", () => {
+  it("changes only the fields a PATCH sends", async () => {
+    const config = loadFeedSupplierConfig({
+      INTERNAL_TOKEN: "internal-supplier-token-0000000000000000",
+      NODE_ENV: "test",
+    })
+    const { repository, fetcher } = setup(vi.fn<typeof fetch>())
+    const server = await buildFeedSupplier({
+      config,
+      repository,
+      webListFetcher: fetcher,
+      fetchImplementation: vi.fn<typeof fetch>().mockImplementation(async () => new Response("ok")),
+    })
+    const headers = { authorization: `Bearer ${config.adminToken}` }
+    try {
+      const created = await server.inject({
+        headers,
+        method: "POST",
+        payload: {
+          ...input,
+          detail: { contentSelectors: [".TRS_Editor"], enabled: true },
+          filters: { includeURLPatterns: ["/notices/"] },
+          html: { itemSelector: ".list li" },
+          maxItems: 15,
+          timeZone: "Asia/Shanghai",
+        },
+        url: "/v1/admin/web-list-sources",
+      })
+      const before = created.json().source
+      const patched = await server.inject({
+        headers,
+        method: "PATCH",
+        payload: { enabled: true, intervalMinutes: 360 },
+        url: `/v1/admin/web-list-sources/${before.id}`,
+      })
+
+      expect(patched.statusCode).toBe(200)
+      expect(patched.json().source).toMatchObject({
+        detail: { contentSelectors: [".TRS_Editor"], enabled: true, ignoreSelectors: [] },
+        enabled: true,
+        filters: before.filters,
+        html: before.html,
+        intervalMinutes: 360,
+        maxItems: 15,
+        timeZone: "Asia/Shanghai",
+      })
+    } finally {
+      await server.close()
+    }
+  })
+})
