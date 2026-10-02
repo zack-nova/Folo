@@ -145,30 +145,24 @@ curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
 相关配置：`WEB_LIST_FETCH_TIMEOUT_MS`、`WEB_LIST_FETCH_MAX_BYTES`、`WEB_LIST_REQUEST_DELAY_MS`、
 `WEB_LIST_SCHEDULER_POLL_INTERVAL_MS`。
 
-## 迁移 Feeds Agent 列表源
+## 批量导入网页列表源
 
-[`presets/feeds-agent-web-lists.json`](./presets/feeds-agent-web-lists.json) 保存从旧 Feeds Agent
-`config/supplier/sources` 迁移的 18 个列表源（13 个 HTML 列表、5 个列表 JSON，含改用公开 API v1 的 AI HOT 精选）。
-导入脚本默认只校验预设并与供给端已有来源（按名称）比较，不写入任何数据：
+批量来源保存在仓库外的本地预设文件中：来源清单属于个人信息，与 AI 用户画像一样不进入仓库。格式见
+[`tests/fixtures/web-lists.example.json`](./tests/fixtures/web-lists.example.json)，每个 `source` 与管理接口的创建
+请求相同。导入脚本默认只校验预设并与供给端已有来源（按名称）比较，不写入任何数据：
 
 ```bash
 FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
-  pnpm --filter @follow/feed-supplier sources:import:web-lists
+  pnpm --filter @follow/feed-supplier sources:import:web-lists /path/to/web-lists.json
 ```
 
 `--apply` 以停用状态创建缺失来源，并对每个新来源执行一次带详情的 `test` 预览；再加 `--enable` 时，只有预览
-抽取到条目的来源才会启用并按预设 `intervalMinutes`（6 小时）调度。预览失败或抽取为空的来源保持停用并以
+抽取到条目、且详情页抓取成功的来源才会启用并按预设 `intervalMinutes` 调度。预览失败或抽取为空的来源保持停用并以
 非零退出码提示，修正后重跑带 `--enable` 的命令即可启用之前留下的停用来源。`--only key1,key2` 只处理指定来源。
 
-相对旧 YAML 的差异：
-
-- 旧清洗脚本的 `body_selectors` 转为 `detail.contentSelectors`；西北大学来源使用 `nwu_notice.py` 中写死的
-  `#vsb_content`、`.v_news_content`。
-- `xian-gov-documents` 的列表已迁到 `/gk/zcfg/zcwj/xaszfwj/`，改用 `.table .table-tr` 并把发文字号作为摘要。
-- `xian-gov-public-notices` 的页面改由 `/xw/gsgg/pages/1.json` 动态加载，预设直接读取该 JSON。
-- `www.nwu.edu.cn` 通知列表使用 `h3` 标题和院系摘要，避免日期数字混入标题。
-- 工信部政策接口的 `request.query` 已写入目标 URL；`metadata_paths` 转为带中文显示名的 `json.metadataPaths`。
-- 国内来源使用 `Asia/Shanghai`，世界银行来源使用 `UTC`。
+从旧 Feeds Agent 转换时，旧清洗脚本的 `body_selectors` 对应 `detail.contentSelectors`，JSON 接口的
+`request.query` 直接写入目标 URL，`metadata_paths` 对应带显示名的 `json.metadataPaths`；站点改版后需要按当前
+页面结构修正选择器，并先用 `test` 预览确认。
 
 ## 平台源目录与订阅迁移
 

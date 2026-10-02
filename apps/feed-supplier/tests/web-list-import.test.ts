@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 import { importWebListPreset, parseWebListPreset } from "../src/web-list-import"
 
 const presetText = await readFile(
-  new URL("../presets/feeds-agent-web-lists.json", import.meta.url),
+  new URL("fixtures/web-lists.example.json", import.meta.url),
   "utf8",
 )
 
@@ -32,21 +32,17 @@ const smallPreset = (names: string[]) =>
     })),
   })
 
-describe("Feeds Agent web list preset", () => {
-  it("validates all migrated sources with the admin API rules", () => {
+describe("web list preset", () => {
+  it("validates preset sources with the admin API rules and creates them disabled", () => {
     const preset = parseWebListPreset(presetText)
 
-    expect(preset.entries).toHaveLength(18)
+    expect(preset.entries.map((entry) => entry.key)).toEqual([
+      "example-html-notices",
+      "example-json-list",
+    ])
     expect(preset.intervalMinutes).toBe(360)
-    expect(preset.entries.filter((entry) => entry.input.format === "json")).toHaveLength(5)
     expect(preset.entries.every((entry) => entry.input.enabled === false)).toBe(true)
-    expect(
-      preset.entries.every(
-        (entry) =>
-          entry.input.timeZone === "Asia/Shanghai" ||
-          ["aihot-", "world-bank-"].some((prefix) => entry.key.startsWith(prefix)),
-      ),
-    ).toBe(true)
+    expect(preset.entries.map((entry) => entry.input.format)).toEqual(["html", "json"])
   })
 
   it("rejects invalid and duplicate entries before contacting the supplier", () => {
