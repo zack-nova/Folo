@@ -96,6 +96,11 @@ const serverEnvironment = z
     FEED_POLL_INTERVAL_MS: integer(15 * 60 * 1000, 60_000),
     FEED_POLL_CONCURRENCY: integer(4, 1).pipe(z.number().max(32)),
     FEED_RETRY_BASE_DELAY_MS: integer(60_000, 1_000),
+    // Optional token that lets the owner manage web list sources through the core.
+    FEED_SUPPLIER_MANAGEMENT_TOKEN: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().min(32).optional(),
+    ),
     FEED_SUPPLIER_TOKEN: z.string().min(32).optional(),
     FEED_SUPPLIER_URL: internalServiceURL.optional(),
     HOST: z.string().default("0.0.0.0"),
@@ -128,6 +133,23 @@ const serverEnvironment = z
         code: "custom",
         message: "FEED_SUPPLIER_URL and FEED_SUPPLIER_TOKEN must be configured together",
         path: [environment.FEED_SUPPLIER_URL ? "FEED_SUPPLIER_TOKEN" : "FEED_SUPPLIER_URL"],
+      })
+    }
+    if (environment.FEED_SUPPLIER_MANAGEMENT_TOKEN && !environment.FEED_SUPPLIER_URL) {
+      context.addIssue({
+        code: "custom",
+        message: "FEED_SUPPLIER_MANAGEMENT_TOKEN requires FEED_SUPPLIER_URL",
+        path: ["FEED_SUPPLIER_MANAGEMENT_TOKEN"],
+      })
+    }
+    if (
+      environment.FEED_SUPPLIER_MANAGEMENT_TOKEN &&
+      environment.FEED_SUPPLIER_MANAGEMENT_TOKEN === environment.FEED_SUPPLIER_TOKEN
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "FEED_SUPPLIER_MANAGEMENT_TOKEN must differ from FEED_SUPPLIER_TOKEN",
+        path: ["FEED_SUPPLIER_MANAGEMENT_TOKEN"],
       })
     }
     if (environment.NODE_ENV !== "production") return
@@ -257,6 +279,10 @@ export const loadServerConfig = (environment: NodeJS.ProcessEnv) => {
     feedSupplierConfig:
       parsed.FEED_SUPPLIER_URL && parsed.FEED_SUPPLIER_TOKEN
         ? { baseURL: parsed.FEED_SUPPLIER_URL, token: parsed.FEED_SUPPLIER_TOKEN }
+        : undefined,
+    webListManagementConfig:
+      parsed.FEED_SUPPLIER_URL && parsed.FEED_SUPPLIER_MANAGEMENT_TOKEN
+        ? { baseURL: parsed.FEED_SUPPLIER_URL, token: parsed.FEED_SUPPLIER_MANAGEMENT_TOKEN }
         : undefined,
     host: parsed.HOST,
     metricsToken: parsed.METRICS_TOKEN,

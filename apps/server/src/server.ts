@@ -13,6 +13,7 @@ import {
   RSSHUB_SELF_HOSTED_CAPABILITY,
   SOURCE_ROUTE_CATALOG_CAPABILITY,
   WEB_LIST_CAPABILITY,
+  WEB_LIST_MANAGEMENT_CAPABILITY,
 } from "@follow/feed-source-contracts"
 import { readabilityFromHTML } from "@follow-app/readability"
 import { fromNodeHeaders } from "better-auth/node"
@@ -49,6 +50,8 @@ import type { FeedFetcher } from "./feeds/importer"
 import { FeedImporter } from "./feeds/importer"
 import type { refreshSubscribedFeeds } from "./feeds/scheduler"
 import { startFeedScheduler } from "./feeds/scheduler"
+import type { WebListManagementClient } from "./feeds/web-list-management"
+import { WebListManagementError } from "./feeds/web-list-management"
 import { exportOpml, parseOpml } from "./opml"
 import {
   contentHash,
@@ -85,6 +88,7 @@ export interface BuildServerOptions {
   processingWorkerPollIntervalMs?: number
   serverURL?: string
   sourceCatalogClient?: SourceCatalogClient
+  webListManagementClient?: WebListManagementClient
   /** Addresses, CIDR ranges or proxy-addr presets whose forwarding headers are trusted */
   trustProxy?: readonly string[]
   uploadsDirectory?: string
@@ -359,6 +363,7 @@ export const buildServer = async ({
   processingWorkerPollIntervalMs,
   serverURL = "http://localhost:3000",
   sourceCatalogClient,
+  webListManagementClient,
   trustProxy = [],
   uploadsDirectory = "./data/uploads",
 }: BuildServerOptions) => {
@@ -928,6 +933,7 @@ export const buildServer = async ({
     const webListSourcesEnabled =
       feedFetcher?.supports?.("weblist://8bd44f7a-84d2-4b0c-b052-3cdacbfc3919") === true
     const sourceCatalogEnabled = sourceCatalogClient !== undefined
+    const webListManagementEnabled = webListManagementClient !== undefined && webListSourcesEnabled
     const autonomousSourcesEnabled =
       rssHubSourcesEnabled ||
       pageChangeSourcesEnabled ||
@@ -941,6 +947,7 @@ export const buildServer = async ({
             (capability.id === RSSHUB_SELF_HOSTED_CAPABILITY && rssHubSourcesEnabled) ||
             (capability.id === PAGE_CHANGE_CAPABILITY && pageChangeSourcesEnabled) ||
             (capability.id === WEB_LIST_CAPABILITY && webListSourcesEnabled) ||
+            (capability.id === WEB_LIST_MANAGEMENT_CAPABILITY && webListManagementEnabled) ||
             (capability.id === SOURCE_ROUTE_CATALOG_CAPABILITY && sourceCatalogEnabled)),
       )
       .map((capability) => ({ id: capability.id, provider: "local" as const }))
@@ -1043,6 +1050,100 @@ export const buildServer = async ({
       },
     )
   }
+
+  const webListOwnerAction = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    action: (client: WebListManagementClient, actor: string) => Promise<unknown>,
+  ) => {
+    const owner = await catalogOwnerSession(request)
+    if (owner.error) return catalogOwnerError(owner.error, reply)
+    if (!webListManagementClient) {
+      return reply.status(503).send({
+        code: "web_list_management_unavailable",
+        message: "Web list management is not configured",
+      })
+    }
+    try {
+      // The supplier audit log records the owner's account ID, never profile details.
+      return {
+        code: 0,
+        data: await action(webListManagementClient, `folo-owner ${owner.session.user.id}`),
+      }
+    } catch (error) {
+      // Validation and conflict errors are meant for the owner; anything else may carry
+      // supplier internals, so it is logged here and replaced by a fixed message.
+      if (error instanceof WebListManagementError && error.status >= 400 && error.status < 500) {
+        return reply.status(error.status).send({ code: error.code, message: error.message })
+      }
+      request.log.warn({ err: error }, "Web list management request failed")
+      return reply.status(502).send({
+        code: "web_list_management_unavailable",
+        message: "The feed supplier could not complete the web list request",
+      })
+    }
+  }
+  const webListBody = (request: FastifyRequest): unknown =>
+    isRecord(request.body) ? request.body : {}
+
+  server.get("/api/extensions/sources/web-lists", async (request, reply) =>
+    webListOwnerAction(request, reply, async (client, actor) => ({
+      sources: await client.list(actor),
+    })),
+  )
+  server.post("/api/extensions/sources/web-lists", async (request, reply) =>
+    webListOwnerAction(request, reply, async (client, actor) => ({
+      source: await client.create(actor, webListBody(request)),
+    })),
+  )
+  server.get<{ Params: { sourceId: string } }>(
+    "/api/extensions/sources/web-lists/:sourceId",
+    async (request, reply) =>
+      webListOwnerAction(request, reply, async (client, actor) => ({
+        source: await client.get(actor, request.params.sourceId),
+      })),
+  )
+  server.patch<{ Params: { sourceId: string } }>(
+    "/api/extensions/sources/web-lists/:sourceId",
+    async (request, reply) =>
+      webListOwnerAction(request, reply, async (client, actor) => ({
+        source: await client.update(actor, request.params.sourceId, webListBody(request)),
+      })),
+  )
+  server.delete<{ Params: { sourceId: string } }>(
+    "/api/extensions/sources/web-lists/:sourceId",
+    async (request, reply) =>
+      webListOwnerAction(request, reply, async (client, actor) => {
+        await client.delete(actor, request.params.sourceId)
+        return { deleted: true }
+      }),
+  )
+  server.post<{ Params: { sourceId: string }; Querystring: { detail?: string } }>(
+    "/api/extensions/sources/web-lists/:sourceId/test",
+    async (request, reply) =>
+      webListOwnerAction(request, reply, (client, actor) =>
+        client.test(actor, request.params.sourceId, request.query.detail === "true"),
+      ),
+  )
+  server.post<{ Params: { sourceId: string } }>(
+    "/api/extensions/sources/web-lists/:sourceId/check",
+    async (request, reply) =>
+      webListOwnerAction(request, reply, (client, actor) =>
+        client.check(actor, request.params.sourceId),
+      ),
+  )
+  server.get<{ Params: { sourceId: string }; Querystring: { limit?: string } }>(
+    "/api/extensions/sources/web-lists/:sourceId/items",
+    async (request, reply) => {
+      const limit = Number(request.query.limit ?? 20)
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        return reply.status(400).send({ code: "invalid_request", message: "limit must be 1-100" })
+      }
+      return webListOwnerAction(request, reply, async (client, actor) => ({
+        items: await client.items(actor, request.params.sourceId, limit),
+      }))
+    },
+  )
 
   server.get("/api/extensions/operations/status", async (request, reply) => {
     const session = await authenticatedSession(request.headers)

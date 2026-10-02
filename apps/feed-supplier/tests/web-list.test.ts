@@ -1064,3 +1064,116 @@ describe("web list partial updates", () => {
     }
   })
 })
+
+describe("web list management token", () => {
+  const managementToken = "management-supplier-token-00000000000000"
+  const build = async (environment: Record<string, string>) => {
+    const config = loadFeedSupplierConfig({
+      INTERNAL_TOKEN: "internal-supplier-token-0000000000000000",
+      NODE_ENV: "test",
+      ...environment,
+    })
+    const { repository, fetcher } = setup(vi.fn<typeof fetch>())
+    const server = await buildFeedSupplier({
+      config,
+      repository,
+      webListFetcher: fetcher,
+      fetchImplementation: vi.fn<typeof fetch>().mockImplementation(async () => new Response("ok")),
+    })
+    return { config, server }
+  }
+  const bearer = (token: string) => ({ authorization: `Bearer ${token}` })
+
+  it("manages web list sources and nothing else", async () => {
+    const { config, server } = await build({ MANAGEMENT_TOKEN: managementToken })
+    try {
+      const created = await server.inject({
+        headers: { ...bearer(managementToken), "x-folo-actor": "folo-owner" },
+        method: "POST",
+        payload: input,
+        url: "/v1/manage/web-list-sources",
+      })
+      expect(created.statusCode, created.body).toBe(201)
+      const { id } = created.json<{ source: { id: string } }>().source
+      expect(
+        (
+          await server.inject({
+            headers: bearer(managementToken),
+            method: "PATCH",
+            payload: { enabled: true, intervalMinutes: 360 },
+            url: `/v1/manage/web-list-sources/${id}`,
+          })
+        ).json(),
+      ).toMatchObject({ source: { enabled: true, html: { itemSelector: null } } })
+      const audit = await server.inject({
+        headers: bearer(config.adminToken),
+        url: "/v1/admin/audit",
+      })
+      expect(audit.json()).toMatchObject({
+        events: expect.arrayContaining([
+          expect.objectContaining({ action: "web_list_source.created", actor: "folo-owner" }),
+        ]),
+      })
+
+      for (const url of ["/v1/admin/web-list-sources", "/v1/admin/credentials", "/v1/providers"]) {
+        expect((await server.inject({ headers: bearer(managementToken), url })).statusCode).toBe(
+          401,
+        )
+      }
+      for (const token of [config.adminToken, config.internalToken]) {
+        expect(
+          (await server.inject({ headers: bearer(token), url: "/v1/manage/web-list-sources" }))
+            .statusCode,
+        ).toBe(401)
+      }
+    } finally {
+      await server.close()
+    }
+  })
+
+  it("does not expose management routes without a management token", async () => {
+    const { config, server } = await build({})
+    try {
+      expect(
+        (
+          await server.inject({
+            headers: bearer(config.internalToken),
+            url: "/v1/manage/web-list-sources",
+          })
+        ).statusCode,
+      ).toBe(404)
+    } finally {
+      await server.close()
+    }
+  })
+
+  it("rejects a production management token that reuses another secret", () => {
+    expect(() =>
+      loadFeedSupplierConfig({
+        ADMIN_TOKEN: "admin-supplier-secret-abcdefghijklmnopqrst",
+        AUDIT_HMAC_KEY: Buffer.alloc(32, 9).toString("base64"),
+        CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 8).toString("base64"),
+        DATABASE_URL: "postgresql://supplier:secret@db:5432/supplier",
+        INTERNAL_TOKEN: "internal-supplier-secret-abcdefghijklmnop",
+        MANAGEMENT_TOKEN: "admin-supplier-secret-abcdefghijklmnopqrst",
+        NODE_ENV: "production",
+        REDIS_URL: "redis://redis:6379/1",
+        RSSHUB_ACCESS_KEY: "rsshub-access-secret-abcdefghij",
+      }),
+    ).toThrow("MANAGEMENT_TOKEN must differ")
+  })
+})
+
+describe("web list management token separation", () => {
+  it("rejects a reused management token outside production too", () => {
+    for (const reused of ["ADMIN_TOKEN", "INTERNAL_TOKEN"] as const) {
+      const environment = {
+        ADMIN_TOKEN: "admin-supplier-token-0000000000000000000000",
+        INTERNAL_TOKEN: "internal-supplier-token-0000000000000000",
+      }
+      expect(() =>
+        loadFeedSupplierConfig({ ...environment, MANAGEMENT_TOKEN: environment[reused] }),
+      ).toThrow("MANAGEMENT_TOKEN must differ")
+    }
+  })
+})

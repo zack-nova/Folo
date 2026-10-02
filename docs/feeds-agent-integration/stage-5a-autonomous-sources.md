@@ -302,6 +302,26 @@ folo_web_list_sources_due <count>
   `weblist://` 地址。核心 OPML 导入现在接受经过校验的 `rsshub://`、`pagechange://` 和 `weblist://` 地址，
   未配置供给端时这些条目会出现在导入失败列表中；属性中的 `&amp;` 等预定义实体会被解码，DOCTYPE 实体仍不展开。
 
+## 5A.8 所有者管理网页列表源
+
+配置 `FEED_SUPPLIER_MANAGEMENT_TOKEN`（供给端读取同一值为 `MANAGEMENT_TOKEN`）后，核心宣告
+`sources.web_list_management`，桌面端“设置 → 数据源”显示网页列表源管理：列表与状态、新建/编辑全部抽取与调度
+字段、带详情的连接测试、立即检查、最近条目、启停、删除、复制 `weblist://` 地址和直接订阅。决策见 ADR-0032。
+
+```text
+GET    /api/extensions/sources/web-lists
+POST   /api/extensions/sources/web-lists
+GET    /api/extensions/sources/web-lists/:sourceId
+PATCH  /api/extensions/sources/web-lists/:sourceId
+DELETE /api/extensions/sources/web-lists/:sourceId
+POST   /api/extensions/sources/web-lists/:sourceId/test?detail=true
+POST   /api/extensions/sources/web-lists/:sourceId/check
+GET    /api/extensions/sources/web-lists/:sourceId/items?limit=20
+```
+
+这些接口只接受实例所有者会话。管理令牌只能访问供给端 `/v1/manage/web-list-sources`，不能读取凭据、目录绑定、
+审计或 Feed；核心对供给端响应做严格 schema 校验后再返回浏览器。未配置管理令牌时行为与 5A.6 相同。
+
 ## 配置与启动
 
 本地最小闭环：

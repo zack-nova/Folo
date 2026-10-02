@@ -101,6 +101,11 @@ const supplierEnvironment = z
     DATABASE_URL: postgresURL.optional(),
     HOST: z.string().default("0.0.0.0"),
     INTERNAL_TOKEN: z.string().min(32),
+    // Optional third token held by the Folo core to manage web list sources for the owner.
+    MANAGEMENT_TOKEN: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().min(32).optional(),
+    ),
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
     WEB_LIST_FETCH_TIMEOUT_MS: integer(15_000, 1_000).pipe(z.number().max(60_000)),
     WEB_LIST_FETCH_MAX_BYTES: integer(5 * 1024 * 1024, 1_024),
@@ -125,6 +130,20 @@ const supplierEnvironment = z
     RSSHUB_ROUTE_RATE_LIMIT_WINDOW_SECONDS: integer(60, 1).pipe(z.number().max(3_600)),
   })
   .superRefine((environment, context) => {
+    // The management token is checked in every environment: sharing it with the admin or
+    // internal token would silently widen what the Folo core can reach.
+    if (
+      environment.MANAGEMENT_TOKEN &&
+      [environment.ADMIN_TOKEN, environment.INTERNAL_TOKEN, environment.RSSHUB_ACCESS_KEY].includes(
+        environment.MANAGEMENT_TOKEN,
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "MANAGEMENT_TOKEN must differ from every other supplier secret",
+        path: ["MANAGEMENT_TOKEN"],
+      })
+    }
     if (environment.NODE_ENV !== "production") return
 
     if (!environment.DATABASE_URL) {
@@ -148,7 +167,12 @@ const supplierEnvironment = z
         path: ["RSSHUB_ACCESS_KEY"],
       })
     }
-    for (const key of ["ADMIN_TOKEN", "INTERNAL_TOKEN", "RSSHUB_ACCESS_KEY"] as const) {
+    for (const key of [
+      "ADMIN_TOKEN",
+      "INTERNAL_TOKEN",
+      "MANAGEMENT_TOKEN",
+      "RSSHUB_ACCESS_KEY",
+    ] as const) {
       const value = environment[key]
       if (value && /replace-with|development|example|local-/i.test(value)) {
         context.addIssue({
@@ -215,6 +239,7 @@ export const loadFeedSupplierConfig = (environment: NodeJS.ProcessEnv) => {
     databaseURL: parsed.DATABASE_URL,
     host: parsed.HOST,
     internalToken: parsed.INTERNAL_TOKEN,
+    managementToken: parsed.MANAGEMENT_TOKEN ?? null,
     nodeEnvironment: parsed.NODE_ENV,
     webListFetchTimeoutMs: parsed.WEB_LIST_FETCH_TIMEOUT_MS,
     webListFetchMaxBytes: parsed.WEB_LIST_FETCH_MAX_BYTES,

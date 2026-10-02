@@ -10,7 +10,9 @@ export const handle = defineSettingPageData({
   icon: iconName,
   name: "titles.sources",
   priority,
-  hideIf: () => getCapabilityManifest()?.has("sources.route_catalog") !== true,
+  hideIf: () =>
+    getCapabilityManifest()?.has("sources.route_catalog") !== true &&
+    getCapabilityManifest()?.has("sources.web_list_management") !== true,
 })
 
 export function Component() {

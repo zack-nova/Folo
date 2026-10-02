@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { useAdvertisedCapability, useCapability } from "~/atoms/capabilities"
 import { useModalStack } from "~/components/ui/modal/stacked/hooks"
 import { FeedForm } from "~/modules/discover/FeedForm"
 import type { SourceCatalogFormValues } from "~/modules/source-catalog/parameter-values"
@@ -27,6 +28,8 @@ import {
   initialCatalogValues,
 } from "~/modules/source-catalog/parameter-values"
 import { useSourceCatalog, useSourceCatalogActions } from "~/modules/source-catalog/queries"
+
+import { SettingWebListSources } from "./web-list-sources"
 
 const requestError = (error: unknown): string =>
   error instanceof Error ? error.message : "Source catalog request failed"
@@ -277,7 +280,7 @@ const CatalogRouteForm = ({ route }: { route: SourceCatalogRoute }) => {
   )
 }
 
-export const SettingSources = () => {
+const SettingSourceCatalog = () => {
   const { t } = useTranslation("settings")
   const catalog = useSourceCatalog()
   const [search, setSearch] = useState("")
@@ -398,5 +401,17 @@ export const SettingSources = () => {
         </>
       )}
     </div>
+  )
+}
+
+export const SettingSources = () => {
+  const catalog = useAdvertisedCapability("sources.route_catalog")
+  const management = useCapability("sources.web_list_management")
+  const advertisedManagement = useAdvertisedCapability("sources.web_list_management")
+  return (
+    <>
+      {catalog && <SettingSourceCatalog />}
+      {management && advertisedManagement && <SettingWebListSources />}
+    </>
   )
 }
