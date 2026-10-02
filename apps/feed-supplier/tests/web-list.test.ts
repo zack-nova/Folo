@@ -855,12 +855,14 @@ describe("web list review regressions", () => {
   it("prefers government body containers and drops embedded controls", async () => {
     const source = await sourceFor({ detail: { enabled: true } })
     const result = extractDetail(
-      `<html><body><div class="wrapper"><div class="share">${"分享到微博 ".repeat(20)}</div><div class="TRS_Editor"><p>第一条 本办法自发布之日起施行。</p><svg><text>icon</text></svg><button>打印</button></div></div></body></html>`,
+      `<html><body><div class="wrapper"><div class="share">${"分享到微博 ".repeat(20)}</div><div class="TRS_Editor"><p>第一条 本办法自发布之日起施行，由市人民政府办公厅负责解释。</p><svg><text>icon</text></svg><button>打印</button></div></div></body></html>`,
       source,
       "https://www.example.gov.cn/a.html",
       "办法",
     )
-    expect(result.content).toBe("<p>第一条 本办法自发布之日起施行。</p>")
+    expect(result.content).toBe(
+      "<p>第一条 本办法自发布之日起施行，由市人民政府办公厅负责解释。</p>",
+    )
   })
 
   it("stops emitting content once the size budget is spent", async () => {
@@ -952,5 +954,60 @@ describe("web list review regressions", () => {
     await expect(client.get("https://example.com/")).rejects.toMatchObject({
       code: "page_fetch_timeout",
     })
+  })
+})
+
+describe("web list JSON text fields", () => {
+  it("reduces markup in JSON titles and summaries to plain text", async () => {
+    const source = await sourceFor({
+      format: "json",
+      html: null,
+      json: { titlePath: "title", urlPath: "url", summaryPath: "summary" },
+    })
+    const [item] = extractJSONList(
+      JSON.stringify([
+        {
+          summary: "<p>公示  期五日 &amp; 欢迎监督</p>",
+          title: "西安市生态环境保护委员会办公室<br/>关于申报名单的公示",
+          url: "/xw/gsgg/1.html",
+        },
+      ]),
+      source,
+      now,
+    )
+    expect(item).toMatchObject({
+      summary: "公示 期五日 & 欢迎监督",
+      title: "西安市生态环境保护委员会办公室 关于申报名单的公示",
+    })
+  })
+})
+
+describe("web list detail containers", () => {
+  it("finds the body inside a page-wide form and drops its controls", async () => {
+    const source = await sourceFor({
+      detail: { enabled: true, contentSelectors: ["#vsb_content", ".v_news_content"] },
+    })
+    const result = extractDetail(
+      '<html><body><form name="_newscontent_fromname"><div class="nav">首页 学校概况</div><div id="vsb_content"><div class="v_news_content"><p>第一届西北大学中亚研究青年学者论坛将于十月举行。</p><input type="hidden" value="x"></div></div></form></body></html>',
+      source,
+      "https://www.nwu.edu.cn/info/1227/22448.htm",
+      "论坛通知",
+    )
+    expect(result.content).toBe(
+      "<div><p>第一届西北大学中亚研究青年学者论坛将于十月举行。</p></div>",
+    )
+  })
+})
+
+describe("web list detail form controls", () => {
+  it("ignores form control text when choosing the body", async () => {
+    const result = extractDetail(
+      `<html><body><form><div class="comment"><textarea>${"留言 ".repeat(80)}</textarea></div><div class="content">${"正文内容。".repeat(20)}</div></form></body></html>`,
+      await sourceFor({ detail: { enabled: true } }),
+      "https://example.com/a",
+      "A",
+    )
+    expect(result.content).toContain("正文内容")
+    expect(result.content).not.toContain("留言")
   })
 })

@@ -280,6 +280,11 @@ folo_web_list_sources_due <count>
 
 第一版不支持 JavaScript 渲染、登录 Cookie、自定义请求头和 POST 接口。
 
+旧 Feeds Agent 的 17 个政务、高校与国际组织列表源已转换为
+[`apps/feed-supplier/presets/feeds-agent-web-lists.json`](../../apps/feed-supplier/presets/feeds-agent-web-lists.json)，
+通过 `pnpm sources:import:web-lists` 先停用创建、逐个预览，再只启用预览成功的来源。迁移时已按站点现状修正
+两个改版的西安来源和西北大学通知标题；旧清洗脚本中的文号、发文机关等元数据与正文日期抽取尚未迁移。
+
 ## 配置与启动
 
 本地最小闭环：

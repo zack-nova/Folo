@@ -61,6 +61,12 @@ export const resolveJSONPath = (input: unknown, path: string): unknown[] => {
 }
 const scalar = (value: unknown): string | null =>
   typeof value === "string" || typeof value === "number" ? String(value) : null
+/** JSON APIs often embed markup such as `<br/>` in titles; feeds need plain text. */
+const plainText = (value: string | null): string | null => {
+  if (value === null || !/[<&]/.test(value)) return value?.replace(/\s+/g, " ").trim() ?? null
+  const { document } = parseHTML(`<html><body>${value.replace(/<br\s*\/?>/gi, " ")}</body></html>`)
+  return (document.body.textContent ?? "").replace(/\s+/g, " ").trim()
+}
 const field = (value: unknown, path: string | null): string | null =>
   path === null ? null : scalar(resolveJSONPath(value, path)[0])
 
@@ -289,7 +295,7 @@ export const extractJSONList = (
   const items: ExtractedListItem[] = []
   const seen = new Set<string>()
   for (const value of values) {
-    const title = field(value, config.titlePath)
+    const title = plainText(field(value, config.titlePath))
     const rawURL =
       config.urlTemplate !== null
         ? config.urlTemplate.replace(/\{([^{}]+)\}/g, (_match, key: string) =>
@@ -320,7 +326,7 @@ export const extractJSONList = (
           publishedAt = new Date(timestamp).toISOString()
       }
     }
-    const summary = field(value, config.summaryPath)
+    const summary = plainText(field(value, config.summaryPath))
     const item = {
       title: [...title].slice(0, 300).join(""),
       url,
@@ -407,11 +413,13 @@ export const extractDetail = (
       "style",
       "noscript",
       "template",
+      // Forms are unwrapped, not removed: VSB and ASP.NET pages wrap the whole page in one.
       "iframe",
-      "form",
       "nav",
       "header",
       "footer",
+      // Controls never render, so they must not make a form look like the body either.
+      ...droppedTags,
       ...source.detail.ignoreSelectors,
     ].join(","),
   ))
