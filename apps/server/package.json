@@ -5,6 +5,7 @@
   "author": "Folo Team",
   "license": "AGPL-3.0-only",
   "scripts": {
+    "ai:import-preset": "tsx --env-file-if-exists=.env src/ai-preset-cli.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate-cli.ts",
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",

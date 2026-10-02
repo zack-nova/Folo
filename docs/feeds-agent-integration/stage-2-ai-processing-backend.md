@@ -83,6 +83,36 @@ POST /api/extensions/entries/{entryId}/evaluation/{evaluationId}/select
 - `POST /api/extensions/processing/re-evaluation-jobs` 返回 `created/reused/already_satisfied/superseded/skipped` 统计和 Job ID。
 - 支持明确 `entry_ids`，或按 Feed、View、发布时间范围筛选；单次最多 1000 个 Entry。
 
+## 自动评估范围与输入
+
+- Action 的 `evaluate` 规则在 Feed 导入时匹配条目。条件除条目标题、正文、链接和作者外，还支持 Folo 动作编辑器中的
+  订阅字段：`title`（订阅自定义标题，否则为 Feed 标题）、`category`（订阅分类）、`site_url`、`feed_url`、
+  `view`，以及数值字段 `entry_media_length`、`entry_attachments_duration` 的 `gt`/`lt` 比较。
+- `evaluate.max_age_days` 只评估发布时间在该天数内的条目（发布时间晚于当前 24 小时以上时改用导入时间），避免首次
+  订阅或 OPML 导入把整段历史条目送给模型。多条规则同时匹配时取最高优先级。
+- 发给 Provider 的条目正文先去除 HTML 标记与脚本，再按 `PROCESSING_MAX_CONTENT_CHARS`（默认 12000 个字符，
+  与旧 Feeds Agent 单条上限一致）截断；请求同时附带 `source`：订阅分类、订阅或 Feed 标题与站点地址。
+
+## 导入处理配置
+
+Taxonomy 与评估规则和用户画像一样描述个人兴趣，保存在仓库外的本地预设文件中，格式见
+[`apps/server/tests/fixtures/ai.example.json`](../../apps/server/tests/fixtures/ai.example.json)：`taxonomy.content`
+与 Taxonomy 快照相同，`actionRules` 与 Action 规则相同。画像是单独的本地 Markdown，用 `--profile` 指定：
+
+```bash
+DATABASE_URL=... pnpm --filter @follow/server ai:import-preset /path/to/ai.json \
+  --profile /path/to/user-profile.md --apply
+```
+
+默认只预览；`--apply` 为实例所有者创建画像与 Taxonomy 快照（内容相同则复用版本），并只追加尚不存在的同名规则，
+不会修改已有规则。生产镜像不包含任何预设：先把预设复制进容器的临时目录，画像通过标准输入传入：
+
+```bash
+docker compose ... cp /path/to/ai.json api:/tmp/ai.json
+docker compose ... exec -T api ./node_modules/.bin/tsx src/ai-preset-cli.ts /tmp/ai.json \
+  --profile /dev/stdin --apply < /path/to/user-profile.md
+```
+
 ## Follow 兼容 AI
 
 - `GET /ai/summary`：按 Entry、语言、`content/readabilityContent` 缓存。

@@ -336,6 +336,7 @@ export interface DataStore {
   ): Promise<SubscriptionRecord | null>
   deleteSubscriptions(userId: string, feedIds: string[]): Promise<void>
   listSubscriptions(userId: string, view?: number): Promise<SubscriptionRecord[]>
+  getSubscription(userId: string, feedId: string): Promise<SubscriptionRecord | null>
   createList(list: ListRecord, subscription: ListSubscriptionRecord): Promise<void>
   updateList(userId: string, listId: string, patch: ListPatch): Promise<ListRecord | null>
   deleteList(userId: string, listId: string): Promise<void>
@@ -427,6 +428,12 @@ export interface DataStore {
   setEntryTranslation(userId: string, translation: EntryTranslationRecord): Promise<void>
   getActionRules(userId: string): Promise<ActionRulesRecord | null>
   setActionRules(userId: string, rules: Array<Record<string, unknown>>): Promise<void>
+  /** Writes only if the stored rules still have `expectedUpdatedAt` (null: none stored yet). */
+  setActionRulesIfUnchanged(
+    userId: string,
+    rules: Array<Record<string, unknown>>,
+    expectedUpdatedAt: Date | null,
+  ): Promise<boolean>
   cleanupProcessingHistory(now: Date): Promise<MaintenanceCleanupReport>
   getUnreadCounts(userId: string, view?: number): Promise<Record<string, number>>
   getUnreadSnapshot(userId: string, view?: number): Promise<UnreadSnapshot>

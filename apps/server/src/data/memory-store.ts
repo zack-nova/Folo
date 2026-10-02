@@ -172,6 +172,13 @@ export class MemoryDataStore implements DataStore {
     }
   }
 
+  async getSubscription(userId: string, feedId: string): Promise<SubscriptionRecord | null> {
+    const subscription = [...this.subscriptions.values()].find(
+      (item) => item.userId === userId && item.feedId === feedId,
+    )
+    return subscription ? structuredClone(subscription) : null
+  }
+
   async listSubscriptions(userId: string, view?: number): Promise<SubscriptionRecord[]> {
     return [...this.subscriptions.values()]
       .filter(
@@ -684,6 +691,19 @@ export class MemoryDataStore implements DataStore {
   async getActionRules(userId: string): Promise<ActionRulesRecord | null> {
     const rules = this.actionRules.get(userId)
     return rules ? structuredClone(rules) : null
+  }
+
+  async setActionRulesIfUnchanged(
+    userId: string,
+    rules: Array<Record<string, unknown>>,
+    expectedUpdatedAt: Date | null,
+  ): Promise<boolean> {
+    const current = this.actionRules.get(userId)
+    if ((current?.updatedAt.getTime() ?? null) !== (expectedUpdatedAt?.getTime() ?? null)) {
+      return false
+    }
+    await this.setActionRules(userId, rules)
+    return true
   }
 
   async setActionRules(userId: string, rules: Array<Record<string, unknown>>): Promise<void> {

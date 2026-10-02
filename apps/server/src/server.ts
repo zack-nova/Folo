@@ -44,6 +44,7 @@ import type {
   ProcessingTaxonomySnapshotRecord,
   SettingsTab,
   SubscriptionPatch,
+  SubscriptionRecord,
 } from "./data/types"
 import type { SourceCatalogClient } from "./feeds/feed-supplier-fetcher"
 import type { FeedFetcher } from "./feeds/importer"
@@ -53,12 +54,8 @@ import { startFeedScheduler } from "./feeds/scheduler"
 import type { WebListManagementClient } from "./feeds/web-list-management"
 import { WebListManagementError } from "./feeds/web-list-management"
 import { exportOpml, parseOpml } from "./opml"
-import {
-  contentHash,
-  entryContentFingerprint,
-  ProcessingError,
-  ProcessingService,
-} from "./processing/service"
+import { entryContentFingerprint, ProcessingError, ProcessingService } from "./processing/service"
+import { saveProfileSnapshot, saveTaxonomySnapshot } from "./processing/snapshots"
 
 export interface BuildServerOptions {
   aiEncryptionSecret?: string
@@ -84,6 +81,7 @@ export interface BuildServerOptions {
   logger?: boolean
   metricsToken?: string
   processingMaxAttempts?: number
+  processingMaxContentCharacters?: number
   processingRetryBaseDelayMs?: number
   processingWorkerPollIntervalMs?: number
   serverURL?: string
@@ -359,6 +357,7 @@ export const buildServer = async ({
   logger = false,
   metricsToken,
   processingMaxAttempts,
+  processingMaxContentCharacters,
   processingRetryBaseDelayMs,
   processingWorkerPollIntervalMs,
   serverURL = "http://localhost:3000",
@@ -424,6 +423,7 @@ export const buildServer = async ({
   const processingService = new ProcessingService({
     dataStore,
     maxAttempts: processingMaxAttempts,
+    maxContentCharacters: processingMaxContentCharacters,
     onCleanup: (report) => {
       lastCleanup = { at: new Date(), report }
       server.log.info(report, "Maintenance cleanup completed")
@@ -439,10 +439,21 @@ export const buildServer = async ({
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     Boolean(value) && typeof value === "object" && !Array.isArray(value)
 
-  const actionMatchesEntry = (rule: Record<string, unknown>, entry: EntryRecord): boolean => {
+  interface ActionContext {
+    feed: FeedRecord | null
+    subscription: SubscriptionRecord | null
+  }
+
+  const actionMatchesEntry = (
+    rule: Record<string, unknown>,
+    entry: EntryRecord,
+    { feed, subscription }: ActionContext,
+  ): boolean => {
     const conditions = Array.isArray(rule.condition) ? rule.condition : []
     if (conditions.length === 0) return true
     const groups = Array.isArray(conditions[0]) ? conditions : [conditions]
+    // Field names follow the Folo action editor; feed fields use the owner's own subscription
+    // title and category when they set one.
     const fieldValue = (field: unknown): string => {
       switch (field) {
         case "entry_title":
@@ -453,6 +464,25 @@ export const buildServer = async ({
           return entry.url ?? ""
         case "entry_author":
           return entry.author ?? ""
+        case "title":
+          return subscription?.title ?? feed?.title ?? ""
+        case "category":
+          return subscription?.category ?? ""
+        case "site_url":
+          return feed?.siteUrl ?? ""
+        case "feed_url":
+          return feed?.url ?? ""
+        case "view":
+          return subscription ? String(subscription.view) : ""
+        case "entry_media_length":
+          return String(entry.media?.length ?? 0)
+        case "entry_attachments_duration":
+          return String(
+            (entry.attachments ?? []).reduce(
+              (total, attachment) => total + (Number(attachment.duration_in_seconds) || 0),
+              0,
+            ),
+          )
         default:
           return ""
       }
@@ -470,6 +500,12 @@ export const buildServer = async ({
           return actual === expected
         case "not_eq":
           return actual !== expected
+        case "gt":
+        case "lt": {
+          const [left, right] = [Number(actual), Number(expected)]
+          if (actual === "" || !Number.isFinite(left) || !Number.isFinite(right)) return false
+          return condition.operator === "gt" ? left > right : left < right
+        }
         case "regex":
           try {
             return new RegExp(expected, "i").test(actual)
@@ -502,9 +538,54 @@ export const buildServer = async ({
       if (evaluate?.priority === "low") return -5
       return 0
     }
+    // `max_age_days` keeps a first subscription from sending a feed's whole backlog to the model.
+    const maximumAgeDays = (rule: Record<string, unknown>): number | null => {
+      const result = isRecord(rule.result) ? rule.result : null
+      const evaluate = result && isRecord(result.evaluate) ? result.evaluate : null
+      return typeof evaluate?.max_age_days === "number" && evaluate.max_age_days > 0
+        ? evaluate.max_age_days
+        : null
+    }
+    const now = Date.now()
+    // Parsed entries carry the fetch time as insertedAt, and also as publishedAt when the feed
+    // gave no date. Such entries are aged by when this server first stored them instead.
+    const firstSeen = new Map<string, Promise<number>>()
+    const ageReference = async (entry: EntryRecord): Promise<number> => {
+      const published = entry.publishedAt.getTime()
+      if (published <= now + 86_400_000 && published !== entry.insertedAt.getTime()) {
+        return published
+      }
+      let stored = firstSeen.get(entry.id)
+      if (!stored) {
+        stored = dataStore
+          .getEntry(userId, entry.id)
+          .then((record) => (record ?? entry).insertedAt.getTime())
+        firstSeen.set(entry.id, stored)
+      }
+      return stored
+    }
+    const withinAge = async (rule: Record<string, unknown>, entry: EntryRecord) => {
+      const days = maximumAgeDays(rule)
+      return days === null || now - (await ageReference(entry)) <= days * 86_400_000
+    }
+    const contexts = new Map<string, Promise<ActionContext>>()
+    const contextFor = (feedId: string) => {
+      let context = contexts.get(feedId)
+      if (!context) {
+        context = Promise.all([
+          dataStore.getFeed(feedId),
+          dataStore.getSubscription(userId, feedId),
+        ]).then(([feed, subscription]) => ({ feed, subscription }))
+        contexts.set(feedId, context)
+      }
+      return context
+    }
     await Promise.all(
       entries.map(async (entry) => {
-        const matchingRules = evaluationRules.filter((rule) => actionMatchesEntry(rule, entry))
+        const context = await contextFor(entry.feedId)
+        const matched = evaluationRules.filter((rule) => actionMatchesEntry(rule, entry, context))
+        const ages = await Promise.all(matched.map((rule) => withinAge(rule, entry)))
+        const matchingRules = matched.filter((_rule, index) => ages[index])
         if (matchingRules.length === 0) return
         try {
           await processingService.enqueueEvaluation(userId, entry.id, {
@@ -1463,21 +1544,10 @@ export const buildServer = async ({
     }
     const name = body.name.trim()
     const content = structuredClone(body.content as Record<string, unknown>)
-    const existing = (await dataStore.listProcessingProfileSnapshots(userId)).filter(
-      (snapshot) => snapshot.name === name,
-    )
-    const matching = existing.find((snapshot) => snapshot.contentHash === contentHash(content))
-    if (matching) return { code: 0, data: matching }
-    const snapshot = await dataStore.createProcessingProfileSnapshot({
-      content,
-      contentHash: contentHash(content),
-      createdAt: new Date(),
-      id: `profile_${randomUUID().replaceAll("-", "")}`,
-      name,
-      userId,
-      version: Math.max(0, ...existing.map((item) => item.version)) + 1,
-    })
-    return reply.status(201).send({ code: 0, data: snapshot })
+    const { created, snapshot } = await saveProfileSnapshot(dataStore, userId, name, content)
+    return created
+      ? reply.status(201).send({ code: 0, data: snapshot })
+      : { code: 0, data: snapshot }
   })
 
   server.get("/api/extensions/taxonomies", async (request, reply) => {
@@ -1515,21 +1585,10 @@ export const buildServer = async ({
     }
     const name = body.name.trim()
     const content = structuredClone(body.content as Record<string, unknown>)
-    const existing = (await dataStore.listProcessingTaxonomySnapshots(userId)).filter(
-      (snapshot) => snapshot.name === name,
-    )
-    const matching = existing.find((snapshot) => snapshot.contentHash === contentHash(content))
-    if (matching) return { code: 0, data: matching }
-    const snapshot = await dataStore.createProcessingTaxonomySnapshot({
-      content,
-      contentHash: contentHash(content),
-      createdAt: new Date(),
-      id: `taxonomy_${randomUUID().replaceAll("-", "")}`,
-      name,
-      userId,
-      version: Math.max(0, ...existing.map((item) => item.version)) + 1,
-    })
-    return reply.status(201).send({ code: 0, data: snapshot })
+    const { created, snapshot } = await saveTaxonomySnapshot(dataStore, userId, name, content)
+    return created
+      ? reply.status(201).send({ code: 0, data: snapshot })
+      : { code: 0, data: snapshot }
   })
 
   const currentProcessingConfiguration = async (userId: string) => {
