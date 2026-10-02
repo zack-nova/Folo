@@ -5,10 +5,11 @@ import { PostgresDataStore } from "./data/postgres-store"
 import { createPostgresDatabase } from "./db/database"
 import { importAIPreset, parseAIPreset } from "./processing/ai-preset"
 
-const usage = `Usage: pnpm --filter @follow/server ai:import-preset [options] [preset.json]
+const usage = `Usage: pnpm --filter @follow/server ai:import-preset [options] <preset.json>
 
 Imports a processing taxonomy, evaluate action rules and (optionally) a profile document into
-the instance owner's account. Without --apply nothing is written.
+the instance owner's account. Without --apply nothing is written. Presets describe personal
+interests: keep them outside the repository (format: tests/fixtures/ai.example.json).
 
 Options:
   --profile <file>  Markdown profile document to store as the profile snapshot. Profiles are
@@ -31,18 +32,18 @@ if (values.help) {
   console.info(usage)
   process.exit(0)
 }
+const [presetPath] = positionals
+if (!presetPath) {
+  console.error(usage)
+  process.exit(2)
+}
 const databaseURL = process.env.DATABASE_URL
 if (!databaseURL) {
   console.error("DATABASE_URL is required")
   process.exit(2)
 }
 
-const preset = parseAIPreset(
-  await readFile(
-    positionals[0] ?? new URL("../presets/feeds-agent-ai.json", import.meta.url).pathname,
-    "utf8",
-  ),
-)
+const preset = parseAIPreset(await readFile(presetPath, "utf8"))
 const profileDocument = values.profile ? (await readFile(values.profile, "utf8")).trim() : null
 if (profileDocument === "") {
   console.error("The profile document is empty; nothing was imported.")

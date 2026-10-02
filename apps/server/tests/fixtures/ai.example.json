@@ -1,0 +1,30 @@
+{
+  "description": "Example AI preset. Real presets describe personal interests: keep them, like the profile document, outside the repository.",
+  "profile": { "name": "example" },
+  "taxonomy": {
+    "name": "example",
+    "content": {
+      "default_half_life_days": 7,
+      "categories": [
+        { "name": "智能科技", "subcategories": ["AI与编程", "科技数码"] },
+        { "name": "财经商业", "subcategories": ["财经投资", "商业创业"] },
+        { "name": "政治社会", "subcategories": ["时政社会"], "featured_half_life_days": 14 }
+      ]
+    }
+  },
+  "actionRules": [
+    {
+      "name": "AI 评估最近 7 天的新条目",
+      "condition": [],
+      "result": { "evaluate": { "priority": "normal", "max_age_days": 7 } }
+    },
+    {
+      "name": "优先评估政策与公告",
+      "condition": [
+        [{ "field": "category", "operator": "eq", "value": "政治社会" }],
+        [{ "field": "category", "operator": "eq", "value": "公告" }]
+      ],
+      "result": { "evaluate": { "priority": "high", "max_age_days": 30 } }
+    }
+  ]
+}

@@ -33,7 +33,7 @@ ${items
 const evaluation = JSON.stringify({
   importance_score: 80,
   primary_category: "政治社会",
-  recommendation_reason: "与职称评审相关",
+  recommendation_reason: "与产业政策相关",
   relevance_score: 90,
   secondary_category: "时政社会",
   summary: "摘要",
@@ -124,11 +124,11 @@ describe("AI intake of subscribed sources", () => {
     const ownerId = (await dataStore.getOwnerUserId())!
 
     const preset = parseAIPreset(
-      await readFile(new URL("../presets/feeds-agent-ai.json", import.meta.url), "utf8"),
+      await readFile(new URL("fixtures/ai.example.json", import.meta.url), "utf8"),
     )
     await importAIPreset(dataStore, ownerId, preset, {
       apply: true,
-      profileDocument: "# 个人信息\n关注职称评审与项目申报。",
+      profileDocument: "# 个人信息\n关注产业政策与 AI 工具。",
     })
 
     const client = new FollowClient({
@@ -171,7 +171,7 @@ describe("AI intake of subscribed sources", () => {
     })
     expect(policy.entry.content).toMatch(/^政+\n\[Content truncated\]$/)
     expect([...policy.entry.content.replace("\n[Content truncated]", "")]).toHaveLength(1_000)
-    expect(policy.profile).toEqual({ document: "# 个人信息\n关注职称评审与项目申报。" })
+    expect(policy.profile).toEqual({ document: "# 个人信息\n关注产业政策与 AI 工具。" })
     expect(policy.taxonomy.categories.map((category: { name: string }) => category.name)).toContain(
       "政治社会",
     )
@@ -186,7 +186,7 @@ describe("AI preset import", () => {
       { condition: [], name: "AI 评估最近 7 天的新条目", result: { evaluate: {}, custom: true } },
     ])
     const preset = parseAIPreset(
-      await readFile(new URL("../presets/feeds-agent-ai.json", import.meta.url), "utf8"),
+      await readFile(new URL("fixtures/ai.example.json", import.meta.url), "utf8"),
     )
 
     const planned = await importAIPreset(dataStore, userId, preset, {
@@ -206,7 +206,7 @@ describe("AI preset import", () => {
     expect(applied).toEqual({
       actionRules: [
         { name: "AI 评估最近 7 天的新条目", status: "exists" },
-        { name: "优先评估政策与高校通知", status: "added" },
+        { name: "优先评估政策与公告", status: "added" },
       ],
       profile: { status: "created", version: 1 },
       taxonomy: { status: "created", version: 1 },
@@ -317,7 +317,7 @@ describe("AI intake age fallback", () => {
     const owner = { cookie, origin: "http://localhost:2233" }
     const ownerId = (await dataStore.getOwnerUserId())!
     const preset = parseAIPreset(
-      await readFile(new URL("../presets/feeds-agent-ai.json", import.meta.url), "utf8"),
+      await readFile(new URL("fixtures/ai.example.json", import.meta.url), "utf8"),
     )
     await importAIPreset(dataStore, ownerId, preset, { apply: true, profileDocument: "v1" })
 
@@ -351,7 +351,7 @@ describe("AI preset import review regressions", () => {
   it("rejects an empty profile and retries when rules change underneath it", async () => {
     const dataStore = new MemoryDataStore()
     const preset = parseAIPreset(
-      await readFile(new URL("../presets/feeds-agent-ai.json", import.meta.url), "utf8"),
+      await readFile(new URL("fixtures/ai.example.json", import.meta.url), "utf8"),
     )
     await expect(
       importAIPreset(dataStore, "owner", preset, { apply: true, profileDocument: "  \n" }),
@@ -371,7 +371,7 @@ describe("AI preset import review regressions", () => {
     expect((await dataStore.getActionRules("owner"))!.rules.map((rule) => rule.name)).toEqual([
       "Owner rule",
       "AI 评估最近 7 天的新条目",
-      "优先评估政策与高校通知",
+      "优先评估政策与公告",
     ])
   })
 })

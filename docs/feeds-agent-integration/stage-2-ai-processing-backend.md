@@ -93,23 +93,23 @@ POST /api/extensions/entries/{entryId}/evaluation/{evaluationId}/select
 - 发给 Provider 的条目正文先去除 HTML 标记与脚本，再按 `PROCESSING_MAX_CONTENT_CHARS`（默认 12000 个字符，
   与旧 Feeds Agent 单条上限一致）截断；请求同时附带 `source`：订阅分类、订阅或 Feed 标题与站点地址。
 
-## 迁移 Feeds Agent 处理配置
+## 导入处理配置
 
-[`apps/server/presets/feeds-agent-ai.json`](../../apps/server/presets/feeds-agent-ai.json) 保存旧
-`config/processing.yaml` 的 Taxonomy（科研、职业发展与政治社会三类精选半衰期为 14 天）和两条评估规则：最近 7 天的
-全部新条目，以及 30 天内“政治社会”“高校”分类的条目（高优先级）。用户画像属于个人信息，不进入仓库，导入时用
-`--profile` 指向本地 Markdown：
+Taxonomy 与评估规则和用户画像一样描述个人兴趣，保存在仓库外的本地预设文件中，格式见
+[`apps/server/tests/fixtures/ai.example.json`](../../apps/server/tests/fixtures/ai.example.json)：`taxonomy.content`
+与 Taxonomy 快照相同，`actionRules` 与 Action 规则相同。画像是单独的本地 Markdown，用 `--profile` 指定：
 
 ```bash
-DATABASE_URL=... pnpm --filter @follow/server ai:import-preset \
+DATABASE_URL=... pnpm --filter @follow/server ai:import-preset /path/to/ai.json \
   --profile /path/to/user-profile.md --apply
 ```
 
 默认只预览；`--apply` 为实例所有者创建画像与 Taxonomy 快照（内容相同则复用版本），并只追加尚不存在的同名规则，
-不会修改已有规则。生产镜像包含预设，画像可以通过标准输入传入而不进入容器：
+不会修改已有规则。生产镜像不包含任何预设：先把预设复制进容器的临时目录，画像通过标准输入传入：
 
 ```bash
-docker compose ... exec -T api ./node_modules/.bin/tsx src/ai-preset-cli.ts \
+docker compose ... cp /path/to/ai.json api:/tmp/ai.json
+docker compose ... exec -T api ./node_modules/.bin/tsx src/ai-preset-cli.ts /tmp/ai.json \
   --profile /dev/stdin --apply < /path/to/user-profile.md
 ```
 

@@ -265,7 +265,7 @@ describe.runIf(databaseURL)("PostgreSQL authority", () => {
     ).toBe(true)
 
     const preset = parseAIPreset(
-      await readFile(new URL("../presets/feeds-agent-ai.json", import.meta.url), "utf8"),
+      await readFile(new URL("fixtures/ai.example.json", import.meta.url), "utf8"),
     )
     const report = await importAIPreset(dataStore, userId, preset, {
       apply: true,
@@ -278,7 +278,7 @@ describe.runIf(databaseURL)("PostgreSQL authority", () => {
     expect((await dataStore.getActionRules(userId))!.rules.map((rule) => rule.name)).toEqual([
       "second",
       "AI 评估最近 7 天的新条目",
-      "优先评估政策与高校通知",
+      "优先评估政策与公告",
     ])
     expect(await dataStore.getSubscription(userId, "feed_missing")).toBeNull()
   })
