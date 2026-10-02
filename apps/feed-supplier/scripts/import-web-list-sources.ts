@@ -3,7 +3,7 @@ import { parseArgs } from "node:util"
 
 import { importWebListPreset, parseWebListPreset } from "../src/web-list-import"
 
-const usage = `Usage: pnpm --filter @follow/feed-supplier sources:import:web-lists [options] [preset.json]
+const usage = `Usage: pnpm --filter @follow/feed-supplier sources:import:web-lists [options] <preset.json>
 
 Without --apply nothing is written: the preset is validated and compared with the supplier.
 
@@ -41,8 +41,12 @@ if (!adminToken) {
   process.exit(2)
 }
 
-const presetPath =
-  positionals[0] ?? new URL("../presets/feeds-agent-web-lists.json", import.meta.url).pathname
+// Presets list personal sources, so they live outside the repository and are always passed in.
+const presetPath = positionals[0]
+if (!presetPath) {
+  console.error("A preset file is required; see tests/fixtures/web-lists.example.json")
+  process.exit(2)
+}
 const preset = parseWebListPreset(await readFile(presetPath, "utf8"))
 const results = await importWebListPreset(preset, {
   adminToken,
