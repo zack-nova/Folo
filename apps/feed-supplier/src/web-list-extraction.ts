@@ -1,6 +1,9 @@
 import type { WebListSource } from "@follow/feed-source-contracts"
 import { parseHTML } from "linkedom"
 
+import type { NoticeFact } from "./official-notice"
+import { nearbyAttachments, noticeFacts, pruneNoticeBoilerplate } from "./official-notice"
+
 export class WebListError extends Error {
   constructor(
     readonly code: string,
@@ -61,6 +64,12 @@ export const resolveJSONPath = (input: unknown, path: string): unknown[] => {
 }
 const scalar = (value: unknown): string | null =>
   typeof value === "string" || typeof value === "number" ? String(value) : null
+/** JSON APIs often embed markup such as `<br/>` in titles; feeds need plain text. */
+const plainText = (value: string | null): string | null => {
+  if (value === null || !/[<&]/.test(value)) return value?.replace(/\s+/g, " ").trim() ?? null
+  const { document } = parseHTML(`<html><body>${value.replace(/<br\s*\/?>/gi, " ")}</body></html>`)
+  return (document.body.textContent ?? "").replace(/\s+/g, " ").trim()
+}
 const field = (value: unknown, path: string | null): string | null =>
   path === null ? null : scalar(resolveJSONPath(value, path)[0])
 
@@ -163,6 +172,8 @@ const normalizedText = (element: Element | null): string =>
   (element?.textContent ?? "").replace(/\s+/g, " ").trim()
 export const isTruncatedTitle = (title: string): boolean => /(?:\.\.\.|…)\s*$/.test(title)
 export interface ExtractedListItem {
+  /** Labelled facts from JSON `metadataPaths`, rendered above the content. */
+  metadata: NoticeFact[]
   title: string
   url: string
   summary: string | null
@@ -244,6 +255,7 @@ export const extractHTMLList = (
         : anchorText || normalizedText(element)
     if (!title) continue
     const item = {
+      metadata: [],
       title: [...title].slice(0, 300).join(""),
       url,
       identity: url,
@@ -289,7 +301,7 @@ export const extractJSONList = (
   const items: ExtractedListItem[] = []
   const seen = new Set<string>()
   for (const value of values) {
-    const title = field(value, config.titlePath)
+    const title = plainText(field(value, config.titlePath))
     const rawURL =
       config.urlTemplate !== null
         ? config.urlTemplate.replace(/\{([^{}]+)\}/g, (_match, key: string) =>
@@ -320,8 +332,13 @@ export const extractJSONList = (
           publishedAt = new Date(timestamp).toISOString()
       }
     }
-    const summary = field(value, config.summaryPath)
+    const summary = plainText(field(value, config.summaryPath))
+    const metadata = Object.entries(config.metadataPaths).flatMap(([label, path]): NoticeFact[] => {
+      const fact = plainText(field(value, path))
+      return fact ? [[label, [...fact].slice(0, 256).join("")]] : []
+    })
     const item = {
+      metadata,
       title: [...title].slice(0, 300).join(""),
       url,
       identity: config.idPath !== null ? `id:${identity}` : url,
@@ -393,13 +410,34 @@ const allowedTags = new Set(
     " ",
   ),
 )
+/** Configured facts win; page facts fill in labels and values not already present. */
+export const mergeNoticeFacts = (primary: NoticeFact[], secondary: NoticeFact[]): NoticeFact[] => {
+  const merged = [...primary]
+  for (const fact of secondary) {
+    if (!merged.some(([label, value]) => label === fact[0] || value === fact[1])) merged.push(fact)
+  }
+  return merged
+}
+export const renderNoticeHeader = (facts: NoticeFact[]): string =>
+  facts
+    .map(([label, value]) => `<p><strong>${escapeXML(label)}</strong>：${escapeXML(value)}</p>`)
+    .join("")
+
+export interface DetailExtraction {
+  content: string
+  facts: NoticeFact[]
+  publishedAt: string | null
+  title: string
+}
+
 export const extractDetail = (
   html: string,
   source: WebListSource,
   finalURL: string,
   title: string,
   maximum = 128 * 1024,
-): { content: string; title: string } => {
+  options: { metadata?: NoticeFact[]; now?: Date } = {},
+): DetailExtraction => {
   const { document } = parseHTML(html)
   for (const element of document.querySelectorAll(
     [
@@ -407,21 +445,28 @@ export const extractDetail = (
       "style",
       "noscript",
       "template",
+      // Forms are unwrapped, not removed: VSB and ASP.NET pages wrap the whole page in one.
       "iframe",
-      "form",
       "nav",
       "header",
       "footer",
+      // Controls never render, so they must not make a form look like the body either.
+      ...droppedTags,
       ...source.detail.ignoreSelectors,
     ].join(","),
   ))
     element.remove()
   const root = contentRoot(document, source.detail.contentSelectors)
+  const page = noticeFacts(document, root, title)
+  pruneNoticeBoilerplate(root)
+  const attachments = nearbyAttachments(root, (href) => canonicalURL(href, finalURL))
+  const facts = mergeNoticeFacts(options.metadata ?? [], page.facts)
+  const header = renderNoticeHeader(facts)
   const heading = normalizedText(root.querySelector("h1") ?? document.querySelector("h1"))
   if (isTruncatedTitle(title) && heading.startsWith(title.replace(/(?:\.\.\.|…)\s*$/, "")))
     title = [...heading].slice(0, 300).join("")
   const marker = "<p>[Content truncated]</p>"
-  let remaining = maximum - Buffer.byteLength(marker)
+  let remaining = maximum - Buffer.byteLength(marker) - Buffer.byteLength(header)
   let truncated = false
   const render = (node: ChildNode): string => {
     // Once the budget is spent nothing else is emitted, so the output stays a clean prefix.
@@ -470,6 +515,23 @@ export const extractDetail = (
     remaining -= overhead
     return open + (close ? [...element.childNodes].map(render).join("") : "") + close
   }
-  const content = [...root.childNodes].map(render).join("")
-  return { content: content + (truncated ? marker : ""), title }
+  const body = [...root.childNodes].map(render).join("")
+  const attachmentList = attachments.length
+    ? `<p><strong>附件</strong></p><ul>${attachments
+        .map(
+          ({ title: name, url }) => `<li><a href="${escapeXML(url)}">${escapeXML(name)}</a></li>`,
+        )
+        .join("")}</ul>`
+    : ""
+  const withAttachments =
+    !truncated && Buffer.byteLength(attachmentList) <= remaining ? attachmentList : ""
+  return {
+    content: header + body + withAttachments + (truncated ? marker : ""),
+    facts,
+    publishedAt:
+      page.publishedCandidates
+        .map((candidate) => parseListDate(dateText(candidate), source.timeZone, options.now))
+        .find(Boolean) ?? null,
+    title,
+  }
 }

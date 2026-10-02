@@ -132,12 +132,80 @@ curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
 - 详情正文未配置 `contentSelectors` 时，依次尝试常见政务 CMS 正文容器、`main`/`article` 与最大文本块，
   再按白名单清洗为 HTML，上限 128 KiB。PDF、Office 等附件链接不会被下载。详情失败的条目仍然发布，
   `detailStatus` 记为 `failed`，不会在后续检查中重试。
+- 详情正文会按旧 Feeds Agent `official_policy` 清洗规则处理：去掉打印 / 分享 / 扫一扫等工具栏和“发布时间：…
+  来源：…”元数据行，在“上一篇 / 下一篇 / 责任编辑”处截断，并只在正文后半段遇到“版权所有 / ICP备”等页脚标记时
+  截断。正文旁边的附件链接会追加为“附件”列表。
+- 正文开头渲染事实头：JSON 来源通过 `json.metadataPaths`（显示名 → 字段路径，最多 12 项）配置文号、发文机关等，
+  页面中的 `ContentSource` 元信息或“来源：”行与文号补充其余信息。文号只取标题括号内或单独成行的编号，正文引用的
+  其他文件编号不会被当作本文文号。列表没有日期时，使用详情页元信息或“发布时间：”行中的日期。
 - 一次检查的详情抓取总预算为 120 秒，同源请求间隔 `WEB_LIST_REQUEST_DELAY_MS`（默认 500 ms）；预算用尽时
   剩余新条目留到下一次检查，并清除条件请求缓存以确保下次重新读取列表。
 - 抽取不到任何条目视为失败（`web_list_no_items`），按页面来源相同的指数退避，并显示在运维状态中。
 
 相关配置：`WEB_LIST_FETCH_TIMEOUT_MS`、`WEB_LIST_FETCH_MAX_BYTES`、`WEB_LIST_REQUEST_DELAY_MS`、
 `WEB_LIST_SCHEDULER_POLL_INTERVAL_MS`。
+
+## 批量导入网页列表源
+
+批量来源保存在仓库外的本地预设文件中：来源清单属于个人信息，与 AI 用户画像一样不进入仓库。格式见
+[`tests/fixtures/web-lists.example.json`](./tests/fixtures/web-lists.example.json)，每个 `source` 与管理接口的创建
+请求相同。导入脚本默认只校验预设并与供给端已有来源（按名称）比较，不写入任何数据：
+
+```bash
+FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
+  pnpm --filter @follow/feed-supplier sources:import:web-lists /path/to/web-lists.json
+```
+
+`--apply` 以停用状态创建缺失来源，并对每个新来源执行一次带详情的 `test` 预览；再加 `--enable` 时，只有预览
+抽取到条目、且详情页抓取成功的来源才会启用并按预设 `intervalMinutes` 调度。预览失败或抽取为空的来源保持停用并以
+非零退出码提示，修正后重跑带 `--enable` 的命令即可启用之前留下的停用来源。`--only key1,key2` 只处理指定来源。
+
+从旧 Feeds Agent 转换时，旧清洗脚本的 `body_selectors` 对应 `detail.contentSelectors`，JSON 接口的
+`request.query` 直接写入目标 URL，`metadata_paths` 对应带显示名的 `json.metadataPaths`；站点改版后需要按当前
+页面结构修正选择器，并先用 `test` 预览确认。
+
+## 平台源目录与订阅迁移
+
+[`presets/rsshub-catalog.json`](./presets/rsshub-catalog.json) 是旧 Feeds Agent 平台采集对应的 19 个自建 RSSHub
+目录模板（X 用户、V2EX、知乎、华尔街见闻、财联社、雪球、GitHub、B 站、微博），已对照
+`diygod/rsshub@sha256:eda756a2…`（2026-10-01）的路由清单逐个核对。导入方式与网页列表源一致，默认只校验和比较：
+
+```bash
+FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
+  pnpm --filter @follow/feed-supplier sources:import:catalog --apply --enable
+```
+
+`--apply` 以停用状态创建缺失模板；`--enable` 会在模板仍停用时用预设样例参数做一次真实连接测试，只有测试通过才启用，
+失败的模板保持停用并以非零退出码提示。管理接口 `POST /v1/admin/catalog/routes/:routeId/test` 可以测试停用模板，
+内部令牌的目录接口与 Feed 读取仍只接受启用模板。
+
+部分路由需要 RSSHub 自身的配置，这些凭据只进入 RSSHub 容器，核心和供给端都不读取：
+
+| 模板                                                             | 需要                                                                                                                  |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `twitter-user`                                                   | `TWITTER_AUTH_TOKEN`                                                                                                  |
+| `bilibili-video-search`                                          | `BILIBILI_COOKIE_<uid>`                                                                                               |
+| `bilibili-user-video`、`bilibili-hot-search`、`weibo-hot-search` | chromium-bundled 镜像（`RSSHUB_IMAGE=diygod/rsshub@sha256:cacaf98a…`，2026-10-01 实测可用）；微博可选 `WEIBO_COOKIES` |
+| `xueqiu-*`                                                       | chromium-bundled 镜像；2026-10-01 实测因站点反爬仍返回空结果，导入时保持停用                                          |
+| `zhihu-hot`                                                      | 可选 `ZHIHU_COOKIES`，提高稳定性                                                                                      |
+
+复制 [`.env.rsshub.example`](./.env.rsshub.example) 为 `apps/feed-supplier/.env.rsshub`（或用 `RSSHUB_ENV_FILE` 指向其他
+路径），只保留填写了值的行：RSSHub 会把空字符串当作已配置。两个 Compose 文件都以可选 `env_file` 读取它，重启 RSSHub
+后重跑带 `--enable` 的导入即可启用之前留下的停用模板。
+
+订阅清单同样保存在仓库外的本地预设文件中，格式见
+[`tests/fixtures/subscriptions.example.json`](./tests/fixtures/subscriptions.example.json)：每个订阅写明 Folo
+分类，以及 `url`（HTTP(S)、`rsshub://`、`pagechange://`）或引用网页列表预设 `key` 的 `webList`。先导入网页列表
+预设，再导出 OPML，在 Folo“导入 OPML”中导入：
+
+```bash
+FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
+  pnpm --filter @follow/feed-supplier sources:export:opml \
+  --subscriptions ~/presets/subscriptions.json --web-lists ~/presets/web-lists.json --out subscriptions.opml
+```
+
+网页列表条目按名称在供给端查到实际的 `weblist://` 地址；尚未创建的来源会被列出并以非零退出码提示。X 订阅在配置
+`TWITTER_AUTH_TOKEN` 前导入会出现在 OPML 导入结果的失败列表中，配置后重新导入即可。
 
 ## 生产规模化
 

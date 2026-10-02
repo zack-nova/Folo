@@ -752,7 +752,8 @@ export class PostgresSupplierRepository implements SupplierRepository {
              documentation_url = $6, route_path_template = $7, parameters = $8::jsonb,
              secret_query_bindings = $9::jsonb, enabled = $10, deleted_at = $11,
              updated_at = $13
-           where id = $1 and deleted_at is null returning *`,
+           -- $12 (created_at) never changes; PostgreSQL still needs a type for every parameter.
+           where id = $1 and deleted_at is null and $12::timestamptz is not null returning *`,
           this.catalogRouteParameters(route),
         )
         return result.rows[0] ? catalogRouteFromRow(result.rows[0]) : null

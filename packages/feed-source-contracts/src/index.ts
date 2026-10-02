@@ -211,6 +211,8 @@ export type WebListPublishedAtFormat = "auto" | "unix_milliseconds" | "unix_seco
 export interface WebListJSONExtraction {
   idPath: string | null
   itemsPath: string
+  /** Display label to item path, rendered as a fact header above the content (e.g. 文号). */
+  metadataPaths: Record<string, string>
   publishedAtFormat: WebListPublishedAtFormat
   publishedAtPath: string | null
   summaryPath: string | null

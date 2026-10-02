@@ -254,6 +254,9 @@ feed-supplier 列表 worker
 5. 详情抓取只针对新条目，按同源间隔串行执行；详情失败或不是 HTML 时条目仍然发布，`detailStatus` 分别记为
    `failed` 或 `skipped`。
 6. 抽取不到任何条目视为失败（`web_list_no_items`），按页面来源相同的指数退避并进入运维状态，提醒选择器失效。
+7. 详情正文沿用旧 `official_policy` 清洗规则：去除工具栏、元数据行和页脚，追加正文旁附件，并在正文前渲染
+   文号、发文机关等事实头。JSON 字段通过 `json.metadataPaths` 配置；文号只取标题括号内或单独成行的编号。
+   列表缺少日期时使用详情页日期。
 
 管理 API 同样只接受独立 `ADMIN_TOKEN`：
 
@@ -279,6 +282,24 @@ folo_web_list_sources_due <count>
 ```
 
 第一版不支持 JavaScript 渲染、登录 Cookie、自定义请求头和 POST 接口。
+
+批量来源通过仓库外的本地预设文件导入（来源清单属于个人信息，与 AI 用户画像一样不进入仓库），
+`pnpm sources:import:web-lists <preset.json>` 先停用创建、逐个预览，再只启用预览成功的来源；格式见
+`apps/feed-supplier/tests/fixtures/web-lists.example.json`。
+
+## 5A.7 平台源目录与订阅迁移
+
+旧 Feeds Agent 的平台采集不再在供给端重写，而是映射到已有能力：
+
+- 有原生 RSS/Atom 的来源直接订阅；其余平台采集映射为自建 RSSHub 路由目录模板（X 用户时间线、V2EX、知乎、
+  华尔街见闻、财联社、雪球、GitHub、B 站、微博），预设对照固定 RSSHub 镜像的路由清单核对。
+- 目录导入先停用创建，`--enable` 时在停用状态下用样例参数做真实连接测试，只有通过才启用。所有者管理接口可以测试
+  停用模板；核心使用的内部目录接口和 Feed 读取仍只接受启用模板。
+- 平台凭据（`TWITTER_AUTH_TOKEN`、Cookie、API Key）是 RSSHub 自身配置，通过可选 `env_file` 只交给 RSSHub 容器；
+  它们不进入核心、供给端数据库或浏览器。需要浏览器的路由要求 chromium-bundled 镜像。
+- 订阅清单（仓库外的本地预设）导出为 OPML，旧 `group` 成为 Folo 分类；网页列表源在导出时按名称解析为实际的
+  `weblist://` 地址。核心 OPML 导入现在接受经过校验的 `rsshub://`、`pagechange://` 和 `weblist://` 地址，
+  未配置供给端时这些条目会出现在导入失败列表中；属性中的 `&amp;` 等预定义实体会被解码，DOCTYPE 实体仍不展开。
 
 ## 配置与启动
 

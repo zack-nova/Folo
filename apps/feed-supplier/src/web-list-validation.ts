@@ -26,6 +26,10 @@ const json = z
     summaryPath: path,
     publishedAtPath: path,
     publishedAtFormat: z.enum(["auto", "unix_seconds", "unix_milliseconds"]).default("auto"),
+    metadataPaths: z
+      .record(z.string().trim().min(1).max(32), z.string().max(512))
+      .refine((paths) => Object.keys(paths).length <= 12, "At most 12 metadata paths are supported")
+      .default({}),
   })
   .strict()
 const filters = z

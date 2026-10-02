@@ -45,6 +45,9 @@
     "server:test:postgres": "cross-env TEST_DATABASE_URL=postgres://folo:folo@localhost:54329/folo pnpm --filter @follow/server test",
     "sources:down": "docker compose -f apps/server/compose.yaml --profile sources down",
     "sources:backup": "bash apps/feed-supplier/scripts/backup.sh",
+    "sources:export:opml": "pnpm --filter @follow/feed-supplier sources:export:opml",
+    "sources:import:catalog": "pnpm --filter @follow/feed-supplier sources:import:catalog",
+    "sources:import:web-lists": "pnpm --filter @follow/feed-supplier sources:import:web-lists",
     "sources:restore:drill": "bash apps/feed-supplier/scripts/restore-drill.sh",
     "sources:up": "docker compose -f apps/server/compose.yaml --profile sources up -d --wait redis rsshub feed-supplier",
     "typecheck": "turbo typecheck"

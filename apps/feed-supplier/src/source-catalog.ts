@@ -8,10 +8,12 @@ import type {
   SourceCatalogRoute,
   SourceCatalogRouteAdministration,
 } from "@follow/feed-source-contracts"
+import { parseRssHubSource } from "@follow/feed-source-contracts"
 
 import { createAuditDraft } from "./audit"
 import { CredentialCipher } from "./credential-cipher"
 import type { SupplierRepository } from "./repository"
+import type { ResolvedRssHubSource } from "./source-registry"
 import { SourceRegistryError } from "./source-registry"
 
 export interface CreateCatalogRouteInput {
@@ -402,9 +404,13 @@ export class SourceCatalogService {
     )
   }
 
-  async render(id: string, values: Record<string, unknown>): Promise<SourceCatalogRenderResult> {
+  async render(
+    id: string,
+    values: Record<string, unknown>,
+    { includeDisabled = false }: { includeDisabled?: boolean } = {},
+  ): Promise<SourceCatalogRenderResult> {
     const route = await this.repository.findCatalogRouteById(id)
-    if (!route || !route.enabled) {
+    if (!route || route.deletedAt || (!route.enabled && !includeDisabled)) {
       throw new SourceRegistryError("catalog_route_not_found", "Catalog route was not found", 404)
     }
     const knownKeys = new Set(route.parameters.map((parameter) => parameter.key))
@@ -442,6 +448,27 @@ export class SourceCatalogService {
       invalidCatalog(`Rendered source URL must not exceed ${maximumLogicalURLLength} characters`)
     }
     return { logicalURL: renderedURL }
+  }
+
+  /**
+   * Render a route for an owner connection test, including a disabled one, together with the
+   * secrets bound to that exact route. Registry resolution only matches enabled templates.
+   */
+  async prepareTest(
+    id: string,
+    values: Record<string, unknown>,
+  ): Promise<{ logicalURL: string; resolved: ResolvedRssHubSource }> {
+    const { logicalURL } = await this.render(id, values, { includeDisabled: true })
+    const route = (await this.repository.findCatalogRouteById(id))!
+    return {
+      logicalURL,
+      resolved: {
+        policyKey: `catalog:${route.id}`,
+        route: null,
+        secretQuery: await this.resolveSecrets(route.secretQueryBindings),
+        source: parseRssHubSource(logicalURL),
+      },
+    }
   }
 
   async resolve(source: RssHubSource): Promise<ResolvedCatalogSource | null> {

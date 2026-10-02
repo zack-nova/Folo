@@ -57,7 +57,15 @@ export const webListSourceFromRow = (row: WebListSourceRow): StoredWebListSource
   return {
     ...source,
     html: row.format === "html" ? (extraction as StoredWebListSource["html"]) : null,
-    json: row.format === "json" ? (extraction as StoredWebListSource["json"]) : null,
+    // Sources stored before metadataPaths existed read as having none.
+    json:
+      row.format === "json"
+        ? {
+            ...(extraction as NonNullable<StoredWebListSource["json"]>),
+            metadataPaths:
+              (extraction as Partial<NonNullable<StoredWebListSource["json"]>>).metadataPaths ?? {},
+          }
+        : null,
     feedURL: webListFeedURL(row.id),
     createdAt: iso(row.createdAt)!,
     updatedAt: iso(row.updatedAt)!,

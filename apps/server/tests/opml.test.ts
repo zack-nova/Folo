@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { createAuth } from "../src/auth"
 import { MemoryDataStore } from "../src/data/memory-store"
+import { exportOpml, parseOpml } from "../src/opml"
 import { buildServer } from "../src/server"
 
 const opml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -135,5 +136,67 @@ describe("OPML portability", () => {
     })
     expect(exported.content).toContain("https://feeds.example.com/alpha.xml")
     expect(exported.content).toContain("Research")
+  })
+})
+
+describe("OPML autonomous source addresses", () => {
+  it("keeps rsshub, page change and web list addresses and drops unsafe ones", () => {
+    const listId = "5f0c1d7e-2a8b-4c3d-9e1f-0a2b3c4d5e6f"
+    const pageId = "8bd44f7a-84d2-4b0c-b052-3cdacbfc3919"
+    const subscriptions = parseOpml(`<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0"><body>
+  <outline text="X Accounts">
+    <outline type="rss" text="OpenAI" xmlUrl="rsshub://twitter/user/OpenAI" />
+    <outline type="rss" text="Leaky" xmlUrl="rsshub://twitter/user/OpenAI?key=secret" />
+  </outline>
+  <outline text="政治社会">
+    <outline type="rss" text="发改委" xmlUrl="weblist://${listId.toUpperCase()}" />
+    <outline type="rss" text="Status" xmlUrl="pagechange://${pageId}" />
+    <outline type="rss" text="Bad list" xmlUrl="weblist://${listId}/extra" />
+  </outline>
+  <outline type="rss" text="Script" xmlUrl="javascript:alert(1)" />
+</body></opml>`)
+
+    expect(subscriptions.map(({ category, url }) => ({ category, url }))).toEqual([
+      { category: "X Accounts", url: "rsshub://twitter/user/OpenAI" },
+      { category: "政治社会", url: `weblist://${listId}` },
+      { category: "政治社会", url: `pagechange://${pageId}` },
+    ])
+  })
+})
+
+describe("OPML entities", () => {
+  it("round-trips URLs, titles and categories containing XML special characters", () => {
+    const exported = exportOpml([
+      {
+        category: "Macro & Data",
+        siteUrl: null,
+        title: `Eurostat "releases" <atom>`,
+        url: "https://ec.europa.eu/eurostat/en/search?collection=CAT_PREREL&p_p_resource_id=atom",
+        view: 0,
+      },
+    ])
+
+    expect(parseOpml(exported)).toEqual([
+      {
+        category: "Macro & Data",
+        title: `Eurostat "releases" <atom>`,
+        url: "https://ec.europa.eu/eurostat/en/search?collection=CAT_PREREL&p_p_resource_id=atom",
+        view: 0,
+      },
+    ])
+  })
+
+  it("decodes numeric references but never expands document type entities", () => {
+    const [subscription] = parseOpml(`<?xml version="1.0"?>
+<!DOCTYPE opml [<!ENTITY big "expanded">]>
+<opml version="2.0"><body>
+  <outline type="rss" text="&#36890;&#x77E5; &big;" xmlUrl="https://example.com/feed?a=1&amp;b=2" />
+</body></opml>`)
+
+    expect(subscription).toMatchObject({
+      title: "通知 &big;",
+      url: "https://example.com/feed?a=1&b=2",
+    })
   })
 })

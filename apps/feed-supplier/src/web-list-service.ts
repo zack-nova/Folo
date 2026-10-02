@@ -7,8 +7,8 @@ import { parseHTML } from "linkedom"
 import { createAuditDraft } from "./audit"
 import type { SupplierRepository } from "./repository"
 import { SafeHTTPError } from "./safe-http"
-import { boundedUTF8, escapeXML, WebListError } from "./web-list-extraction"
-import type { WebListFetcher } from "./web-list-fetcher"
+import { boundedUTF8, escapeXML, renderNoticeHeader, WebListError } from "./web-list-extraction"
+import type { WebListDetail, WebListFetcher } from "./web-list-fetcher"
 import type { StoredWebListItem, StoredWebListSource } from "./web-list-repository"
 import type { CreateWebListSourceInput, UpdateWebListSourceInput } from "./web-list-validation"
 import { validateWebListInput } from "./web-list-validation"
@@ -241,14 +241,15 @@ export class WebListService {
           deferred = true
           break
         }
-        let detail: Pick<WebListItem, "title" | "content" | "detailStatus"> = {
+        let detail: WebListDetail = {
           title: item.title,
           content: null,
           detailStatus: "skipped",
+          publishedAt: null,
         }
         if (source.detail.enabled) {
           await this.fetcher.waitForOrigin(item.url, lastRequests)
-          detail = await this.fetcher.detail(item, source)
+          detail = await this.fetcher.detail(item, source, date)
           lastRequests.set(new URL(item.url).origin, Date.now())
         }
         items.push({
@@ -258,9 +259,13 @@ export class WebListService {
           guid: `urn:folo:web-list:${source.id}:${item.itemKey.slice(0, 32)}`,
           url: item.url,
           summary: item.summary,
-          publishedAt: item.publishedAt,
           discoveredAt: item.discoveredAt,
-          ...detail,
+          title: detail.title,
+          detailStatus: detail.detailStatus,
+          publishedAt: item.publishedAt ?? detail.publishedAt,
+          // Without a detail body the configured facts still deserve a place in the entry.
+          content:
+            detail.content ?? (item.metadata.length ? renderNoticeHeader(item.metadata) : null),
         })
       }
       const saved = await this.repository.saveWebListObservation(

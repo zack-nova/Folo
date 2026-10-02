@@ -1,3 +1,8 @@
+import {
+  parsePageChangeSource,
+  parseRssHubSource,
+  parseWebListSource,
+} from "@follow/feed-source-contracts"
 import { XMLParser } from "fast-xml-parser"
 
 interface XMLNode {
@@ -23,15 +28,35 @@ const array = <T>(value: T | T[] | null | undefined): T[] =>
 const object = (value: XMLValue | undefined): XMLNode | null =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value : null
 
+const namedEntities: Record<string, string> = { amp: "&", apos: "'", gt: ">", lt: "<", quot: '"' }
+
+// Entity processing stays off in the parser so DOCTYPE entities can never expand; attribute
+// values still need the predefined XML entities decoded, in a single pass.
+const decodeEntities = (value: string): string =>
+  value.replaceAll(/&(?:#(\d{1,7})|#x([\da-f]{1,6})|([a-z]+));/gi, (match, decimal, hex, name) => {
+    if (name) return namedEntities[name] ?? match
+    const codePoint = Number.parseInt(decimal ?? hex, decimal ? 10 : 16)
+    return codePoint <= 0x10_ffff ? String.fromCodePoint(codePoint) : match
+  })
+
 const string = (value: XMLValue | undefined): string | null => {
   if (typeof value !== "string" && typeof value !== "number") return null
-  return String(value).trim() || null
+  return decodeEntities(String(value)).trim() || null
+}
+
+// Logical addresses of autonomous sources; the importer decides whether this server serves them.
+const logicalSourceParsers: Record<string, (input: string) => { logicalURL: string }> = {
+  "pagechange:": parsePageChangeSource,
+  "rsshub:": parseRssHubSource,
+  "weblist:": parseWebListSource,
 }
 
 const feedURL = (value: string | null): string | null => {
   if (!value || value.length > 4096) return null
   try {
     const parsed = new URL(value)
+    const logicalSource = logicalSourceParsers[parsed.protocol]
+    if (logicalSource) return logicalSource(value).logicalURL
     if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
       return null
     }
