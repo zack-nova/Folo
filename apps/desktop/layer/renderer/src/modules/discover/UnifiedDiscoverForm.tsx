@@ -43,14 +43,19 @@ import { FeedForm } from "./FeedForm"
 
 const isFeedLikeUrl = (value: string) => {
   const trimmed = value.trim()
-  return /^(?:https?:\/\/|pagechange:\/\/|rsshub:\/\/|folo:\/\/|follow:\/\/)/.test(trimmed)
+  return /^(?:https?:\/\/|pagechange:\/\/|rsshub:\/\/|weblist:\/\/|folo:\/\/|follow:\/\/)/.test(
+    trimmed,
+  )
 }
 
 // Auto-detect input type
-function detectInputType(value: string): "pagechange" | "rss" | "rsshub" | "search" {
+function detectInputType(value: string): "pagechange" | "rss" | "rsshub" | "search" | "weblist" {
   const trimmed = value.trim()
   if (trimmed.startsWith("pagechange://")) {
     return "pagechange"
+  }
+  if (trimmed.startsWith("weblist://")) {
+    return "weblist"
   }
   if (trimmed.startsWith("rsshub://")) {
     return "rsshub"
@@ -81,6 +86,14 @@ const pageChangeSchema = z.object({
     .string()
     .regex(
       /^pagechange:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    ),
+})
+
+const webListSchema = z.object({
+  keyword: z
+    .string()
+    .regex(
+      /^weblist:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     ),
 })
 
@@ -122,6 +135,7 @@ export function UnifiedDiscoverForm() {
   const opmlEnabled = useCapability("subscriptions.opml")
   const rsshubEnabled = useCapability("sources.rsshub_self_hosted")
   const pageChangeEnabled = useCapability("sources.page_change")
+  const webListEnabled = useCapability("sources.web_list")
   const inboxEnabled = useCapability("inboxes.core")
   const profilesEnabled = useCapability("profiles.core")
   const isSelfHosted = capabilityManifest !== null
@@ -197,6 +211,21 @@ export function UnifiedDiscoverForm() {
         const validated = pageChangeSchema.safeParse({ keyword })
         if (!validated.success) {
           throw new Error("Invalid page change source")
+        }
+        present({
+          title: t("feed_form.add_feed"),
+          content: () => <FeedForm url={keyword} onSuccess={dismissAll} />,
+        })
+        return []
+      }
+
+      if (inputType === "weblist") {
+        if (!webListEnabled) {
+          throw new Error("Web list sources are unavailable on this server")
+        }
+        const validated = webListSchema.safeParse({ keyword })
+        if (!validated.success) {
+          throw new Error("Invalid web list source")
         }
         present({
           title: t("feed_form.add_feed"),

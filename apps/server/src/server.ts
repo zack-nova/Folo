@@ -12,6 +12,7 @@ import {
   PAGE_CHANGE_CAPABILITY,
   RSSHUB_SELF_HOSTED_CAPABILITY,
   SOURCE_ROUTE_CATALOG_CAPABILITY,
+  WEB_LIST_CAPABILITY,
 } from "@follow/feed-source-contracts"
 import { readabilityFromHTML } from "@follow-app/readability"
 import { fromNodeHeaders } from "better-auth/node"
@@ -558,6 +559,12 @@ export const buildServer = async ({
           message: null,
           status: "disabled",
         },
+        {
+          configured: false,
+          id: "web_list",
+          message: null,
+          status: "disabled",
+        },
       ]
     }
     try {
@@ -573,6 +580,12 @@ export const buildServer = async ({
         {
           configured: true,
           id: "page_change",
+          message: error instanceof Error ? error.message.slice(0, 500) : "Supplier unavailable",
+          status: "unavailable",
+        },
+        {
+          configured: true,
+          id: "web_list",
           message: error instanceof Error ? error.message.slice(0, 500) : "Supplier unavailable",
           status: "unavailable",
         },
@@ -764,6 +777,7 @@ export const buildServer = async ({
     ])
     const pageChangeProvider = sourceProviders.find((provider) => provider.id === "page_change")
     const rssHubProvider = sourceProviders.find((provider) => provider.id === "rsshub")
+    const webListProvider = sourceProviders.find((provider) => provider.id === "web_list")
     const lines = [
       "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
       "# TYPE folo_subscribed_feeds gauge",
@@ -812,6 +826,12 @@ export const buildServer = async ({
       "# HELP folo_page_change_sources_due Page change sources currently due for observation.",
       "# TYPE folo_page_change_sources_due gauge",
       `folo_page_change_sources_due ${pageChangeProvider?.dueSourceCount ?? 0}`,
+      "# HELP folo_web_list_sources_enabled Web list sources currently enabled.",
+      "# TYPE folo_web_list_sources_enabled gauge",
+      `folo_web_list_sources_enabled ${webListProvider?.enabledSourceCount ?? 0}`,
+      "# HELP folo_web_list_sources_due Web list sources currently due for a check.",
+      "# TYPE folo_web_list_sources_due gauge",
+      `folo_web_list_sources_due ${webListProvider?.dueSourceCount ?? 0}`,
       "",
     ]
     return reply.type("text/plain; version=0.0.4; charset=utf-8").send(lines.join("\n"))
@@ -905,9 +925,14 @@ export const buildServer = async ({
     const rssHubSourcesEnabled = feedFetcher?.supports?.("rsshub://example/route") === true
     const pageChangeSourcesEnabled =
       feedFetcher?.supports?.("pagechange://8bd44f7a-84d2-4b0c-b052-3cdacbfc3919") === true
+    const webListSourcesEnabled =
+      feedFetcher?.supports?.("weblist://8bd44f7a-84d2-4b0c-b052-3cdacbfc3919") === true
     const sourceCatalogEnabled = sourceCatalogClient !== undefined
     const autonomousSourcesEnabled =
-      rssHubSourcesEnabled || pageChangeSourcesEnabled || sourceCatalogEnabled
+      rssHubSourcesEnabled ||
+      pageChangeSourcesEnabled ||
+      webListSourcesEnabled ||
+      sourceCatalogEnabled
     const capabilities = capabilityManifest.capabilities
       .filter(
         (capability) =>
@@ -915,6 +940,7 @@ export const buildServer = async ({
           (implementedCapabilities.has(capability.id) ||
             (capability.id === RSSHUB_SELF_HOSTED_CAPABILITY && rssHubSourcesEnabled) ||
             (capability.id === PAGE_CHANGE_CAPABILITY && pageChangeSourcesEnabled) ||
+            (capability.id === WEB_LIST_CAPABILITY && webListSourcesEnabled) ||
             (capability.id === SOURCE_ROUTE_CATALOG_CAPABILITY && sourceCatalogEnabled)),
       )
       .map((capability) => ({ id: capability.id, provider: "local" as const }))

@@ -11,6 +11,7 @@ import { auditEventHash, auditHashesMatch } from "./audit"
 import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
 import type { StoredCredential, SupplierRepository } from "./repository"
 import { RepositoryConflictError } from "./repository"
+import type { StoredWebListItem, StoredWebListSource } from "./web-list-repository"
 
 const cloneCredential = (record: StoredCredential): StoredCredential => ({
   ...record,
@@ -43,6 +44,8 @@ const clonePageSource = (source: StoredPageChangeSource): StoredPageChangeSource
 const clonePageEvent = (event: PageChangeEvent): PageChangeEvent => ({ ...event })
 
 export class MemorySupplierRepository implements SupplierRepository {
+  private readonly webListSources = new Map<string, StoredWebListSource>()
+  private readonly webListItems = new Map<string, StoredWebListItem[]>()
   private readonly auditEvents: SourceAuditEvent[] = []
   private readonly catalogRoutes = new Map<string, SourceCatalogRouteAdministration>()
   private readonly credentials = new Map<string, StoredCredential>()
@@ -64,6 +67,124 @@ export class MemorySupplierRepository implements SupplierRepository {
     return [...this.routes.values()].filter((route) => !route.deletedAt).length
   }
 
+  async countWebListSources(now: string): Promise<{ due: number; enabled: number; total: number }> {
+    const sources = [...this.webListSources.values()].filter((source) => !source.deletedAt)
+    return {
+      due: sources.filter(
+        (source) => source.enabled && source.nextCheckAt && source.nextCheckAt <= now,
+      ).length,
+      enabled: sources.filter((source) => source.enabled).length,
+      total: sources.length,
+    }
+  }
+
+  async listWebListSources(): Promise<StoredWebListSource[]> {
+    return [...this.webListSources.values()]
+      .filter((source) => !source.deletedAt)
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((value) => structuredClone(value))
+  }
+
+  async findWebListSource(id: string): Promise<StoredWebListSource | null> {
+    const source = this.webListSources.get(id)
+    return source && !source.deletedAt ? structuredClone(source) : null
+  }
+
+  async createWebListSource(
+    source: StoredWebListSource,
+    audit: AuditEventDraft,
+  ): Promise<StoredWebListSource> {
+    this.assertUniqueWebListSourceName(source.name, source.id)
+    this.webListSources.set(source.id, structuredClone(source))
+    this.appendAudit(audit)
+    return structuredClone(source)
+  }
+
+  async updateWebListSource(
+    source: StoredWebListSource,
+    audit: AuditEventDraft,
+  ): Promise<StoredWebListSource | null> {
+    const current = this.webListSources.get(source.id)
+    if (!current || current.deletedAt) return null
+    this.assertUniqueWebListSourceName(source.name, source.id)
+    this.webListSources.set(source.id, structuredClone(source))
+    this.appendAudit(audit)
+    return structuredClone(source)
+  }
+
+  async softDeleteWebListSource(
+    id: string,
+    deletedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredWebListSource | null> {
+    const source = this.webListSources.get(id)
+    if (!source || source.deletedAt) return null
+    const updated = {
+      ...source,
+      deletedAt,
+      enabled: false,
+      nextCheckAt: null,
+      updatedAt: deletedAt,
+    }
+    this.webListSources.set(id, structuredClone(updated))
+    this.appendAudit(audit)
+    return structuredClone(updated)
+  }
+
+  async listDueWebListSources(now: string, limit: number): Promise<StoredWebListSource[]> {
+    return [...this.webListSources.values()]
+      .filter(
+        (source) =>
+          !source.deletedAt && source.enabled && source.nextCheckAt && source.nextCheckAt <= now,
+      )
+      .sort((left, right) => left.nextCheckAt!.localeCompare(right.nextCheckAt!))
+      .slice(0, limit)
+      .map((value) => structuredClone(value))
+  }
+
+  async findWebListItemKeys(sourceId: string, keys: string[]): Promise<string[]> {
+    return (this.webListItems.get(sourceId) ?? [])
+      .filter((item) => keys.includes(item.itemKey))
+      .map((item) => item.itemKey)
+  }
+  async saveWebListObservation(
+    source: StoredWebListSource,
+    items: StoredWebListItem[],
+  ): Promise<StoredWebListSource> {
+    const current = this.webListSources.get(source.id)
+    if (!current || current.deletedAt) throw new Error("Web list source was not found")
+    const stored = this.webListItems.get(source.id) ?? []
+    for (const item of items) {
+      if (!stored.some((existing) => existing.itemKey === item.itemKey))
+        stored.push(structuredClone(item))
+    }
+    this.webListItems.set(source.id, stored)
+    const updated = { ...source, itemCount: stored.length }
+    this.webListSources.set(source.id, structuredClone(updated))
+    return structuredClone(updated)
+  }
+
+  async listWebListItems(sourceId: string, limit: number): Promise<StoredWebListItem[]> {
+    return [...(this.webListItems.get(sourceId) ?? [])]
+      .sort(
+        (left, right) =>
+          (right.publishedAt ?? right.discoveredAt).localeCompare(
+            left.publishedAt ?? left.discoveredAt,
+          ) || right.discoveredAt.localeCompare(left.discoveredAt),
+      )
+      .slice(0, limit)
+      .map((value) => structuredClone(value))
+  }
+
+  private assertUniqueWebListSourceName(name: string, id: string): void {
+    if (
+      [...this.webListSources.values()].some(
+        (source) =>
+          !source.deletedAt && source.id !== id && source.name.toLowerCase() === name.toLowerCase(),
+      )
+    )
+      throw new RepositoryConflictError("An active web list source already uses this name")
+  }
   async countPageChangeSources(now: string): Promise<PageChangeProviderCounts> {
     const sources = [...this.pageSources.values()].filter((source) => !source.deletedAt)
     return {

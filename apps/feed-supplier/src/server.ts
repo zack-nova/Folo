@@ -21,11 +21,19 @@ import {
   SourceScalingError,
   SourceScalingTelemetry,
 } from "./source-scaling"
+import { WebListFetcher } from "./web-list-fetcher"
+import {
+  startWebListScheduler,
+  WEB_LIST_DETAIL_BUDGET_MS,
+  WebListError,
+  WebListService,
+} from "./web-list-service"
 
 export interface BuildFeedSupplierOptions {
   config: FeedSupplierConfig
   fetchImplementation?: typeof fetch
   logger?: boolean
+  webListFetcher?: WebListFetcher
   pageFetcher?: PageFetcher
   repository?: SupplierRepository
   responseCache?: SourceResponseCache
@@ -82,6 +90,7 @@ export const buildFeedSupplier = async ({
   fetchImplementation: providedFetchImplementation,
   logger = false,
   pageFetcher: providedPageFetcher,
+  webListFetcher: providedWebListFetcher,
   repository: providedRepository,
   responseCache: providedResponseCache,
 }: BuildFeedSupplierOptions) => {
@@ -119,6 +128,16 @@ export const buildFeedSupplier = async ({
       maxContentBytes: config.pageContentMaxBytes,
       timeoutMs: config.pageFetchTimeoutMs,
     })
+  const webLists = new WebListService(
+    repository,
+    providedWebListFetcher ??
+      new WebListFetcher({
+        fetchImplementation: providedFetchImplementation,
+        maxBytes: config.webListFetchMaxBytes,
+        timeoutMs: config.webListFetchTimeoutMs,
+        requestDelayMs: config.webListRequestDelayMs,
+      }),
+  )
   const pageChanges = new PageChangeService(repository, pageFetcher)
   const server = Fastify({
     bodyLimit: 16 * 1024,
@@ -130,7 +149,12 @@ export const buildFeedSupplier = async ({
           },
         }
       : false,
-    requestTimeout: Math.max(config.rssHubFetchTimeoutMs, config.pageFetchTimeoutMs) + 5_000,
+    requestTimeout:
+      Math.max(
+        config.rssHubFetchTimeoutMs,
+        config.pageFetchTimeoutMs,
+        13 * config.webListFetchTimeoutMs + WEB_LIST_DETAIL_BUDGET_MS,
+      ) + 5_000,
   })
   const responseCache =
     providedResponseCache ??
@@ -144,8 +168,17 @@ export const buildFeedSupplier = async ({
   const requestCoalescer = new SourceRequestCoalescer()
   const scalingTelemetry = new SourceScalingTelemetry()
   const baseURL = new URL(`${config.rssHubBaseURL}/`)
+  let lastWebListCycleAt: string | null = null
   let lastPageChangeCycleAt: string | null = null
 
+  const stopWebListScheduler = startWebListScheduler({
+    service: webLists,
+    pollIntervalMs: config.webListSchedulerPollIntervalMs,
+    onCycle: (result) => {
+      lastWebListCycleAt = new Date().toISOString()
+      if (result.checked > 0) server.log.info(result, "Web list cycle completed")
+    },
+  })
   const stopPageChangeScheduler = startPageChangeScheduler({
     onCycle: (result) => {
       lastPageChangeCycleAt = new Date().toISOString()
@@ -156,6 +189,7 @@ export const buildFeedSupplier = async ({
   })
   server.addHook("onClose", async () => {
     await stopPageChangeScheduler()
+    await stopWebListScheduler()
     await responseCache.close()
     await repository.close()
   })
@@ -366,6 +400,11 @@ export const buildFeedSupplier = async ({
     const scalingReady = responseCache.isReady()
     const ready = persistenceReady && upstreamReady && scalingReady
     const scalingSnapshot = scalingTelemetry.snapshot()
+    const webListCounts = persistenceReady
+      ? await repository
+          .countWebListSources(new Date().toISOString())
+          .catch(() => ({ due: 0, enabled: 0, total: 0 }))
+      : { due: 0, enabled: 0, total: 0 }
     const pageCounts = persistenceReady
       ? await repository.countPageChangeSources(new Date().toISOString()).catch(() => ({
           due: 0,
@@ -399,6 +438,16 @@ export const buildFeedSupplier = async ({
           enabledSourceCount: pageCounts.enabled,
           id: "page_change" as const,
           lastCycleAt: lastPageChangeCycleAt,
+          message: persistenceReady ? null : "Source registry persistence is unavailable",
+          persistenceStatus: persistenceReady ? ("ready" as const) : ("unavailable" as const),
+          status: persistenceReady ? ("ready" as const) : ("unavailable" as const),
+        },
+        {
+          configured: true,
+          dueSourceCount: webListCounts.due,
+          enabledSourceCount: webListCounts.enabled,
+          id: "web_list" as const,
+          lastCycleAt: lastWebListCycleAt,
           message: persistenceReady ? null : "Source registry persistence is unavailable",
           persistenceStatus: persistenceReady ? ("ready" as const) : ("unavailable" as const),
           status: persistenceReady ? ("ready" as const) : ("unavailable" as const),
@@ -617,7 +666,30 @@ export const buildFeedSupplier = async ({
     }
   })
 
+  server.get("/v1/feeds/web-list", async (request, reply) => {
+    const query = request.query as Record<string, unknown>
+    if (typeof query.url !== "string") {
+      return reply.status(400).send({ code: "invalid_source", message: "url is required" })
+    }
+    try {
+      const feed = await webLists.materializeFeed(query.url)
+      reply
+        .header("content-type", "application/rss+xml; charset=utf-8")
+        .header("etag", feed.etag)
+        .header("last-modified", new Date(feed.source.updatedAt).toUTCString())
+        .header("x-folo-upstream-url", feed.source.targetURL)
+      if (request.headers["if-none-match"] === feed.etag) return reply.status(304).send()
+      return reply.status(200).send(feed.body)
+    } catch (error) {
+      if (error instanceof WebListError) {
+        return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+      }
+      return reply.status(400).send({ code: "invalid_source", message: "Invalid web list source" })
+    }
+  })
+
   registerSourceAdminRoutes({
+    webLists,
     catalog,
     pageChanges,
     registry,

@@ -479,6 +479,16 @@
       "protocolRoutes": []
     },
     {
+      "id": "sources.web_list",
+      "title": "Autonomous web list sources",
+      "targetStage": 5,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
       "id": "rsshub.hosted",
       "title": "Hosted RSSHub discovery and routes",
       "targetStage": 5,

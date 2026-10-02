@@ -16,6 +16,9 @@ import type {
 import type { SourceRegistry } from "./source-registry"
 import { SourceRegistryError } from "./source-registry"
 import { SourceScalingError } from "./source-scaling"
+import type { WebListService } from "./web-list-service"
+import { WebListError } from "./web-list-service"
+import { webListCreateSchema, webListUpdateSchema } from "./web-list-validation"
 
 export interface RouteTestResult {
   contentBytes: number
@@ -27,6 +30,7 @@ export interface RouteTestResult {
 export interface RegisterSourceAdminRoutesOptions {
   catalog: SourceCatalogService
   registry: SourceRegistry
+  webLists: WebListService
   pageChanges: PageChangeService
   server: FastifyInstance
   testRoute: (sourceURL: string) => Promise<RouteTestResult>
@@ -77,6 +81,7 @@ const auditQuery = z.object({
   afterSequence: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(200).default(100),
 })
+const webListItemQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(20) })
 const eventQuery = z.object({ limit: z.coerce.number().int().min(1).max(20).default(20) })
 const pageSourceName = z.string().trim().min(1).max(128)
 const pageTargetURL = z.string().trim().min(1).max(2_048)
@@ -202,7 +207,7 @@ const handleAdminError = (error: unknown, reply: FastifyReply) => {
   if (error instanceof SourceRegistryError) {
     return reply.status(error.statusCode).send({ code: error.code, message: error.message })
   }
-  if (error instanceof PageChangeError) {
+  if (error instanceof PageChangeError || error instanceof WebListError) {
     return reply.status(error.statusCode).send({ code: error.code, message: error.message })
   }
   if (error instanceof RepositoryConflictError) {
@@ -215,6 +220,7 @@ export const registerSourceAdminRoutes = ({
   catalog,
   registry,
   pageChanges,
+  webLists,
   server,
   testRoute,
 }: RegisterSourceAdminRoutesOptions): void => {
@@ -299,6 +305,125 @@ export const registerSourceAdminRoutes = ({
         await catalog.recordTest(request.params.routeId, actorFor(request), false)
         return handleAdminError(error, reply)
       }
+    },
+  )
+
+  server.get("/v1/admin/web-list-sources", async () => ({ sources: await webLists.listSources() }))
+
+  server.post("/v1/admin/web-list-sources", async (request, reply) => {
+    const parsed = webListCreateSchema.safeParse(request.body)
+    if (!parsed.success) return invalidBody(reply, parsed.error)
+    try {
+      const source = await webLists.createSource(parsed.data, actorFor(request))
+      return reply.status(201).send({ source })
+    } catch (error) {
+      return handleAdminError(error, reply)
+    }
+  })
+
+  server.get<{ Params: { sourceId: string } }>(
+    "/v1/admin/web-list-sources/:sourceId",
+    async (request, reply) => {
+      const source = await webLists.getSource(request.params.sourceId)
+      if (!source) {
+        return reply
+          .status(404)
+          .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+      }
+      return { source }
+    },
+  )
+
+  server.patch<{ Params: { sourceId: string } }>(
+    "/v1/admin/web-list-sources/:sourceId",
+    async (request, reply) => {
+      const parsed = webListUpdateSchema.safeParse(request.body)
+      if (!parsed.success) return invalidBody(reply, parsed.error)
+      try {
+        const source = await webLists.updateSource(
+          request.params.sourceId,
+          parsed.data,
+          actorFor(request),
+        )
+        if (!source) {
+          return reply
+            .status(404)
+            .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+        }
+        return { source }
+      } catch (error) {
+        return handleAdminError(error, reply)
+      }
+    },
+  )
+
+  server.delete<{ Params: { sourceId: string } }>(
+    "/v1/admin/web-list-sources/:sourceId",
+    async (request, reply) => {
+      if (!(await webLists.deleteSource(request.params.sourceId, actorFor(request)))) {
+        return reply
+          .status(404)
+          .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+      }
+      return reply.status(204).send()
+    },
+  )
+
+  server.post<{ Params: { sourceId: string } }>(
+    "/v1/admin/web-list-sources/:sourceId/test",
+    async (request, reply) => {
+      try {
+        const query = z
+          .object({ detail: z.enum(["true", "false"]).optional() })
+          .strict()
+          .safeParse(request.query)
+        if (!query.success) return invalidBody(reply, query.error)
+        const result = await webLists.testSource(
+          request.params.sourceId,
+          actorFor(request),
+          query.data.detail === "true",
+        )
+        if (!result) {
+          return reply
+            .status(404)
+            .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+        }
+        return result
+      } catch (error) {
+        return handleAdminError(error, reply)
+      }
+    },
+  )
+
+  server.post<{ Params: { sourceId: string } }>(
+    "/v1/admin/web-list-sources/:sourceId/check",
+    async (request, reply) => {
+      try {
+        const result = await webLists.checkSource(request.params.sourceId)
+        if (!result) {
+          return reply
+            .status(404)
+            .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+        }
+        return result
+      } catch (error) {
+        return handleAdminError(error, reply)
+      }
+    },
+  )
+
+  server.get<{ Params: { sourceId: string } }>(
+    "/v1/admin/web-list-sources/:sourceId/items",
+    async (request, reply) => {
+      const parsed = webListItemQuery.safeParse(request.query)
+      if (!parsed.success) return invalidBody(reply, parsed.error)
+      const items = await webLists.listItems(request.params.sourceId, parsed.data.limit)
+      if (!items) {
+        return reply
+          .status(404)
+          .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+      }
+      return { items }
     },
   )
 

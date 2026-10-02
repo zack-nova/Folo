@@ -62,7 +62,7 @@ export type OperationsStatus = {
     configured: boolean
     dueSourceCount?: number
     enabledSourceCount?: number
-    id: "page_change" | "rsshub"
+    id: "page_change" | "rsshub" | "web_list"
     lastCycleAt?: string | null
     managedRouteCount?: number
     message: string | null
