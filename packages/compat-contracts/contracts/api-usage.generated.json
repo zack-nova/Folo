@@ -2133,6 +2133,17 @@
       ]
     },
     {
+      "method": "DELETE",
+      "path": "/api/extensions/sources/web-lists/{expression}",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/web-list-sources/api.ts",
+          "line": 68,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
       "method": "GET",
       "path": "/api/extensions/ai/provider",
       "callsites": [
@@ -2194,6 +2205,39 @@
         {
           "file": "apps/desktop/layer/renderer/src/modules/source-catalog/api.ts",
           "line": 43,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/extensions/sources/web-lists",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/web-list-sources/api.ts",
+          "line": 49,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/extensions/sources/web-lists/{expression}",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/web-list-sources/api.ts",
+          "line": 53,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/extensions/sources/web-lists/{expression}/items?limit={expression}",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/web-list-sources/api.ts",
+          "line": 84,
           "target": "desktop"
         }
       ]
@@ -2314,6 +2358,17 @@
       ]
     },
     {
+      "method": "PATCH",
+      "path": "/api/extensions/sources/web-lists/{expression}",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/web-list-sources/api.ts",
+          "line": 61,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
       "method": "POST",
       "path": "/api/extensions/entries/{expression}/evaluation/{expression}/select",
       "callsites": [
@@ -2424,6 +2479,39 @@
         {
           "file": "apps/desktop/layer/renderer/src/modules/source-catalog/api.ts",
           "line": 57,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/sources/web-lists",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/web-list-sources/api.ts",
+          "line": 57,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/sources/web-lists/{expression}/check",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/web-list-sources/api.ts",
+          "line": 78,
+          "target": "desktop"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/extensions/sources/web-lists/{expression}/test?detail={expression}",
+      "callsites": [
+        {
+          "file": "apps/desktop/layer/renderer/src/modules/web-list-sources/api.ts",
+          "line": 72,
           "target": "desktop"
         }
       ]

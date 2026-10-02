@@ -27,6 +27,7 @@
 - [adr/0029-scale-source-acquisition-with-redis.md](./adr/0029-scale-source-acquisition-with-redis.md)：可重建 Redis 缓存、分布式限流/并发租约和失败关闭决策。
 - [adr/0030-log-user-changes-in-the-write-transaction.md](./adr/0030-log-user-changes-in-the-write-transaction.md)：变更日志与写入同事务、按用户 advisory lock 保证游标不越过未提交行的决策。
 - [adr/0031-publish-web-list-items-as-feed-entries.md](./adr/0031-publish-web-list-items-as-feed-entries.md)：网页列表/列表 JSON 条目逐条发布、按 URL 去重与详情失败不阻塞发布的决策。
+- [adr/0032-scope-owner-source-management-with-a-dedicated-token.md](./adr/0032-scope-owner-source-management-with-a-dedicated-token.md)：所有者经核心管理网页列表源时使用独立管理令牌、严格响应校验与能力门控的决策。
 
 ## 推荐开发阶段
 

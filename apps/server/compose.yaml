@@ -19,6 +19,7 @@ services:
       DATABASE_URL: postgresql://feed_supplier:feed_supplier@feed-supplier-postgres:5432/feed_supplier
       HOST: 0.0.0.0
       INTERNAL_TOKEN: local-feed-supplier-token-at-least-32-characters
+      MANAGEMENT_TOKEN: local-feed-supplier-management-token-at-least-32-chars
       NODE_ENV: development
       REDIS_URL: redis://redis:6379/1
       ROUTE_REGISTRY_MODE: permissive

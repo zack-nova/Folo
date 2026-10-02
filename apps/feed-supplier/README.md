@@ -145,6 +145,10 @@ curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
 相关配置：`WEB_LIST_FETCH_TIMEOUT_MS`、`WEB_LIST_FETCH_MAX_BYTES`、`WEB_LIST_REQUEST_DELAY_MS`、
 `WEB_LIST_SCHEDULER_POLL_INTERVAL_MS`。
 
+配置可选的 `MANAGEMENT_TOKEN`（核心侧为 `FEED_SUPPLIER_MANAGEMENT_TOKEN`，两者同值）后，供给端在
+`/v1/manage/web-list-sources` 下提供与上面管理接口相同的网页列表接口，Folo 核心以实例所有者身份代理给“设置 → 数据源”。
+该令牌只能访问网页列表源，不能访问凭据、目录、页面变化源、审计或 Feed；任何环境下它都必须与其他所有供给端秘密不同。
+
 ## 批量导入网页列表源
 
 批量来源保存在仓库外的本地预设文件中：来源清单属于个人信息，与 AI 用户画像一样不进入仓库。格式见

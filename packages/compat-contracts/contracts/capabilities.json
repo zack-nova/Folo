@@ -489,6 +489,34 @@
       "protocolRoutes": []
     },
     {
+      "id": "sources.web_list_management",
+      "title": "Owner management of web list sources",
+      "targetStage": 5,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [
+        "DELETE /api/extensions/sources/web-lists/{expression}",
+        "GET /api/extensions/sources/web-lists",
+        "GET /api/extensions/sources/web-lists/{expression}",
+        "GET /api/extensions/sources/web-lists/{expression}/items?limit={expression}",
+        "PATCH /api/extensions/sources/web-lists/{expression}",
+        "POST /api/extensions/sources/web-lists",
+        "POST /api/extensions/sources/web-lists/{expression}/check",
+        "POST /api/extensions/sources/web-lists/{expression}/test?detail={expression}"
+      ],
+      "protocolRoutes": [
+        "GET /api/extensions/sources/web-lists",
+        "POST /api/extensions/sources/web-lists",
+        "GET /api/extensions/sources/web-lists/{sourceId}",
+        "PATCH /api/extensions/sources/web-lists/{sourceId}",
+        "DELETE /api/extensions/sources/web-lists/{sourceId}",
+        "POST /api/extensions/sources/web-lists/{sourceId}/test",
+        "POST /api/extensions/sources/web-lists/{sourceId}/check",
+        "GET /api/extensions/sources/web-lists/{sourceId}/items"
+      ]
+    },
+    {
       "id": "rsshub.hosted",
       "title": "Hosted RSSHub discovery and routes",
       "targetStage": 5,
@@ -600,6 +628,14 @@
     "GET /api/extensions/sources/catalog",
     "POST /api/extensions/sources/catalog/{routeId}/render",
     "POST /api/extensions/sources/catalog/{routeId}/test",
+    "GET /api/extensions/sources/web-lists",
+    "POST /api/extensions/sources/web-lists",
+    "GET /api/extensions/sources/web-lists/{sourceId}",
+    "PATCH /api/extensions/sources/web-lists/{sourceId}",
+    "DELETE /api/extensions/sources/web-lists/{sourceId}",
+    "POST /api/extensions/sources/web-lists/{sourceId}/test",
+    "POST /api/extensions/sources/web-lists/{sourceId}/check",
+    "GET /api/extensions/sources/web-lists/{sourceId}/items",
     "POST /api/extensions/entries/projections",
     "POST /api/extensions/processing/jobs",
     "GET /api/extensions/processing/jobs/{jobId}",

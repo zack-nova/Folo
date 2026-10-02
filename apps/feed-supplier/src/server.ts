@@ -4,7 +4,7 @@ import type { FastifyReply } from "fastify"
 import Fastify from "fastify"
 import { z } from "zod"
 
-import { registerSourceAdminRoutes } from "./admin-routes"
+import { registerSourceAdminRoutes, registerWebListRoutes } from "./admin-routes"
 import type { FeedSupplierConfig } from "./config"
 import { MemorySupplierRepository } from "./memory-repository"
 import { PageChangeError, PageChangeService, startPageChangeScheduler } from "./page-change-service"
@@ -375,10 +375,15 @@ export const buildFeedSupplier = async ({
     if (request.routeOptions.url === "/health" || request.routeOptions.url === "/ready") return
     const authorization = request.headers.authorization
     const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined
-    const expectedToken = request.routeOptions.url?.startsWith("/v1/admin/")
+    const url = request.routeOptions.url
+    // Each prefix accepts exactly one token; the routes under /v1/manage/ only exist when a
+    // management token is configured.
+    const expectedToken = url?.startsWith("/v1/admin/")
       ? config.adminToken
-      : config.internalToken
-    if (!matchesSecret(token, expectedToken)) {
+      : url?.startsWith("/v1/manage/")
+        ? config.managementToken
+        : config.internalToken
+    if (!expectedToken || !matchesSecret(token, expectedToken)) {
       return reply
         .header("www-authenticate", 'Bearer realm="folo-feed-supplier"')
         .status(401)
@@ -690,6 +695,10 @@ export const buildFeedSupplier = async ({
       return reply.status(400).send({ code: "invalid_source", message: "Invalid web list source" })
     }
   })
+
+  if (config.managementToken) {
+    registerWebListRoutes(server, webLists, "/v1/manage/web-list-sources")
+  }
 
   registerSourceAdminRoutes({
     webLists,

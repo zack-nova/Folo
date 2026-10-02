@@ -2,6 +2,7 @@ export const RSSHUB_SELF_HOSTED_CAPABILITY = "sources.rsshub_self_hosted" as con
 export const PAGE_CHANGE_CAPABILITY = "sources.page_change" as const
 export const SOURCE_ROUTE_CATALOG_CAPABILITY = "sources.route_catalog" as const
 export const WEB_LIST_CAPABILITY = "sources.web_list" as const
+export const WEB_LIST_MANAGEMENT_CAPABILITY = "sources.web_list_management" as const
 
 export type AutonomousSourceProviderId = "page_change" | "rsshub" | "web_list"
 export type AutonomousSourceProviderStatus = "disabled" | "ready" | "unavailable"
@@ -276,6 +277,51 @@ export interface WebListItem {
   summary: string | null
   title: string
   url: string
+}
+
+/** Body of a create request; omitted fields take the supplier defaults. */
+export interface WebListSourceInput {
+  detail?: Partial<WebListDetailExtraction>
+  enabled?: boolean
+  filters?: Partial<WebListFilters>
+  format: WebListFormat
+  html?: Partial<WebListHTMLExtraction> | null
+  intervalMinutes?: number | null
+  json?: (Partial<WebListJSONExtraction> & Pick<WebListJSONExtraction, "titlePath">) | null
+  maxItems?: number
+  maxPages?: number
+  name: string
+  targetURL: string
+  timeZone?: string
+}
+
+/** Body of an update request; only the fields sent change, nested objects are replaced. */
+export type WebListSourcePatch = Partial<WebListSourceInput>
+
+export interface WebListPreviewItem {
+  metadata: [label: string, value: string][]
+  publishedAt: string | null
+  summary: string | null
+  title: string
+  url: string
+}
+
+export interface WebListTestResult {
+  detail: {
+    content: string | null
+    detailStatus: WebListDetailStatus
+    publishedAt: string | null
+    title: string
+  } | null
+  finalURL: string
+  items: WebListPreviewItem[]
+  pagesRead: number
+}
+
+export interface WebListCheckResult {
+  publishedCount: number
+  source: WebListSource
+  status: "items_published" | "unchanged"
 }
 
 export interface ParsedWebListSource {

@@ -312,124 +312,7 @@ export const registerSourceAdminRoutes = ({
     },
   )
 
-  server.get("/v1/admin/web-list-sources", async () => ({ sources: await webLists.listSources() }))
-
-  server.post("/v1/admin/web-list-sources", async (request, reply) => {
-    const parsed = webListCreateSchema.safeParse(request.body)
-    if (!parsed.success) return invalidBody(reply, parsed.error)
-    try {
-      const source = await webLists.createSource(parsed.data, actorFor(request))
-      return reply.status(201).send({ source })
-    } catch (error) {
-      return handleAdminError(error, reply)
-    }
-  })
-
-  server.get<{ Params: { sourceId: string } }>(
-    "/v1/admin/web-list-sources/:sourceId",
-    async (request, reply) => {
-      const source = await webLists.getSource(request.params.sourceId)
-      if (!source) {
-        return reply
-          .status(404)
-          .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
-      }
-      return { source }
-    },
-  )
-
-  server.patch<{ Params: { sourceId: string } }>(
-    "/v1/admin/web-list-sources/:sourceId",
-    async (request, reply) => {
-      const parsed = webListUpdateSchema.safeParse(request.body)
-      if (!parsed.success) return invalidBody(reply, parsed.error)
-      try {
-        const source = await webLists.updateSource(
-          request.params.sourceId,
-          parsed.data,
-          actorFor(request),
-        )
-        if (!source) {
-          return reply
-            .status(404)
-            .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
-        }
-        return { source }
-      } catch (error) {
-        return handleAdminError(error, reply)
-      }
-    },
-  )
-
-  server.delete<{ Params: { sourceId: string } }>(
-    "/v1/admin/web-list-sources/:sourceId",
-    async (request, reply) => {
-      if (!(await webLists.deleteSource(request.params.sourceId, actorFor(request)))) {
-        return reply
-          .status(404)
-          .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
-      }
-      return reply.status(204).send()
-    },
-  )
-
-  server.post<{ Params: { sourceId: string } }>(
-    "/v1/admin/web-list-sources/:sourceId/test",
-    async (request, reply) => {
-      try {
-        const query = z
-          .object({ detail: z.enum(["true", "false"]).optional() })
-          .strict()
-          .safeParse(request.query)
-        if (!query.success) return invalidBody(reply, query.error)
-        const result = await webLists.testSource(
-          request.params.sourceId,
-          actorFor(request),
-          query.data.detail === "true",
-        )
-        if (!result) {
-          return reply
-            .status(404)
-            .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
-        }
-        return result
-      } catch (error) {
-        return handleAdminError(error, reply)
-      }
-    },
-  )
-
-  server.post<{ Params: { sourceId: string } }>(
-    "/v1/admin/web-list-sources/:sourceId/check",
-    async (request, reply) => {
-      try {
-        const result = await webLists.checkSource(request.params.sourceId)
-        if (!result) {
-          return reply
-            .status(404)
-            .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
-        }
-        return result
-      } catch (error) {
-        return handleAdminError(error, reply)
-      }
-    },
-  )
-
-  server.get<{ Params: { sourceId: string } }>(
-    "/v1/admin/web-list-sources/:sourceId/items",
-    async (request, reply) => {
-      const parsed = webListItemQuery.safeParse(request.query)
-      if (!parsed.success) return invalidBody(reply, parsed.error)
-      const items = await webLists.listItems(request.params.sourceId, parsed.data.limit)
-      if (!items) {
-        return reply
-          .status(404)
-          .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
-      }
-      return { items }
-    },
-  )
+  registerWebListRoutes(server, webLists, "/v1/admin/web-list-sources")
 
   server.get("/v1/admin/page-sources", async () => ({ sources: await pageChanges.listSources() }))
 
@@ -684,4 +567,124 @@ export const registerSourceAdminRoutes = ({
   })
 
   server.get("/v1/admin/audit/verify", async () => registry.verifyAuditChain())
+}
+
+/**
+ * Web list routes, registered for the admin token and, when configured, for the management
+ * token the Folo core uses on behalf of the instance owner. Web list sources hold no secrets.
+ */
+export const registerWebListRoutes = (
+  server: FastifyInstance,
+  webLists: WebListService,
+  base: "/v1/admin/web-list-sources" | "/v1/manage/web-list-sources",
+): void => {
+  server.get(base, async () => ({ sources: await webLists.listSources() }))
+
+  server.post(base, async (request, reply) => {
+    const parsed = webListCreateSchema.safeParse(request.body)
+    if (!parsed.success) return invalidBody(reply, parsed.error)
+    try {
+      const source = await webLists.createSource(parsed.data, actorFor(request))
+      return reply.status(201).send({ source })
+    } catch (error) {
+      return handleAdminError(error, reply)
+    }
+  })
+
+  server.get<{ Params: { sourceId: string } }>(`${base}/:sourceId`, async (request, reply) => {
+    const source = await webLists.getSource(request.params.sourceId)
+    if (!source) {
+      return reply
+        .status(404)
+        .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+    }
+    return { source }
+  })
+
+  server.patch<{ Params: { sourceId: string } }>(`${base}/:sourceId`, async (request, reply) => {
+    const parsed = webListUpdateSchema.safeParse(request.body)
+    if (!parsed.success) return invalidBody(reply, parsed.error)
+    try {
+      const source = await webLists.updateSource(
+        request.params.sourceId,
+        parsed.data,
+        actorFor(request),
+      )
+      if (!source) {
+        return reply
+          .status(404)
+          .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+      }
+      return { source }
+    } catch (error) {
+      return handleAdminError(error, reply)
+    }
+  })
+
+  server.delete<{ Params: { sourceId: string } }>(`${base}/:sourceId`, async (request, reply) => {
+    if (!(await webLists.deleteSource(request.params.sourceId, actorFor(request)))) {
+      return reply
+        .status(404)
+        .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+    }
+    return reply.status(204).send()
+  })
+
+  server.post<{ Params: { sourceId: string } }>(
+    `${base}/:sourceId/test`,
+    async (request, reply) => {
+      try {
+        const query = z
+          .object({ detail: z.enum(["true", "false"]).optional() })
+          .strict()
+          .safeParse(request.query)
+        if (!query.success) return invalidBody(reply, query.error)
+        const result = await webLists.testSource(
+          request.params.sourceId,
+          actorFor(request),
+          query.data.detail === "true",
+        )
+        if (!result) {
+          return reply
+            .status(404)
+            .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+        }
+        return result
+      } catch (error) {
+        return handleAdminError(error, reply)
+      }
+    },
+  )
+
+  server.post<{ Params: { sourceId: string } }>(
+    `${base}/:sourceId/check`,
+    async (request, reply) => {
+      try {
+        const result = await webLists.checkSource(request.params.sourceId)
+        if (!result) {
+          return reply
+            .status(404)
+            .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+        }
+        return result
+      } catch (error) {
+        return handleAdminError(error, reply)
+      }
+    },
+  )
+
+  server.get<{ Params: { sourceId: string } }>(
+    `${base}/:sourceId/items`,
+    async (request, reply) => {
+      const parsed = webListItemQuery.safeParse(request.query)
+      if (!parsed.success) return invalidBody(reply, parsed.error)
+      const items = await webLists.listItems(request.params.sourceId, parsed.data.limit)
+      if (!items) {
+        return reply
+          .status(404)
+          .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
+      }
+      return { items }
+    },
+  )
 }

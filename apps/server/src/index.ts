@@ -6,6 +6,7 @@ import { migrateDatabase } from "./db/migrate"
 import { FeedSupplierFetcher } from "./feeds/feed-supplier-fetcher"
 import { HttpFeedFetcher } from "./feeds/http-fetcher"
 import { RoutingFeedFetcher } from "./feeds/routing-fetcher"
+import { WebListManagementClient } from "./feeds/web-list-management"
 import { buildServer } from "./server"
 
 const config = loadServerConfig(process.env)
@@ -56,6 +57,9 @@ const server = await buildServer({
   readabilityFetcher: standardFeedFetcher,
   serverURL: config.serverURL,
   sourceCatalogClient: feedSupplierFetcher ?? undefined,
+  webListManagementClient: config.webListManagementConfig
+    ? new WebListManagementClient(config.webListManagementConfig)
+    : undefined,
   trustProxy: config.trustProxy,
   uploadsDirectory: config.uploadsDirectory,
 })
