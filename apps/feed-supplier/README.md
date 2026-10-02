@@ -1,7 +1,8 @@
 # Folo Feed Supplier
 
-阶段 5A 的独立数据源供给服务。它把 `rsshub://` 路由转换为自建 RSSHub 的标准 Feed，并把
-`pagechange://` 页面来源的确认变化物化为新 GUID RSS Entry。5A.2–5A.4 使用独立 PostgreSQL 保存路由、
+阶段 5A 的独立数据源供给服务。它把 `rsshub://` 路由转换为自建 RSSHub 的标准 Feed，把
+`pagechange://` 页面来源的确认变化物化为新 GUID RSS Entry，并把 `weblist://` 网页列表或列表 JSON 中的
+新条目逐条发布为 RSS Entry。5A.2–5A.4 使用独立 PostgreSQL 保存路由、
 自有路由目录、密文凭据、页面观测状态、不可变事件和 HMAC 哈希链审计；数据库和密钥都不进入 Folo 核心。
 
 本地通常先在仓库根目录运行完整 sources 预检，再启动完整自托管栈：
@@ -51,6 +52,14 @@ DELETE /v1/admin/page-sources/:sourceId
 POST   /v1/admin/page-sources/:sourceId/test
 POST   /v1/admin/page-sources/:sourceId/check
 GET    /v1/admin/page-sources/:sourceId/events
+GET    /v1/admin/web-list-sources
+POST   /v1/admin/web-list-sources
+GET    /v1/admin/web-list-sources/:sourceId
+PATCH  /v1/admin/web-list-sources/:sourceId
+DELETE /v1/admin/web-list-sources/:sourceId
+POST   /v1/admin/web-list-sources/:sourceId/test
+POST   /v1/admin/web-list-sources/:sourceId/check
+GET    /v1/admin/web-list-sources/:sourceId/items
 GET    /v1/admin/audit
 GET    /v1/admin/audit/verify
 ```
@@ -86,6 +95,49 @@ curl -fsS -X POST -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
 第一次非空观测会立即发布消息。后续不同指纹默认等待五分钟再次确认。要启用定时检测，把来源更新为
 `{"enabled":true,"intervalMinutes":360}`。创建响应中的 `feedURL` 可以直接粘贴进 Folo 发现输入框订阅；
 页面 Feed 只读取已物化事件，不会在核心轮询时访问目标网页。
+
+## 网页列表源
+
+政府公告、高校通知等没有 RSS 的列表页可以创建为网页列表源。每次检查抽取列表顶部最多 `maxItems` 条，
+按规范化 URL（或 JSON `idPath`）去重，只发布从未见过的条目；首次检查发布当前全部条目。已发布条目不可修改。
+
+创建一个 HTML 列表源，并抓取新条目的详情正文：
+
+```bash
+curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"name":"国家发展改革委通知","targetURL":"https://www.ndrc.gov.cn/xxgk/zcfb/tz/","format":"html","html":{"itemSelector":".list .u-list li"},"filters":{"includeURLPatterns":["/xxgk/zcfb/tz/"]},"detail":{"enabled":true,"contentSelectors":[".article_con",".TRS_Editor"]},"timeZone":"Asia/Shanghai","enabled":true,"intervalMinutes":360}' \
+  http://127.0.0.1:3001/v1/admin/web-list-sources
+```
+
+创建一个列表 JSON 源（接口查询参数直接写在 `targetURL` 中）：
+
+```bash
+curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"name":"中国政府网最新政策","targetURL":"https://www.gov.cn/zhengce/zuixin/ZUIXINZHENGCE.json","format":"json","json":{"itemsPath":"","titlePath":"TITLE","urlPath":"URL","publishedAtPath":"DOCRELPUBTIME"},"detail":{"enabled":true,"contentSelectors":["#UCAP-CONTENT"]},"timeZone":"Asia/Shanghai","enabled":true,"intervalMinutes":360}' \
+  http://127.0.0.1:3001/v1/admin/web-list-sources
+```
+
+先用 `POST .../test`（可加 `?detail=true` 预览第一条详情）确认选择器，再用 `POST .../check` 执行第一次真实
+检查。创建响应中的 `feedURL` 可以直接粘贴进 Folo 发现输入框订阅。
+
+抽取与运行规则：
+
+- 未配置 `itemSelector` 时自动选择包含最多带链接 `li`/`article`/`tr` 的列表，跳过页头、导航、页脚与分页。
+- `includeURLPatterns`、`excludeURLPatterns`、`includeTextPatterns`、`excludeTextPatterns` 是 JavaScript
+  正则表达式，每组最多 16 条；URL 规则匹配绝对地址，文本规则匹配标题。`utm_*`、`fbclid`、`gclid` 不参与去重。
+- 没有时区的日期按 `timeZone` 解释；超过当前时间 24 小时的日期视为无效，无日期条目使用发现时间并保持列表顺序。
+- `maxPages` 大于 1 时沿“下一页 / next / »”等链接翻页；只有第一页使用条件请求，304 表示没有变化。
+- 详情正文未配置 `contentSelectors` 时，依次尝试常见政务 CMS 正文容器、`main`/`article` 与最大文本块，
+  再按白名单清洗为 HTML，上限 128 KiB。PDF、Office 等附件链接不会被下载。详情失败的条目仍然发布，
+  `detailStatus` 记为 `failed`，不会在后续检查中重试。
+- 一次检查的详情抓取总预算为 120 秒，同源请求间隔 `WEB_LIST_REQUEST_DELAY_MS`（默认 500 ms）；预算用尽时
+  剩余新条目留到下一次检查，并清除条件请求缓存以确保下次重新读取列表。
+- 抽取不到任何条目视为失败（`web_list_no_items`），按页面来源相同的指数退避，并显示在运维状态中。
+
+相关配置：`WEB_LIST_FETCH_TIMEOUT_MS`、`WEB_LIST_FETCH_MAX_BYTES`、`WEB_LIST_REQUEST_DELAY_MS`、
+`WEB_LIST_SCHEDULER_POLL_INTERVAL_MS`。
 
 ## 生产规模化
 

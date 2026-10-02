@@ -113,6 +113,16 @@ describe("feed supplier fetcher", () => {
             persistenceStatus: "ready",
             status: "ready",
           },
+          {
+            configured: true,
+            dueSourceCount: 2,
+            enabledSourceCount: 5,
+            id: "web_list",
+            lastCycleAt: "2026-08-19T08:00:00.000Z",
+            message: null,
+            persistenceStatus: "ready",
+            status: "ready",
+          },
         ],
       }),
     )
@@ -141,7 +151,72 @@ describe("feed supplier fetcher", () => {
         id: "page_change",
         persistenceStatus: "ready",
       }),
+      expect.objectContaining({
+        dueSourceCount: 2,
+        enabledSourceCount: 5,
+        id: "web_list",
+      }),
     ])
+  })
+
+  it("reports every provider unavailable when the supplier omits web list status", async () => {
+    const fetcher = new FeedSupplierFetcher({
+      baseURL: "http://feed-supplier:3001",
+      fetchImplementation: vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          providers: [
+            { configured: true, id: "rsshub", message: null, status: "ready" },
+            { configured: true, id: "page_change", message: null, status: "ready" },
+          ],
+        }),
+      ),
+      token: "internal-feed-supplier-token-000000000000",
+    })
+
+    const statuses = await fetcher.getProviderStatuses()
+
+    expect(statuses.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: "rsshub", status: "unavailable" },
+      { id: "page_change", status: "unavailable" },
+      { id: "web_list", status: "unavailable" },
+    ])
+    expect(statuses[2]?.message).toBe("Supplier did not report web list status")
+  })
+
+  it("routes weblist:// materialized feeds through the supplier with a stable identity", async () => {
+    const feedXML = await readFile(fixturePath, "utf8")
+    const supplierFetch = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(feedXML, {
+        headers: {
+          "content-type": "application/rss+xml",
+          "x-folo-upstream-url": "https://www.example.gov.cn/notices/",
+        },
+      }),
+    )
+    const standardFetch = vi.fn<typeof fetch>()
+    const router = new RoutingFeedFetcher(
+      new HttpFeedFetcher({
+        fetchImplementation: standardFetch,
+        lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      }),
+      new FeedSupplierFetcher({
+        baseURL: "http://feed-supplier:3001",
+        fetchImplementation: supplierFetch,
+        token: "internal-feed-supplier-token-000000000000",
+      }),
+    )
+    const sourceURL = "weblist://5f0c1d7e-2a8b-4c3d-9e1f-0a2b3c4d5e6f"
+    const importer = new FeedImporter(new MemoryDataStore(), router)
+
+    const imported = await importer.subscribe("owner", { url: sourceURL })
+
+    expect(imported.feed.url).toBe(sourceURL)
+    expect(imported.entries.length).toBeGreaterThan(0)
+    expect(router.providerFor(sourceURL)).toBe("feed_supplier")
+    expect(standardFetch).not.toHaveBeenCalled()
+    const requestURL = new URL(String(supplierFetch.mock.calls[0]?.[0]))
+    expect(requestURL.pathname).toBe("/v1/feeds/web-list")
+    expect(requestURL.searchParams.get("url")).toBe(sourceURL)
   })
 
   it("routes pagechange:// materialized feeds without using the ordinary RSS fetcher", async () => {

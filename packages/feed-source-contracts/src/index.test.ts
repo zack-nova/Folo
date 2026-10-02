@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import { pageChangeFeedURL, parsePageChangeSource, parseRssHubSource } from "."
+import {
+  pageChangeFeedURL,
+  parsePageChangeSource,
+  parseRssHubSource,
+  parseWebListSource,
+  webListFeedURL,
+} from "."
 
 describe("RSSHub source contract", () => {
   it("normalizes a logical route without exposing supplier credentials", () => {
@@ -37,5 +43,26 @@ describe("page change source contract", () => {
     expect(() => parsePageChangeSource(`pagechange://${sourceId}?url=https://example.com`)).toThrow(
       "query or fragment",
     )
+  })
+})
+
+describe("web list source contract", () => {
+  const sourceId = "5f0c1d7e-2a8b-4c3d-9e1f-0a2b3c4d5e6f"
+
+  it("uses a stable UUID-only logical URL", () => {
+    expect(webListFeedURL(sourceId.toUpperCase())).toBe(`weblist://${sourceId}`)
+    expect(parseWebListSource(`weblist://${sourceId}`)).toEqual({
+      logicalURL: `weblist://${sourceId}`,
+      sourceId,
+    })
+  })
+
+  it("rejects targets, queries and other schemes", () => {
+    expect(() => parseWebListSource(`weblist://${sourceId}/list`)).toThrow("only a source ID")
+    expect(() => parseWebListSource(`weblist://${sourceId}?url=https://example.com`)).toThrow(
+      "query or fragment",
+    )
+    expect(() => parseWebListSource(`pagechange://${sourceId}`)).toThrow("weblist://")
+    expect(() => parseWebListSource("weblist://not-a-uuid")).toThrow("UUID")
   })
 })

@@ -77,11 +77,12 @@ RSSHub `key` 和所有秘密绑定参数。
 [
   { "id": "sources.rsshub_self_hosted", "provider": "local" },
   { "id": "sources.page_change", "provider": "local" },
-  { "id": "sources.route_catalog", "provider": "local" }
+  { "id": "sources.route_catalog", "provider": "local" },
+  { "id": "sources.web_list", "provider": "local" }
 ]
 ```
 
-未配置时服务仍报告阶段四能力，前端隐藏 `rsshub://`、`pagechange://` 和自有目录入口。配置后报告阶段五
+未配置时服务仍报告阶段四能力，前端隐藏 `rsshub://`、`pagechange://`、`weblist://` 和自有目录入口。配置后报告阶段五
 能力，但 `rsshub.hosted` 继续位于 `unavailable`。
 
 所有者运维状态新增 `source_providers`，Prometheus 新增：
@@ -225,6 +226,60 @@ Redis 丢失不会丢失 Feed、Entry、路由、凭据或页面事件；恢复�
 Prometheus 指标。真实数据灰度按既定决定延后，本切片只交付可控灰度所需的保护、部署和观测基础设施，
 不会自动创建来源或访问新的外部站点。
 
+## 5A.6 网页列表源
+
+政府公告、高校通知等没有 RSS 的列表页使用稳定的 `weblist://<source-uuid>` 逻辑地址。它迁移自旧 Feeds Agent
+的 `generic-web-list` 与 `generic-json-list`，决策见 ADR-0031。
+
+```text
+feed-supplier 列表 worker
+  -> 公网列表页 / 列表 JSON（逐跳 SSRF 校验、meta refresh、字符集识别）
+  -> CSS 选择器或 JSON 路径抽取条目，URL/标题正则过滤，可选分页
+  -> 按规范化 URL（或 JSON ID）去重，新条目写入不可变 web_list_items
+  -> 可选：新条目详情页抓取与白名单 HTML 清洗
+  -> /v1/feeds/web-list 物化 RSS
+  -> Folo FeedImporter / Entry / Action / 自主 AI
+```
+
+规则：
+
+1. HTML 列表优先使用 `itemSelector`；未配置时自动识别包含至少两个带链接的 `li`/`article`/`tr` 的列表，跳过
+   页头、导航、页脚、侧栏和分页区域。标题、链接、日期和摘要可以分别用条目内的选择器覆盖。
+2. JSON 列表使用点路径、`[n]` 下标和 `[]` 通配，空路径表示根节点；链接可以来自 `urlPath` 或 `urlTemplate`。
+   接口需要的查询参数直接写在目标 URL 中。
+3. 没有时区的日期按来源 `timeZone` 解释（默认 `UTC`，国内来源建议 `Asia/Shanghai`）；超过当前时间 24 小时的
+   日期视为无效。没有日期的条目使用发现时间。
+4. 首次检查发布当前列表顶部最多 `maxItems` 条（默认 20，上限 100），之后只发布新出现的条目；已发布条目不可
+   更新或删除。修改目标或抽取规则不会删除已发布条目，但会清除条件请求状态并在启用时立即重新检查。
+5. 详情抓取只针对新条目，按同源间隔串行执行；详情失败或不是 HTML 时条目仍然发布，`detailStatus` 分别记为
+   `failed` 或 `skipped`。
+6. 抽取不到任何条目视为失败（`web_list_no_items`），按页面来源相同的指数退避并进入运维状态，提醒选择器失效。
+
+管理 API 同样只接受独立 `ADMIN_TOKEN`：
+
+```text
+GET    /v1/admin/web-list-sources
+POST   /v1/admin/web-list-sources
+GET    /v1/admin/web-list-sources/:sourceId
+PATCH  /v1/admin/web-list-sources/:sourceId
+DELETE /v1/admin/web-list-sources/:sourceId
+POST   /v1/admin/web-list-sources/:sourceId/test
+POST   /v1/admin/web-list-sources/:sourceId/check
+GET    /v1/admin/web-list-sources/:sourceId/items
+```
+
+`test` 是无状态抽取预览，`check` 执行真实检查并可能发布条目。创建响应返回 `feedURL`，应用所有者把该
+`weblist://` 地址粘贴进 Folo 发现输入框即可订阅。核心只在配置供给端时宣告 `sources.web_list` 能力，
+`/v1/providers` 增加 `web_list` provider，Prometheus 增加：
+
+```text
+folo_source_provider_ready{provider="web_list"} 0|1
+folo_web_list_sources_enabled <count>
+folo_web_list_sources_due <count>
+```
+
+第一版不支持 JavaScript 渲染、登录 Cookie、自定义请求头和 POST 接口。
+
 ## 配置与启动
 
 本地最小闭环：
@@ -281,7 +336,7 @@ docker compose --env-file apps/server/.env.production \
 
 ## 5A 后续切片
 
-5A.5 的工程开发已经完成。真实数据灰度仍按约定延后，恢复时应先选择少量非关键路由，观察缓存命中、
+5A.5 的工程开发已经完成，5A.6 网页列表源已迁入旧 Feeds Agent 的列表采集能力。真实数据灰度仍按约定延后，恢复时应先选择少量非关键路由，观察缓存命中、
 429/503、上游延迟和错误率，再逐步扩大来源范围。
 
 阶段 5B 不属于上述切片。只有 5A 真实数据灰度稳定后，才评估是否需要 FOLO 官方发现或托管获取。

@@ -160,6 +160,7 @@ describe("capability discovery", () => {
         supports: (url) =>
           url.startsWith("pagechange://") ||
           url.startsWith("rsshub://") ||
+          url.startsWith("weblist://") ||
           url.startsWith("https://"),
       },
     })
@@ -178,6 +179,10 @@ describe("capability discovery", () => {
     })
     expect(data.capabilities).toContainEqual({
       id: "sources.page_change",
+      provider: "local",
+    })
+    expect(data.capabilities).toContainEqual({
+      id: "sources.web_list",
       provider: "local",
     })
     expect(data.unavailable).toContain("rsshub.hosted")

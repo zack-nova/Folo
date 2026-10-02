@@ -4,7 +4,11 @@ import type {
   SourceCatalogRoute,
   SourceCatalogTestResult,
 } from "@follow/feed-source-contracts"
-import { parsePageChangeSource, parseRssHubSource } from "@follow/feed-source-contracts"
+import {
+  parsePageChangeSource,
+  parseRssHubSource,
+  parseWebListSource,
+} from "@follow/feed-source-contracts"
 import { z } from "zod"
 
 import type { FeedFetcher, FetchedFeed } from "./importer"
@@ -84,7 +88,7 @@ const sourceProviderHealth = z
     concurrencyRejectedRequestCount: z.number().int().min(0).optional(),
     dueSourceCount: z.number().int().min(0).optional(),
     enabledSourceCount: z.number().int().min(0).optional(),
-    id: z.enum(["page_change", "rsshub"]),
+    id: z.enum(["page_change", "rsshub", "web_list"]),
     lastCycleAt: z.string().max(64).nullable().optional(),
     managedRouteCount: z.number().int().min(0).optional(),
     message: z.string().max(500).nullable(),
@@ -152,7 +156,7 @@ export class FeedSupplierFetcher implements FeedFetcher, SourceCatalogClient {
   supports(input: string): boolean {
     try {
       const protocol = new URL(input).protocol
-      return protocol === "pagechange:" || protocol === "rsshub:"
+      return protocol === "pagechange:" || protocol === "rsshub:" || protocol === "weblist:"
     } catch {
       return false
     }
@@ -174,6 +178,9 @@ export class FeedSupplierFetcher implements FeedFetcher, SourceCatalogClient {
       if (!providers.some((provider) => provider.id === "page_change")) {
         throw new Error("Supplier did not report page change status")
       }
+      if (!providers.some((provider) => provider.id === "web_list")) {
+        throw new Error("Supplier did not report web list status")
+      }
       return providers
     } catch (error) {
       return [
@@ -186,6 +193,12 @@ export class FeedSupplierFetcher implements FeedFetcher, SourceCatalogClient {
         {
           configured: true,
           id: "page_change",
+          message: error instanceof Error ? error.message.slice(0, 500) : "Supplier unavailable",
+          status: "unavailable",
+        },
+        {
+          configured: true,
+          id: "web_list",
           message: error instanceof Error ? error.message.slice(0, 500) : "Supplier unavailable",
           status: "unavailable",
         },
@@ -231,12 +244,13 @@ export class FeedSupplierFetcher implements FeedFetcher, SourceCatalogClient {
     options: { etag?: string | null; lastModified?: string | null } = {},
   ): Promise<FetchedFeed> {
     const protocol = new URL(input).protocol
-    const source =
-      protocol === "pagechange:" ? parsePageChangeSource(input) : parseRssHubSource(input)
-    const requestURL = new URL(
-      protocol === "pagechange:" ? "v1/feeds/page-change" : "v1/feeds/rsshub",
-      this.baseURL,
-    )
+    const { path, source } =
+      protocol === "pagechange:"
+        ? { path: "v1/feeds/page-change", source: parsePageChangeSource(input) }
+        : protocol === "weblist:"
+          ? { path: "v1/feeds/web-list", source: parseWebListSource(input) }
+          : { path: "v1/feeds/rsshub", source: parseRssHubSource(input) }
+    const requestURL = new URL(path, this.baseURL)
     requestURL.searchParams.set("url", source.logicalURL)
     const headers = new Headers({ authorization: `Bearer ${this.token}` })
     if (options.etag) headers.set("if-none-match", options.etag)

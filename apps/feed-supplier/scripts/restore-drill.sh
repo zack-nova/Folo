@@ -57,6 +57,8 @@ count_query="SELECT json_build_array(
   (SELECT count(*) FROM source_catalog_routes),
   (SELECT count(*) FROM page_change_sources),
   (SELECT count(*) FROM page_change_events),
+  (SELECT count(*) FROM web_list_sources),
+  (SELECT count(*) FROM web_list_items),
   (SELECT count(*) FROM source_audit_events),
   (SELECT count(*) FROM feed_supplier_schema_migrations)
 )::text;"

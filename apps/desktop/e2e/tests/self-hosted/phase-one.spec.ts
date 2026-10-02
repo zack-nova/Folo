@@ -212,6 +212,7 @@ test("registers, subscribes, renders, and persists read state against the local 
           source_providers: [
             { configured: false, id: "rsshub", message: null, status: "disabled" },
             { configured: false, id: "page_change", message: null, status: "disabled" },
+            { configured: false, id: "web_list", message: null, status: "disabled" },
           ],
           stats: {
             feedAcquisitionFailures: 1,
@@ -254,6 +255,7 @@ test("registers, subscribes, renders, and persists read state against the local 
   await expect(page.getByTestId(`operations-failed-job-${failedJobId}`)).toBeVisible()
   await expect(page.getByTestId("operations-source-provider-rsshub")).toBeVisible()
   await expect(page.getByTestId("operations-source-provider-page_change")).toBeVisible()
+  await expect(page.getByTestId("operations-source-provider-web_list")).toBeVisible()
 
   const operationsPage = page.getByTestId("operations-settings")
   await operationsPage.evaluate((element) => element.scrollIntoView({ block: "start" }))

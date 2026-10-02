@@ -172,6 +172,7 @@ describe("stage four operations", () => {
         source_providers: [
           { configured: false, id: "rsshub", message: null, status: "disabled" },
           { configured: false, id: "page_change", message: null, status: "disabled" },
+          { configured: false, id: "web_list", message: null, status: "disabled" },
         ],
         stats: { feedAcquisitionFailures: 1, subscribedFeeds: 1 },
         status: "degraded",
@@ -222,6 +223,14 @@ describe("stage four operations", () => {
             message: null,
             status: "ready" as const,
           },
+          {
+            configured: true,
+            dueSourceCount: 1,
+            enabledSourceCount: 4,
+            id: "web_list" as const,
+            message: null,
+            status: "ready" as const,
+          },
         ],
       },
     })
@@ -237,6 +246,9 @@ describe("stage four operations", () => {
     expect(metrics.body).toContain("folo_source_requests_rate_limited_total 2")
     expect(metrics.body).toContain("folo_source_requests_concurrency_rejected_total 1")
     expect(metrics.body).toContain("folo_source_requests_in_flight 2")
+    expect(metrics.body).toContain('folo_source_provider_ready{provider="web_list"} 1')
+    expect(metrics.body).toContain("folo_web_list_sources_enabled 4")
+    expect(metrics.body).toContain("folo_web_list_sources_due 1")
   })
 
   it("limits global operations status to the established instance owner", async () => {

@@ -17,6 +17,17 @@ import { auditEventHash, auditHashesMatch } from "./audit"
 import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
 import type { StoredCredential, SupplierRepository } from "./repository"
 import { RepositoryConflictError } from "./repository"
+import type { WebListSourceRow } from "./web-list-postgres"
+import {
+  webListItemColumns,
+  webListItemFromRow,
+  webListItemSelect,
+  webListSourceColumns,
+  webListSourceFromRow,
+  webListSourceSelect,
+  webListSourceValues,
+} from "./web-list-postgres"
+import type { StoredWebListItem, StoredWebListSource } from "./web-list-repository"
 
 interface CredentialRow extends QueryResultRow {
   authentication_tag: Buffer
@@ -271,12 +282,15 @@ export class PostgresSupplierRepository implements SupplierRepository {
 
   async initialize(): Promise<void> {
     const migrations = await Promise.all(
-      ["001_source_registry.sql", "002_page_change_sources.sql", "003_source_catalog.sql"].map(
-        async (filename, index) => ({
-          sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
-          version: index + 1,
-        }),
-      ),
+      [
+        "001_source_registry.sql",
+        "002_page_change_sources.sql",
+        "003_source_catalog.sql",
+        "004_web_list_sources.sql",
+      ].map(async (filename, index) => ({
+        sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
+        version: index + 1,
+      })),
     )
     await this.withTransaction(async (client) => {
       await client.query("select pg_advisory_xact_lock($1)", [1_931_505_202])
@@ -319,6 +333,147 @@ export class PostgresSupplierRepository implements SupplierRepository {
       "select count(*)::text as count from source_route_instances where deleted_at is null",
     )
     return Number(result.rows[0]?.count ?? 0)
+  }
+
+  async countWebListSources(now: string): Promise<{ due: number; enabled: number; total: number }> {
+    const result = await this.pool.query<{ due: number; enabled: number; total: number }>(
+      `select count(*) filter (where enabled and next_check_at <= $1)::integer as due, count(*) filter (where enabled)::integer as enabled, count(*)::integer as total from web_list_sources where deleted_at is null`,
+      [now],
+    )
+    return result.rows[0]!
+  }
+  async listWebListSources(): Promise<StoredWebListSource[]> {
+    const result = await this.pool.query<WebListSourceRow>(
+      `${webListSourceSelect} where source.deleted_at is null order by lower(source.name), source.created_at`,
+    )
+    return result.rows.map(webListSourceFromRow)
+  }
+  async findWebListSource(id: string): Promise<StoredWebListSource | null> {
+    const result = await this.pool.query<WebListSourceRow>(
+      `${webListSourceSelect} where source.id = $1 and source.deleted_at is null`,
+      [id],
+    )
+    return result.rows[0] ? webListSourceFromRow(result.rows[0]) : null
+  }
+  async listDueWebListSources(now: string, limit: number): Promise<StoredWebListSource[]> {
+    const result = await this.pool.query<WebListSourceRow>(
+      `${webListSourceSelect} where source.deleted_at is null and source.enabled and source.next_check_at <= $1 order by source.next_check_at limit $2`,
+      [now, limit],
+    )
+    return result.rows.map(webListSourceFromRow)
+  }
+  async createWebListSource(
+    source: StoredWebListSource,
+    audit: AuditEventDraft,
+  ): Promise<StoredWebListSource> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        const values = webListSourceValues(source)
+        await client.query(
+          `insert into web_list_sources (${[...Object.values(webListSourceColumns), "extraction"].join(",")}) values (${values.map((_value, index) => `$${index + 1}`).join(",")})`,
+          values,
+        )
+        return source
+      })
+    } catch (error) {
+      if (isUniqueViolation(error))
+        throw new RepositoryConflictError("An active web list source already uses this name")
+      throw error
+    }
+  }
+  async updateWebListSource(
+    source: StoredWebListSource,
+    audit: AuditEventDraft,
+  ): Promise<StoredWebListSource | null> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        const columns = [...Object.values(webListSourceColumns), "extraction"].slice(1)
+        const result = await client.query(
+          `update web_list_sources set ${columns.map((column, index) => `${column} = $${index + 2}`).join(",")} where id = $1 and deleted_at is null`,
+          webListSourceValues(source),
+        )
+        return result.rowCount ? source : null
+      })
+    } catch (error) {
+      if (isUniqueViolation(error))
+        throw new RepositoryConflictError("An active web list source already uses this name")
+      throw error
+    }
+  }
+  async softDeleteWebListSource(
+    id: string,
+    deletedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredWebListSource | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<WebListSourceRow>(
+        `${webListSourceSelect} where source.id = $1 and source.deleted_at is null`,
+        [id],
+      )
+      if (!result.rows[0]) return null
+      await client.query(
+        "update web_list_sources set enabled = false, next_check_at = null, deleted_at = $2, updated_at = $2 where id = $1",
+        [id, deletedAt],
+      )
+      return {
+        ...webListSourceFromRow(result.rows[0]),
+        enabled: false,
+        nextCheckAt: null,
+        deletedAt,
+        updatedAt: deletedAt,
+      }
+    })
+  }
+  async listWebListItems(sourceId: string, limit: number): Promise<StoredWebListItem[]> {
+    const result = await this.pool.query<StoredWebListItem>(
+      `${webListItemSelect} where source_id = $1 order by coalesce(published_at, discovered_at) desc, discovered_at desc, id desc limit $2`,
+      [sourceId, limit],
+    )
+    return result.rows.map(webListItemFromRow)
+  }
+  async findWebListItemKeys(sourceId: string, keys: string[]): Promise<string[]> {
+    const result = await this.pool.query<{ item_key: string }>(
+      "select item_key from web_list_items where source_id = $1 and item_key = ANY($2::text[])",
+      [sourceId, keys],
+    )
+    return result.rows.map((row) => row.item_key)
+  }
+  async saveWebListObservation(
+    source: StoredWebListSource,
+    items: StoredWebListItem[],
+  ): Promise<StoredWebListSource> {
+    return this.withTransaction(async (client) => {
+      const result = await client.query(
+        `update web_list_sources set etag=$2, last_modified=$3, next_check_at=$4, last_attempt_at=$5, last_success_at=$6, last_error_code=$7, last_error_summary=$8, consecutive_failures=$9, updated_at=$10 where id=$1 and deleted_at is null`,
+        [
+          source.id,
+          source.etag,
+          source.lastModified,
+          source.nextCheckAt,
+          source.lastAttemptAt,
+          source.lastSuccessAt,
+          source.lastErrorCode,
+          source.lastErrorSummary,
+          source.consecutiveFailures,
+          source.updatedAt,
+        ],
+      )
+      if (!result.rowCount) throw new Error("Web list source was not found")
+      for (const item of items) {
+        const values = Object.keys(webListItemColumns).map(
+          (key) => item[key as keyof typeof webListItemColumns],
+        )
+        await client.query(
+          `insert into web_list_items (${Object.values(webListItemColumns).join(",")}) values (${values.map((_value, index) => `$${index + 1}`).join(",")}) on conflict (source_id, item_key) do nothing`,
+          values,
+        )
+      }
+      const saved = await client.query<WebListSourceRow>(
+        `${webListSourceSelect} where source.id = $1`,
+        [source.id],
+      )
+      return webListSourceFromRow(saved.rows[0]!)
+    })
   }
 
   async countPageChangeSources(now: string): Promise<PageChangeProviderCounts> {
