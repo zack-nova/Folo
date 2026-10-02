@@ -10,6 +10,7 @@ import { createAuth } from "../src/auth"
 import { PostgresDataStore } from "../src/data/postgres-store"
 import { createPostgresDatabase } from "../src/db/database"
 import { migrateDatabase } from "../src/db/migrate"
+import { importAIPreset, parseAIPreset } from "../src/processing/ai-preset"
 import { buildServer } from "../src/server"
 
 const databaseURL = process.env.TEST_DATABASE_URL
@@ -240,5 +241,45 @@ describe.runIf(databaseURL)("PostgreSQL authority", () => {
       data: { configured: true, key_hint: "…cret", key_source: "stored" },
     })
     await server.close()
+  })
+
+  it("imports the AI preset with compare-and-set rule writes", async () => {
+    const auth = createAuth({
+      baseURL: "http://localhost:3000",
+      database: database.pool,
+      secret: "phase-one-test-secret-that-is-at-least-32-characters",
+      trustedOrigins: ["http://localhost:2233"],
+    })
+    await migrateDatabase({ auth, database: database.db })
+    const dataStore = new PostgresDataStore(database.db)
+    const userId = `ai-preset-${randomUUID()}`
+
+    expect(await dataStore.setActionRulesIfUnchanged(userId, [{ name: "first" }], null)).toBe(true)
+    expect(await dataStore.setActionRulesIfUnchanged(userId, [{ name: "stale" }], null)).toBe(false)
+    const stored = (await dataStore.getActionRules(userId))!
+    expect(
+      await dataStore.setActionRulesIfUnchanged(userId, [{ name: "stale" }], new Date(0)),
+    ).toBe(false)
+    expect(
+      await dataStore.setActionRulesIfUnchanged(userId, [{ name: "second" }], stored.updatedAt),
+    ).toBe(true)
+
+    const preset = parseAIPreset(
+      await readFile(new URL("../presets/feeds-agent-ai.json", import.meta.url), "utf8"),
+    )
+    const report = await importAIPreset(dataStore, userId, preset, {
+      apply: true,
+      profileDocument: "profile",
+    })
+    expect(report).toMatchObject({
+      profile: { status: "created", version: 1 },
+      taxonomy: { status: "created", version: 1 },
+    })
+    expect((await dataStore.getActionRules(userId))!.rules.map((rule) => rule.name)).toEqual([
+      "second",
+      "AI 评估最近 7 天的新条目",
+      "优先评估政策与高校通知",
+    ])
+    expect(await dataStore.getSubscription(userId, "feed_missing")).toBeNull()
   })
 })

@@ -12,6 +12,7 @@ import type {
   ProcessingAttemptRecord,
   ProcessingJobRecord,
 } from "../data/types"
+import { entryPromptText } from "./entry-text"
 
 const processorName = "personal-relevance"
 const processorVersion = "1"
@@ -86,9 +87,14 @@ export class ProcessingError extends Error {
   }
 }
 
+// The earlier Feeds Agent pipeline capped each item at 12,000 characters as well.
+export const DEFAULT_MAX_CONTENT_CHARACTERS = 12_000
+
 export interface ProcessingServiceOptions {
   dataStore: DataStore
   maxAttempts?: number
+  /** Characters of entry text sent to the provider; markup is removed first. */
+  maxContentCharacters?: number
   onError?: (error: unknown) => void
   onCleanup?: (report: MaintenanceCleanupReport) => void
   pollIntervalMs?: number
@@ -254,6 +260,11 @@ export class ProcessingService {
         this.options.resolveProvider(job.userId),
       ])
       if (!entry) throw new ProcessingError("entry_not_found", "Entry not found")
+      // The owner's subscription supplies the category and title they gave this source.
+      const [feed, subscription] = await Promise.all([
+        this.options.dataStore.getFeed(entry.feedId),
+        this.options.dataStore.getSubscription(job.userId, entry.feedId),
+      ])
       if (!profile || !taxonomy) {
         throw new ProcessingError("configuration_not_found", "Processing configuration was removed")
       }
@@ -265,7 +276,10 @@ export class ProcessingService {
         user: JSON.stringify({
           entry: {
             author: entry.author,
-            content: entry.content ?? entry.description,
+            content: entryPromptText(
+              entry.content ?? entry.description,
+              this.options.maxContentCharacters ?? DEFAULT_MAX_CONTENT_CHARACTERS,
+            ),
             published_at: entry.publishedAt.toISOString(),
             title: entry.title,
             url: entry.url,
@@ -281,6 +295,11 @@ export class ProcessingService {
             timeliness_score: "0..100",
           },
           profile: profile.content,
+          source: {
+            category: subscription?.category ?? null,
+            feed_title: subscription?.title ?? feed?.title ?? null,
+            site_url: feed?.siteUrl ?? null,
+          },
           taxonomy: taxonomy.content,
         }),
       })

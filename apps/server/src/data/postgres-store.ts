@@ -432,6 +432,15 @@ export class PostgresDataStore implements DataStore {
     })
   }
 
+  async getSubscription(userId: string, feedId: string): Promise<SubscriptionRecord | null> {
+    const [subscription] = await this.database
+      .select()
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
+      .limit(1)
+    return subscription ?? null
+  }
+
   async listSubscriptions(userId: string, view?: number): Promise<SubscriptionRecord[]> {
     return this.database
       .select()
@@ -1184,6 +1193,32 @@ export class PostgresDataStore implements DataStore {
       .where(eq(actionRules.userId, userId))
       .limit(1)
     return record ?? null
+  }
+
+  async setActionRulesIfUnchanged(
+    userId: string,
+    rules: Array<Record<string, unknown>>,
+    expectedUpdatedAt: Date | null,
+  ): Promise<boolean> {
+    const now = new Date()
+    return this.database.transaction(async (transaction) => {
+      const written = expectedUpdatedAt
+        ? await transaction
+            .update(actionRules)
+            .set({ rules, updatedAt: now })
+            .where(
+              and(eq(actionRules.userId, userId), eq(actionRules.updatedAt, expectedUpdatedAt)),
+            )
+            .returning({ userId: actionRules.userId })
+        : await transaction
+            .insert(actionRules)
+            .values({ createdAt: now, rules, updatedAt: now, userId })
+            .onConflictDoNothing({ target: actionRules.userId })
+            .returning({ userId: actionRules.userId })
+      if (written.length === 0) return false
+      await appendSyncActions(transaction, [actionRulesUpdated(userId, rules)])
+      return true
+    })
   }
 
   async setActionRules(userId: string, rules: Array<Record<string, unknown>>): Promise<void> {

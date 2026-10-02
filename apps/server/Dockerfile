@@ -41,6 +41,7 @@ WORKDIR /app
 COPY --from=dependencies --chown=node:node /build /app
 COPY --chown=node:node apps/server/src ./apps/server/src
 COPY --chown=node:node apps/server/drizzle ./apps/server/drizzle
+COPY --chown=node:node apps/server/presets ./apps/server/presets
 COPY --chown=node:node packages/compat-contracts/src ./packages/compat-contracts/src
 COPY --chown=node:node packages/compat-contracts/contracts ./packages/compat-contracts/contracts
 COPY --chown=node:node packages/feed-source-contracts/src ./packages/feed-source-contracts/src
