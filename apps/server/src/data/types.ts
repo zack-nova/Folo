@@ -451,5 +451,6 @@ export interface DataStore {
   checkHealth(): Promise<void>
   getOperationalStats(now: Date): Promise<OperationalStats>
   getSettings(userId: string): Promise<Partial<Record<SettingsTab, SettingsRecord>>>
+  /** Merges the given keys into the stored tab; clients send only the keys that changed. */
   setSettings(userId: string, tab: SettingsTab, payload: Record<string, unknown>): Promise<void>
 }

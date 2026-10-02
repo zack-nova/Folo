@@ -13,6 +13,10 @@
   `publishedAfter` / `publishedBefore` 仍是字面时间边界（重评接口依赖它）。
 - **收藏按加星时间分页。** 收藏时间线以 `collections.createdAt` 为游标，服务端改为按加星时间排序和比较。
   同一毫秒内加星的多个条目在严格比较下可能被跳过，属已知边界。
+- **设置按键合并。** `general`、`ai` 页的同步只发送本次变化的键（`appearance` 页先拉取远端再合并），
+  服务端此前用请求体整体替换存储，一次修改就会抹掉同页其他设置。`PATCH /settings/:tab` 现在把键合并进
+  已存的页（PostgreSQL 用 `jsonb ||` 原子完成），日志里的 `setting` 动作携带合并后的整页。上游 2026-10
+  恢复同步全部非设备本地设置后，这个问题对所有用户都会出现。
 - **契约扫描覆盖同步模块。** 同步引擎通过 `syncApiContext.provide(followApi.sync)` 间接调用 SDK，
   扫描器现在追踪这种模块传递，`/sync/state`、`/sync/delta` 进入冻结的 API 使用面。
 
