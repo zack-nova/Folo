@@ -43,7 +43,7 @@ describe("official notice facts", () => {
         ["来源", "国家发展改革委"],
         ["文号", "发改价格〔2026〕1303号"],
       ],
-      publishedText: "2026-09-30 10:00",
+      publishedCandidates: ["2026-09-30 10:00", "2026-09-29"],
     })
   })
 
@@ -55,7 +55,7 @@ describe("official notice facts", () => {
     )
     expect(noticeFacts(document, document.querySelector("#vsb_content")!, "论坛通知")).toEqual({
       facts: [],
-      publishedText: "2026-10-01",
+      publishedCandidates: ["2026-10-01"],
     })
   })
 })
@@ -208,5 +208,100 @@ describe("official notice items", () => {
       detailStatus: "failed",
       publishedAt: null,
     })
+  })
+})
+
+describe("official notice document numbers", () => {
+  const facts = (body: string, title: string) => {
+    const { document } = parseHTML(html(`<div id="body">${body}</div>`))
+    return noticeFacts(document, document.querySelector("#body")!, title).facts
+  }
+
+  it("takes the number from the title parentheses or a line of its own", () => {
+    expect(facts("<p>正文</p>", "关于成本核算的通知(发改价格〔2026〕1303号)")).toEqual([
+      ["文号", "发改价格〔2026〕1303号"],
+    ])
+    expect(facts("<p>工信厅办函 〔2026〕411 号</p><p>正文</p>", "关于征集的通知")).toEqual([
+      ["文号", "工信厅办函〔2026〕411号"],
+    ])
+  })
+
+  it("ignores numbers cited inside sentences", () => {
+    expect(
+      facts(
+        "<p>根据《国务院关于推进服务业扩能提质的意见》（国发〔2026〕7号），结合我市实际，制定本方案。</p>",
+        "国务院办公厅关于发展体育赛事激发消费活力的意见国办发〔2026〕28号",
+      ),
+    ).toEqual([])
+  })
+
+  it("removes mobile and download toolbars", () => {
+    const { document } = parseHTML(
+      html(
+        `<div id="body">${paragraphs(2)}<div>附件下载： 扫一扫在手机打开当前页 点击阅读 文件下载</div></div>`,
+      ),
+    )
+    const root = document.querySelector("#body")!
+    pruneNoticeBoilerplate(root)
+    expect(bodyText(root)).not.toMatch(/扫一扫|文件下载/)
+  })
+})
+
+describe("official notice review regressions", () => {
+  const source = {
+    detail: { contentSelectors: ["#body"], enabled: true, ignoreSelectors: [] },
+    timeZone: "UTC",
+  } as unknown as Parameters<typeof extractDetail>[1]
+  const pruned = (body: string) => {
+    const { document } = parseHTML(html(`<div id="body">${body}</div>`))
+    const root = document.querySelector("#body")!
+    pruneNoticeBoilerplate(root)
+    return root
+  }
+
+  it("keeps article blocks inside a wrapper that starts with a metadata label", () => {
+    expect(
+      bodyText(pruned("<div>发布时间：2026-09-30<p>本通知自下月起执行。</p></div>")),
+    ).toContain("本通知自下月起执行")
+  })
+
+  it("keeps attachment links whose text reads like a toolbar", () => {
+    const root = pruned(`${paragraphs(1)}<p><a href="/notice.pdf">附件下载</a></p>`)
+    expect(root.querySelector('a[href="/notice.pdf"]')).not.toBeNull()
+  })
+
+  it("does not treat a clause about copyright as a footer", () => {
+    const root = pruned(
+      `${paragraphs(4)}<p>第十条 著作权人版权所有，未经许可不得转载。</p><p>第十一条 本办法自发布之日起施行。</p>`,
+    )
+    expect(bodyText(root)).toContain("第十一条")
+    expect(
+      bodyText(pruned(`${paragraphs(4)}<div>版权所有：某市人民政府</div><p>页脚</p>`)),
+    ).not.toContain("页脚")
+  })
+
+  it("bounds page document numbers so the header stays small", () => {
+    const result = extractDetail(
+      html(`<div id="body"><p>国发〔2026〕${"9".repeat(140_000)}号</p>${paragraphs(1)}</div>`),
+      source,
+      "https://example.com/a",
+      "A",
+      undefined,
+      { now },
+    )
+    expect(result.facts).toEqual([])
+    expect(Buffer.byteLength(result.content)).toBeLessThanOrEqual(128 * 1024)
+  })
+
+  it("prefers publication dates over drafting dates and skips unparsable metadata", () => {
+    const result = extractDetail(
+      `<html><head><meta name="PubDate" content="unknown"></head><body><div><p>成文日期：2026-09-01</p><p>发布日期：2026-09-30</p><div id="body">${paragraphs(1)}</div></div></body></html>`,
+      source,
+      "https://example.com/a",
+      "A",
+      undefined,
+      { now },
+    )
+    expect(result.publishedAt).toBe("2026-09-30T00:00:00.000Z")
   })
 })

@@ -132,6 +132,12 @@ curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" \
 - 详情正文未配置 `contentSelectors` 时，依次尝试常见政务 CMS 正文容器、`main`/`article` 与最大文本块，
   再按白名单清洗为 HTML，上限 128 KiB。PDF、Office 等附件链接不会被下载。详情失败的条目仍然发布，
   `detailStatus` 记为 `failed`，不会在后续检查中重试。
+- 详情正文会按旧 Feeds Agent `official_policy` 清洗规则处理：去掉打印 / 分享 / 扫一扫等工具栏和“发布时间：…
+  来源：…”元数据行，在“上一篇 / 下一篇 / 责任编辑”处截断，并只在正文后半段遇到“版权所有 / ICP备”等页脚标记时
+  截断。正文旁边的附件链接会追加为“附件”列表。
+- 正文开头渲染事实头：JSON 来源通过 `json.metadataPaths`（显示名 → 字段路径，最多 12 项）配置文号、发文机关等，
+  页面中的 `ContentSource` 元信息或“来源：”行与文号补充其余信息。文号只取标题括号内或单独成行的编号，正文引用的
+  其他文件编号不会被当作本文文号。列表没有日期时，使用详情页元信息或“发布时间：”行中的日期。
 - 一次检查的详情抓取总预算为 120 秒，同源请求间隔 `WEB_LIST_REQUEST_DELAY_MS`（默认 500 ms）；预算用尽时
   剩余新条目留到下一次检查，并清除条件请求缓存以确保下次重新读取列表。
 - 抽取不到任何条目视为失败（`web_list_no_items`），按页面来源相同的指数退避，并显示在运维状态中。
@@ -161,7 +167,7 @@ FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
 - `xian-gov-documents` 的列表已迁到 `/gk/zcfg/zcwj/xaszfwj/`，改用 `.table .table-tr` 并把发文字号作为摘要。
 - `xian-gov-public-notices` 的页面改由 `/xw/gsgg/pages/1.json` 动态加载，预设直接读取该 JSON。
 - `www.nwu.edu.cn` 通知列表使用 `h3` 标题和院系摘要，避免日期数字混入标题。
-- 工信部政策接口的 `request.query` 已写入目标 URL；`metadata_paths`（文号、发文机关等）暂未迁移。
+- 工信部政策接口的 `request.query` 已写入目标 URL；`metadata_paths` 转为带中文显示名的 `json.metadataPaths`。
 - 国内来源使用 `Asia/Shanghai`，世界银行来源使用 `UTC`。
 
 ## 生产规模化

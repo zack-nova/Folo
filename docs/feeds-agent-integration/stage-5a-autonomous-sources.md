@@ -254,6 +254,9 @@ feed-supplier 列表 worker
 5. 详情抓取只针对新条目，按同源间隔串行执行；详情失败或不是 HTML 时条目仍然发布，`detailStatus` 分别记为
    `failed` 或 `skipped`。
 6. 抽取不到任何条目视为失败（`web_list_no_items`），按页面来源相同的指数退避并进入运维状态，提醒选择器失效。
+7. 详情正文沿用旧 `official_policy` 清洗规则：去除工具栏、元数据行和页脚，追加正文旁附件，并在正文前渲染
+   文号、发文机关等事实头。JSON 字段通过 `json.metadataPaths` 配置；文号只取标题括号内或单独成行的编号。
+   列表缺少日期时使用详情页日期。
 
 管理 API 同样只接受独立 `ADMIN_TOKEN`：
 
@@ -283,7 +286,7 @@ folo_web_list_sources_due <count>
 旧 Feeds Agent 的 17 个政务、高校与国际组织列表源已转换为
 [`apps/feed-supplier/presets/feeds-agent-web-lists.json`](../../apps/feed-supplier/presets/feeds-agent-web-lists.json)，
 通过 `pnpm sources:import:web-lists` 先停用创建、逐个预览，再只启用预览成功的来源。迁移时已按站点现状修正
-两个改版的西安来源和西北大学通知标题；旧清洗脚本中的文号、发文机关等元数据与正文日期抽取尚未迁移。
+两个改版的西安来源和西北大学通知标题；旧清洗脚本中的文号、发文机关等元数据、正文日期与页面杂项清理已迁移。
 
 ## 配置与启动
 

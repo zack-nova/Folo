@@ -528,9 +528,10 @@ export const extractDetail = (
   return {
     content: header + body + withAttachments + (truncated ? marker : ""),
     facts,
-    publishedAt: page.publishedText
-      ? parseListDate(dateText(page.publishedText), source.timeZone, options.now)
-      : null,
+    publishedAt:
+      page.publishedCandidates
+        .map((candidate) => parseListDate(dateText(candidate), source.timeZone, options.now))
+        .find(Boolean) ?? null,
     title,
   }
 }
