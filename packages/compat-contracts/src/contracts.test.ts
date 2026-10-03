@@ -98,7 +98,10 @@ describe("stage 0 baseline", () => {
     expect(rootPackage.packageManager).toBe(`pnpm@${baseline.client.pnpmVersion}`)
     expect(workspace).toContain(`"@follow-app/client-sdk": ${baseline.client.clientSdkVersion}`)
     expect(workspace).toContain(`typescript: ${baseline.client.typescriptVersion}`)
-    expect(process.versions.node.split(".")[0]).toBe(baseline.client.nodeVersion.split(".")[0])
+    // The baseline records the verified Node release; newer majors (CI uses lts/*) are accepted.
+    expect(Number(process.versions.node.split(".")[0])).toBeGreaterThanOrEqual(
+      Number(baseline.client.nodeVersion.split(".")[0]),
+    )
     expect(sdkPackage.version).toBe(baseline.client.clientSdkVersion)
     expect(sdkPackage["x-code-hash"]).toBe(baseline.client.clientSdkCodeHash)
     expect(betterAuthPackage.version).toBe(baseline.client.betterAuthVersion)
