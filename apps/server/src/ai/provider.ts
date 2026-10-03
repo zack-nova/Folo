@@ -10,6 +10,8 @@ export interface AICompletionResult {
   model: string
   usage: {
     inputTokens: number | null
+    /** Input tokens served from the provider's prompt cache, when it reports them. */
+    cachedInputTokens?: number | null
     outputTokens: number | null
   }
 }
@@ -29,7 +31,14 @@ export interface OpenAICompatibleProviderOptions {
 interface OpenAICompletionResponse {
   choices?: Array<{ message?: { content?: string | null } }>
   model?: string
-  usage?: { prompt_tokens?: number; completion_tokens?: number }
+  usage?: {
+    completion_tokens?: number
+    prompt_tokens?: number
+    // OpenAI and most compatible providers
+    prompt_tokens_details?: { cached_tokens?: number }
+    // DeepSeek
+    prompt_cache_hit_tokens?: number
+  }
   error?: { message?: string }
 }
 
@@ -73,6 +82,10 @@ export class OpenAICompatibleProvider implements AIProvider {
       model: payload.model ?? this.options.model,
       usage: {
         inputTokens: payload.usage?.prompt_tokens ?? null,
+        cachedInputTokens:
+          payload.usage?.prompt_tokens_details?.cached_tokens ??
+          payload.usage?.prompt_cache_hit_tokens ??
+          null,
         outputTokens: payload.usage?.completion_tokens ?? null,
       },
     }

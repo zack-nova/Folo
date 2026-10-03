@@ -1,6 +1,7 @@
 import { memoryAdapter } from "better-auth/adapters/memory"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { OpenAICompatibleProvider } from "../src/ai/provider"
 import { createAuth } from "../src/auth"
 import { MemoryDataStore } from "../src/data/memory-store"
 import { buildServer } from "../src/server"
@@ -152,5 +153,39 @@ describe("self-hosted AI provider configuration", () => {
     })
     expect(environmentFallback.body).not.toContain("sk-environment-secret-value")
     expect(environmentFallback.body).not.toContain("alue")
+  })
+})
+
+describe("OpenAI-compatible provider usage", () => {
+  const providerWith = (usage: Record<string, unknown>) =>
+    new OpenAICompatibleProvider({
+      apiKey: "sk-test",
+      baseUrl: "https://ai.example.com/v1",
+      fetch: async () =>
+        Response.json({ choices: [{ message: { content: "{}" } }], model: "m", usage }),
+      model: "m",
+    })
+
+  it("reports prompt cache hits in the OpenAI and DeepSeek formats", async () => {
+    const openAI = await providerWith({
+      completion_tokens: 5,
+      prompt_tokens: 2_000,
+      prompt_tokens_details: { cached_tokens: 1_536 },
+    }).complete({ system: "s", user: "u" })
+    expect(openAI.usage).toEqual({ cachedInputTokens: 1_536, inputTokens: 2_000, outputTokens: 5 })
+
+    const deepSeek = await providerWith({
+      completion_tokens: 5,
+      prompt_cache_hit_tokens: 1_024,
+      prompt_cache_miss_tokens: 976,
+      prompt_tokens: 2_000,
+    }).complete({ system: "s", user: "u" })
+    expect(deepSeek.usage.cachedInputTokens).toBe(1_024)
+
+    const uncached = await providerWith({ completion_tokens: 5, prompt_tokens: 20 }).complete({
+      system: "s",
+      user: "u",
+    })
+    expect(uncached.usage.cachedInputTokens).toBeNull()
   })
 })
