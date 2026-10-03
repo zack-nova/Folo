@@ -864,6 +864,7 @@ export const buildServer = async ({
     const pageChangeProvider = sourceProviders.find((provider) => provider.id === "page_change")
     const rssHubProvider = sourceProviders.find((provider) => provider.id === "rsshub")
     const webListProvider = sourceProviders.find((provider) => provider.id === "web_list")
+    const tokenUsage = processingService.tokenUsage()
     const lines = [
       "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
       "# TYPE folo_subscribed_feeds gauge",
@@ -879,6 +880,11 @@ export const buildServer = async ({
       ...Object.entries(stats.processingJobs).map(
         ([status, count]) => `folo_processing_jobs{status="${status}"} ${count}`,
       ),
+      "# HELP folo_ai_evaluation_tokens_total Provider tokens used by entry evaluations since start; cached_input is the part of input served from the provider's prompt cache.",
+      "# TYPE folo_ai_evaluation_tokens_total counter",
+      `folo_ai_evaluation_tokens_total{kind="input"} ${tokenUsage.input}`,
+      `folo_ai_evaluation_tokens_total{kind="cached_input"} ${tokenUsage.cachedInput}`,
+      `folo_ai_evaluation_tokens_total{kind="output"} ${tokenUsage.output}`,
       "# HELP folo_source_provider_ready Whether an autonomous source provider is ready.",
       "# TYPE folo_source_provider_ready gauge",
       ...sourceProviders.map(

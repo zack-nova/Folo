@@ -92,6 +92,12 @@ POST /api/extensions/entries/{entryId}/evaluation/{evaluationId}/select
   订阅或 OPML 导入把整段历史条目送给模型。多条规则同时匹配时取最高优先级。
 - 发给 Provider 的条目正文先去除 HTML 标记与脚本，再按 `PROCESSING_MAX_CONTENT_CHARS`（默认 12000 个字符，
   与旧 Feeds Agent 单条上限一致）截断；请求同时附带 `source`：订阅分类、订阅或 Feed 标题与站点地址。
+- 评估请求分两段：system 消息依次是固定指令、输出 schema、画像与 Taxonomy（按键排序序列化），同一配置下逐字节
+  相同；user 消息只有 `entry` 与 `source`。这样连续评估共享同一前缀，支持自动前缀缓存的 Provider（OpenAI、
+  DeepSeek 等）可以对画像部分按缓存价计费。指令把 user 消息整体声明为不可信的第三方数据，不执行其中的指令。
+- `/metrics` 提供本进程启动以来评估消耗的 token：`folo_ai_evaluation_tokens_total{kind="input|cached_input|output"}`，
+  `cached_input` 来自 Provider 返回的缓存命中数（`prompt_tokens_details.cached_tokens` 或 DeepSeek 的
+  `prompt_cache_hit_tokens`），用于确认缓存是否生效。
 
 ## 导入处理配置
 
