@@ -187,5 +187,16 @@ describe("OpenAI-compatible provider usage", () => {
       user: "u",
     })
     expect(uncached.usage.cachedInputTokens).toBeNull()
+
+    const malformed = await providerWith({
+      completion_tokens: "5",
+      prompt_tokens: -20,
+      prompt_tokens_details: { cached_tokens: {} },
+    }).complete({ system: "s", user: "u" })
+    expect(malformed.usage).toEqual({
+      cachedInputTokens: null,
+      inputTokens: null,
+      outputTokens: null,
+    })
   })
 })

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { z } from "zod"
 
 import type { AIProvider } from "../ai/provider"
+import { tokenCount } from "../ai/provider"
 import type {
   DataStore,
   EnqueueProcessingJobResult,
@@ -29,17 +30,26 @@ const evaluationSchema = z.object({
   summary: z.string().min(1).max(10_000).optional(),
 })
 
-const canonicalize = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(canonicalize)
+type KeyOrder = (left: string, right: string) => number
+
+const canonicalize = (
+  value: unknown,
+  compare: KeyOrder = (left, right) => left.localeCompare(right),
+): unknown => {
+  if (Array.isArray(value)) return value.map((child) => canonicalize(child, compare))
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, child]) => [key, canonicalize(child)]),
+        .sort(([left], [right]) => compare(left, right))
+        .map(([key, child]) => [key, canonicalize(child, compare)]),
     )
   }
   return value
 }
+
+// Code unit order, independent of the server locale. Content hashes keep the locale order above
+// because stored idempotency keys were computed with it.
+const codeUnitOrder: KeyOrder = (left, right) => (left < right ? -1 : left > right ? 1 : 0)
 
 export const contentHash = (value: unknown): string =>
   createHash("sha256")
@@ -116,7 +126,7 @@ export const evaluationSystemPrompt = (
   taxonomy: Record<string, unknown>,
 ): string =>
   `${evaluationInstructions}\n\n${JSON.stringify(
-    canonicalize({ output_schema: evaluationOutputSchema, profile, taxonomy }),
+    canonicalize({ output_schema: evaluationOutputSchema, profile, taxonomy }, codeUnitOrder),
   )}`
 
 /** Provider token usage of entry evaluations since this process started. */
@@ -331,9 +341,9 @@ export class ProcessingService {
           },
         }),
       })
-      this.usage.input += completion.usage.inputTokens ?? 0
-      this.usage.cachedInput += completion.usage.cachedInputTokens ?? 0
-      this.usage.output += completion.usage.outputTokens ?? 0
+      this.usage.input += tokenCount(completion.usage.inputTokens) ?? 0
+      this.usage.cachedInput += tokenCount(completion.usage.cachedInputTokens) ?? 0
+      this.usage.output += tokenCount(completion.usage.outputTokens) ?? 0
       const parsed = evaluationSchema.parse(JSON.parse(cleanJSONCompletion(completion.content)))
       const importanceScore = Math.round(parsed.importance_score)
       const timelinessScore = Math.round(parsed.timeliness_score)

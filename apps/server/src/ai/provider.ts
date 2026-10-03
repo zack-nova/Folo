@@ -16,6 +16,10 @@ export interface AICompletionResult {
   }
 }
 
+/** A provider-reported token count, or null when it is missing or not a usable count. */
+export const tokenCount = (value: unknown): number | null =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null
+
 export interface AIProvider {
   complete(request: AICompletionRequest): Promise<AICompletionResult>
 }
@@ -81,12 +85,11 @@ export class OpenAICompatibleProvider implements AIProvider {
       content,
       model: payload.model ?? this.options.model,
       usage: {
-        inputTokens: payload.usage?.prompt_tokens ?? null,
+        inputTokens: tokenCount(payload.usage?.prompt_tokens),
         cachedInputTokens:
-          payload.usage?.prompt_tokens_details?.cached_tokens ??
-          payload.usage?.prompt_cache_hit_tokens ??
-          null,
-        outputTokens: payload.usage?.completion_tokens ?? null,
+          tokenCount(payload.usage?.prompt_tokens_details?.cached_tokens) ??
+          tokenCount(payload.usage?.prompt_cache_hit_tokens),
+        outputTokens: tokenCount(payload.usage?.completion_tokens),
       },
     }
   }

@@ -214,6 +214,10 @@ describe("evaluation system prompt", () => {
       { default_half_life_days: 7, categories: [{ subcategories: ["LLM"], name: "AI" }] },
     )
     expect(second).toBe(first)
+    // Keys that collate equally or differently by locale still serialize in one fixed order.
+    expect(evaluationSystemPrompt({ "\u00e9": 1, "e\u0301": 2 }, {})).toBe(
+      evaluationSystemPrompt({ "e\u0301": 2, "\u00e9": 1 }, {}),
+    )
   })
 })
 
