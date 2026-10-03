@@ -1,5 +1,6 @@
 import { useEntry } from "@follow/store/entry/hooks"
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 
 import { EntryEvaluationPanel } from "~/modules/ai-processing"
 
@@ -14,6 +15,7 @@ export const VideosLayout: React.FC<EntryLayoutProps> = ({
   noMedia = false,
   translation,
 }) => {
+  const { t } = useTranslation()
   const entry = useEntry(entryId, (state) => state)
   const { data: transcriptionData } = useTranscription(entryId)
   const [showTranscript, setShowTranscript] = useState(false)
@@ -35,7 +37,7 @@ export const VideosLayout: React.FC<EntryLayoutProps> = ({
         ) : (
           <div className="center aspect-video w-full flex-col gap-1 rounded-md bg-material-medium text-sm text-text-secondary">
             <i className="i-mgc-video-cute-fi mb-2 size-12" />
-            Video content not available
+            {t("entry_content.video_unavailable")}
           </div>
         )}
       </div>
