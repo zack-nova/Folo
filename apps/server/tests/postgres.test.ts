@@ -4,25 +4,30 @@ import { setTimeout as delay } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 
 import { FollowClient } from "@follow-app/client-sdk"
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { createAuth } from "../src/auth"
 import { PostgresDataStore } from "../src/data/postgres-store"
-import { createPostgresDatabase } from "../src/db/database"
 import { migrateDatabase } from "../src/db/migrate"
 import { importAIPreset, parseAIPreset } from "../src/processing/ai-preset"
 import { buildServer } from "../src/server"
+import type { TestDatabase } from "./support/postgres"
+import { createTestDatabase, POSTGRES_TEST_TIMEOUT_MS } from "./support/postgres"
 
 const databaseURL = process.env.TEST_DATABASE_URL
 const fixturePath = fileURLToPath(new URL("fixtures/phase-one.rss.xml", import.meta.url))
 const collectionCursor = (createdAt: Date | string) =>
   typeof createdAt === "string" ? createdAt : createdAt.toISOString()
 
-describe.runIf(databaseURL)("PostgreSQL authority", () => {
-  const database = createPostgresDatabase(databaseURL!)
+describe.runIf(databaseURL)("PostgreSQL authority", { timeout: POSTGRES_TEST_TIMEOUT_MS }, () => {
+  let database: TestDatabase
+
+  beforeAll(async () => {
+    database = await createTestDatabase(databaseURL!)
+  }, POSTGRES_TEST_TIMEOUT_MS)
 
   afterAll(async () => {
-    await database.pool.end()
+    await database?.drop()
   })
 
   it("keeps a subscription available after the API server is rebuilt", async () => {

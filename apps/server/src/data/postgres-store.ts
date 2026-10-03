@@ -253,7 +253,12 @@ const flipReadStates = async (
         )
         .returning({ entryId: readStates.entryId })
 
-  return changed.map((row) => ({ entryId: row.entryId, feedId: feedIdByEntry.get(row.entryId)! }))
+  // Row order above follows whichever plan Postgres picks (an index scan returns id order), so
+  // the logged entry ids keep the caller's order instead, as the memory store does.
+  const position = new Map([...new Set(entryIds)].map((entryId, index) => [entryId, index]))
+  return changed
+    .map((row) => ({ entryId: row.entryId, feedId: feedIdByEntry.get(row.entryId)! }))
+    .sort((left, right) => position.get(left.entryId)! - position.get(right.entryId)!)
 }
 
 export class PostgresDataStore implements DataStore {
