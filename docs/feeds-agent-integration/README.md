@@ -28,6 +28,7 @@
 - [adr/0030-log-user-changes-in-the-write-transaction.md](./adr/0030-log-user-changes-in-the-write-transaction.md)：变更日志与写入同事务、按用户 advisory lock 保证游标不越过未提交行的决策。
 - [adr/0031-publish-web-list-items-as-feed-entries.md](./adr/0031-publish-web-list-items-as-feed-entries.md)：网页列表/列表 JSON 条目逐条发布、按 URL 去重与详情失败不阻塞发布的决策。
 - [adr/0032-scope-owner-source-management-with-a-dedicated-token.md](./adr/0032-scope-owner-source-management-with-a-dedicated-token.md)：所有者经核心管理网页列表源时使用独立管理令牌、严格响应校验与能力门控的决策。
+- [adr/0033-publish-sources-as-a-private-rss-service.md](./adr/0033-publish-sources-as-a-private-rss-service.md)：供给端独立部署为私有 RSS 服务，内部通道与按使用方授权、每源独立能力地址的公开通道并存，个人凭据依赖统一可见。
 
 ## 推荐开发阶段
 
