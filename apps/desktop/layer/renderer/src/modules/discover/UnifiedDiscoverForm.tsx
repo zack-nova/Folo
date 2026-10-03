@@ -16,6 +16,7 @@ import type { DiscoveryItem } from "@follow-app/client-sdk"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { repository } from "@pkg"
 import { useMutation } from "@tanstack/react-query"
+import i18next from "i18next"
 import { produce } from "immer"
 import type { ChangeEvent, CompositionEvent } from "react"
 import { startTransition, useCallback, useEffect, useMemo, useRef } from "react"
@@ -28,6 +29,7 @@ import { useCapability, useCapabilityManifest } from "~/atoms/capabilities"
 import { useModalStack } from "~/components/ui/modal/stacked/hooks"
 import { useRequireLogin } from "~/hooks/common/useRequireLogin"
 import { followClient } from "~/lib/api-client"
+import { createErrorToaster } from "~/lib/error-parser"
 
 import {
   getDiscoverSearchData,
@@ -66,38 +68,43 @@ function detectInputType(value: string): "pagechange" | "rss" | "rsshub" | "sear
   return "search"
 }
 
-const searchSchema = z.object({
-  keyword: z.string().min(1),
+const rsshubRouteSchema = z.string().url().startsWith("rsshub://")
+const pageChangeSourceSchema = z
+  .string()
+  .regex(
+    /^pagechange:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+  )
+const webListSourceSchema = z
+  .string()
+  .regex(/^weblist:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+
+// Messages are resolved at validation time so they follow the current language.
+const discoverSchema = z.object({
+  keyword: z
+    .string()
+    .min(1)
+    .refine(
+      (keyword) =>
+        detectInputType(keyword) !== "rsshub" ||
+        rsshubRouteSchema.safeParse(keyword.trim()).success,
+      { error: () => i18next.t("discover.invalid_rsshub_route") },
+    )
+    .refine(
+      (keyword) =>
+        detectInputType(keyword) !== "pagechange" ||
+        pageChangeSourceSchema.safeParse(keyword.trim()).success,
+      { error: () => i18next.t("discover.invalid_page_change_source") },
+    )
+    .refine(
+      (keyword) =>
+        detectInputType(keyword) !== "weblist" ||
+        webListSourceSchema.safeParse(keyword.trim()).success,
+      { error: () => i18next.t("discover.invalid_web_list_source") },
+    ),
   target: z.enum(["feeds", "lists"]),
 })
 
-const rssSchema = z.object({
-  keyword: z.string().refine(isFeedLikeUrl, {
-    message: "Invalid RSS URL",
-  }),
-})
-
-const rsshubSchema = z.object({
-  keyword: z.string().url().startsWith("rsshub://"),
-})
-
-const pageChangeSchema = z.object({
-  keyword: z
-    .string()
-    .regex(
-      /^pagechange:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    ),
-})
-
-const webListSchema = z.object({
-  keyword: z
-    .string()
-    .regex(
-      /^weblist:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    ),
-})
-
-type SearchFormData = z.infer<typeof searchSchema>
+type DiscoverFormData = z.infer<typeof discoverSchema>
 
 // Compact Tool Link Component
 interface ToolLinkProps {
@@ -148,9 +155,8 @@ export function UnifiedDiscoverForm() {
     return "search"
   }, [keywordFromSearch])
 
-  // Use search form by default, but validate based on detected type
-  const form = useForm<SearchFormData>({
-    resolver: zodResolver(searchSchema),
+  const form = useForm<DiscoverFormData>({
+    resolver: zodResolver(discoverSchema),
     defaultValues: {
       keyword: keywordFromSearch || "",
       target: "feeds",
@@ -174,67 +180,6 @@ export function UnifiedDiscoverForm() {
 
   const mutation = useMutation({
     mutationFn: async ({ keyword, target }: { keyword: string; target: "feeds" | "lists" }) => {
-      const inputType = detectInputType(keyword)
-
-      // For RSS/RSSHub, validate and show feed form modal directly
-      if (inputType === "rss") {
-        const validated = rssSchema.safeParse({ keyword })
-        if (!validated.success) {
-          throw new Error("Invalid RSS URL")
-        }
-        present({
-          title: t("feed_form.add_feed"),
-          content: () => <FeedForm url={keyword} onSuccess={dismissAll} />,
-        })
-        return []
-      }
-
-      if (inputType === "rsshub") {
-        if (!rsshubEnabled) {
-          throw new Error("RSSHub is unavailable on this server")
-        }
-        const validated = rsshubSchema.safeParse({ keyword })
-        if (!validated.success) {
-          throw new Error("Invalid RSSHub route")
-        }
-        present({
-          title: t("feed_form.add_feed"),
-          content: () => <FeedForm url={keyword} onSuccess={dismissAll} />,
-        })
-        return []
-      }
-
-      if (inputType === "pagechange") {
-        if (!pageChangeEnabled) {
-          throw new Error("Page change sources are unavailable on this server")
-        }
-        const validated = pageChangeSchema.safeParse({ keyword })
-        if (!validated.success) {
-          throw new Error("Invalid page change source")
-        }
-        present({
-          title: t("feed_form.add_feed"),
-          content: () => <FeedForm url={keyword} onSuccess={dismissAll} />,
-        })
-        return []
-      }
-
-      if (inputType === "weblist") {
-        if (!webListEnabled) {
-          throw new Error("Web list sources are unavailable on this server")
-        }
-        const validated = webListSchema.safeParse({ keyword })
-        if (!validated.success) {
-          throw new Error("Invalid web list source")
-        }
-        present({
-          title: t("feed_form.add_feed"),
-          content: () => <FeedForm url={keyword} onSuccess={dismissAll} />,
-        })
-        return []
-      }
-
-      // For search, perform discovery
       const { data } = await followClient.api.discover.discover({
         keyword: keyword.trim(),
         target,
@@ -247,6 +192,7 @@ export function UnifiedDiscoverForm() {
 
       return data
     },
+    onError: createErrorToaster(t("discover.search_failed")),
   })
 
   const handleKeywordChange = useCallback(
@@ -350,10 +296,32 @@ export function UnifiedDiscoverForm() {
     [form],
   )
 
-  function onSubmit(values: SearchFormData) {
+  function onSubmit(values: DiscoverFormData) {
     if (!ensureLogin()) {
       return
     }
+
+    // Feed addresses open the feed preview directly; only keywords go through discovery
+    const inputType = detectInputType(values.keyword)
+    if (inputType !== "search") {
+      const sourceEnabled = {
+        pagechange: pageChangeEnabled,
+        rss: true,
+        rsshub: rsshubEnabled,
+        weblist: webListEnabled,
+      }[inputType]
+      if (!sourceEnabled) {
+        form.setError("keyword", { message: t("discover.source_unavailable") })
+        return
+      }
+      const url = values.keyword.trim()
+      present({
+        title: t("feed_form.add_feed"),
+        content: () => <FeedForm url={url} onSuccess={dismissAll} />,
+      })
+      return
+    }
+
     atomKey.current = values.keyword + values.target
     mutation.mutate({ keyword: values.keyword, target: values.target })
   }
@@ -388,7 +356,7 @@ export function UnifiedDiscoverForm() {
                       placeholder={
                         isSelfHosted
                           ? t("discover.rss_url")
-                          : "Enter URL, RSSHub route, or keyword..."
+                          : t("discover.search_input_placeholder")
                       }
                       className="h-12 text-base"
                     />
@@ -426,7 +394,7 @@ export function UnifiedDiscoverForm() {
                           className="inline-flex items-center gap-1 rounded-full border border-accent px-2 py-px text-accent hover:bg-accent/10"
                         >
                           <i className="i-mgc-book-6-cute-re" />
-                          <span>RSSHub Docs</span>
+                          <span>{t("discover.rsshub_docs")}</span>
                         </a>
                       </>
                     )}

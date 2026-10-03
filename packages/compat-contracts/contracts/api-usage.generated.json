@@ -16,7 +16,7 @@
       "callsites": [
         {
           "file": "packages/internal/store/src/modules/action/store.ts",
-          "line": 63,
+          "line": 64,
           "target": "shared"
         }
       ]
@@ -34,7 +34,7 @@
       "callsites": [
         {
           "file": "packages/internal/store/src/modules/action/store.ts",
-          "line": 88,
+          "line": 89,
           "target": "shared"
         }
       ]
@@ -523,18 +523,13 @@
       "callsites": [
         { "file": "apps/cli/src/commands/search.ts", "line": 57, "target": "cli" },
         {
-          "file": "apps/desktop/layer/renderer/src/modules/discover/DiscoverForm.tsx",
-          "line": 138,
-          "target": "desktop"
-        },
-        {
           "file": "apps/desktop/layer/renderer/src/modules/discover/UnifiedDiscoverForm.tsx",
-          "line": 238,
+          "line": 183,
           "target": "desktop"
         },
         {
           "file": "apps/desktop/layer/renderer/src/modules/subscription-column/SimpleDiscoverModal.tsx",
-          "line": 93,
+          "line": 98,
           "target": "desktop"
         },
         {
@@ -1618,12 +1613,12 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/pages/(main)/(layer)/(subview)/rsshub/index.tsx",
-          "line": 243,
+          "line": 247,
           "target": "desktop"
         },
         {
           "file": "apps/desktop/layer/renderer/src/pages/(main)/(layer)/(subview)/rsshub/index.tsx",
-          "line": 298,
+          "line": 302,
           "target": "desktop"
         },
         {
@@ -1684,17 +1679,17 @@
         },
         {
           "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
-          "line": 355,
+          "line": 391,
           "target": "desktop"
         },
         {
           "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
-          "line": 379,
+          "line": 415,
           "target": "desktop"
         },
         {
           "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
-          "line": 652,
+          "line": 728,
           "target": "desktop"
         },
         {
@@ -1709,7 +1704,7 @@
         },
         {
           "file": "apps/mobile/src/modules/settings/sync-queue.ts",
-          "line": 535,
+          "line": 567,
           "target": "mobile"
         }
       ]
@@ -1727,42 +1722,42 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
-          "line": 481,
+          "line": 517,
           "target": "desktop"
         },
         {
           "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
-          "line": 514,
+          "line": 550,
           "target": "desktop"
         },
         {
           "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
-          "line": 518,
+          "line": 554,
           "target": "desktop"
         },
         {
           "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
-          "line": 522,
+          "line": 558,
           "target": "desktop"
         },
         {
           "file": "apps/desktop/layer/renderer/src/modules/settings/helper/sync-queue.ts",
-          "line": 551,
+          "line": 587,
           "target": "desktop"
         },
         {
           "file": "apps/mobile/src/modules/settings/sync-queue.ts",
-          "line": 452,
+          "line": 484,
           "target": "mobile"
         },
         {
           "file": "apps/mobile/src/modules/settings/sync-queue.ts",
-          "line": 496,
+          "line": 528,
           "target": "mobile"
         },
         {
           "file": "apps/mobile/src/modules/settings/sync-queue.ts",
-          "line": 515,
+          "line": 547,
           "target": "mobile"
         }
       ]
@@ -1922,7 +1917,7 @@
           "line": 39,
           "target": "desktop"
         },
-        { "file": "apps/mobile/src/modules/settings/utils.ts", "line": 71, "target": "mobile" }
+        { "file": "apps/mobile/src/modules/settings/utils.ts", "line": 72, "target": "mobile" }
       ]
     },
     {
@@ -1938,7 +1933,7 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/modules/discover/DiscoverImport.tsx",
-          "line": 20,
+          "line": 27,
           "target": "desktop"
         }
       ]
@@ -2044,7 +2039,7 @@
           "line": 13,
           "target": "desktop"
         },
-        { "file": "apps/mobile/src/modules/settings/utils.ts", "line": 21, "target": "mobile" }
+        { "file": "apps/mobile/src/modules/settings/utils.ts", "line": 22, "target": "mobile" }
       ]
     },
     {
@@ -2060,7 +2055,7 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/modules/ai-chat/utils/file-processing.ts",
-          "line": 211,
+          "line": 216,
           "target": "desktop"
         }
       ]
@@ -2078,7 +2073,7 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/queries/wallet.tsx",
-          "line": 16,
+          "line": 17,
           "target": "desktop"
         }
       ]
@@ -2096,7 +2091,7 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/queries/wallet.tsx",
-          "line": 30,
+          "line": 31,
           "target": "desktop"
         }
       ]
@@ -2289,7 +2284,7 @@
           "line": 19,
           "target": "desktop"
         },
-        { "file": "apps/mobile/src/lib/auth.ts", "line": 226, "target": "mobile" },
+        { "file": "apps/mobile/src/lib/auth.ts", "line": 282, "target": "mobile" },
         {
           "file": "apps/mobile/src/modules/settings/routes/Account.tsx",
           "line": 201,
@@ -2317,7 +2312,7 @@
           "line": 7,
           "target": "desktop"
         },
-        { "file": "apps/mobile/src/lib/auth.ts", "line": 208, "target": "mobile" },
+        { "file": "apps/mobile/src/lib/auth.ts", "line": 213, "target": "mobile" },
         { "file": "apps/ssr/client/modules/login/index.tsx", "line": 72, "target": "ssr" },
         { "file": "apps/ssr/client/pages/(login)/layout.tsx", "line": 19, "target": "ssr" },
         { "file": "apps/ssr/client/providers/user-provider.tsx", "line": 8, "target": "ssr" },
@@ -2347,7 +2342,7 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/modules/settings/tabs/plan.tsx",
-          "line": 155,
+          "line": 153,
           "target": "desktop"
         },
         {
@@ -2560,12 +2555,12 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/modules/profile/update-password-form.tsx",
-          "line": 52,
+          "line": 58,
           "target": "desktop"
         },
         {
           "file": "apps/mobile/src/modules/settings/routes/ResetPassword.tsx",
-          "line": 35,
+          "line": 37,
           "target": "mobile"
         }
       ]
@@ -2573,7 +2568,7 @@
     {
       "method": "POST",
       "path": "/better-auth/delete-user-custom",
-      "callsites": [{ "file": "apps/mobile/src/lib/auth.ts", "line": 272, "target": "mobile" }]
+      "callsites": [{ "file": "apps/mobile/src/lib/auth.ts", "line": 328, "target": "mobile" }]
     },
     {
       "method": "POST",
@@ -2602,7 +2597,7 @@
         },
         {
           "file": "apps/desktop/layer/renderer/src/modules/auth/TokenModal.tsx",
-          "line": 45,
+          "line": 46,
           "target": "desktop"
         },
         {
@@ -2677,8 +2672,8 @@
       "method": "POST",
       "path": "/better-auth/sign-in/social",
       "callsites": [
-        { "file": "apps/mobile/src/modules/login/social.tsx", "line": 81, "target": "mobile" },
-        { "file": "apps/mobile/src/modules/login/social.tsx", "line": 97, "target": "mobile" },
+        { "file": "apps/mobile/src/lib/auth.ts", "line": 226, "target": "mobile" },
+        { "file": "apps/mobile/src/modules/login/social.tsx", "line": 94, "target": "mobile" },
         { "file": "apps/ssr/client/modules/login/index.tsx", "line": 91, "target": "ssr" },
         { "file": "packages/internal/shared/src/auth.ts", "line": 148, "target": "shared" }
       ]
@@ -2707,8 +2702,8 @@
           "line": 226,
           "target": "desktop"
         },
-        { "file": "apps/mobile/src/lib/auth.ts", "line": 252, "target": "mobile" },
-        { "file": "apps/mobile/src/lib/auth.ts", "line": 275, "target": "mobile" },
+        { "file": "apps/mobile/src/lib/auth.ts", "line": 308, "target": "mobile" },
+        { "file": "apps/mobile/src/lib/auth.ts", "line": 331, "target": "mobile" },
         {
           "file": "apps/mobile/src/modules/settings/SettingsList.tsx",
           "line": 230,
@@ -2728,7 +2723,7 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/modules/auth/Form.tsx",
-          "line": 453,
+          "line": 459,
           "target": "desktop"
         },
         { "file": "apps/mobile/src/modules/login/email.tsx", "line": 211, "target": "mobile" },
@@ -2741,7 +2736,7 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/modules/settings/tabs/plan.tsx",
-          "line": 126,
+          "line": 124,
           "target": "desktop"
         },
         {
@@ -2794,7 +2789,7 @@
         },
         {
           "file": "apps/desktop/layer/renderer/src/modules/auth/Form.tsx",
-          "line": 255,
+          "line": 257,
           "target": "desktop"
         },
         {
@@ -2809,7 +2804,7 @@
         },
         {
           "file": "apps/mobile/src/screens/(modal)/TwoFactorAuthScreen.tsx",
-          "line": 29,
+          "line": 31,
           "target": "mobile"
         },
         { "file": "apps/ssr/client/modules/login/index.tsx", "line": 371, "target": "ssr" }
