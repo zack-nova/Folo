@@ -351,6 +351,31 @@ describe.each(stores)(
       expect((await client.api.sync.state()).data.lastSyncId).toBe(state)
     })
 
+    it("merges partial settings updates into the stored tab", async () => {
+      const { client, delta, request } = await start()
+      // Clients send only the keys that changed since their last flush.
+      await request("PATCH", "/settings/general", { unreadOnly: true })
+      const cursor = (await client.api.sync.state()).data.lastSyncId
+      await request("PATCH", "/settings/general", { actionLanguage: "ja" })
+
+      const settings = await request("GET", "/settings?tab=general")
+      expect((settings.body.settings as Record<string, unknown>).general).toEqual({
+        unreadOnly: true,
+        actionLanguage: "ja",
+      })
+      // The log carries the whole tab, as GET /settings returns it.
+      expect((await delta(cursor)).actions).toEqual([
+        expect.objectContaining({
+          model: "setting",
+          modelId: "general",
+          data: {
+            payload: { unreadOnly: true, actionLanguage: "ja" },
+            updatedAt: expect.any(String),
+          },
+        }),
+      ])
+    })
+
     it("keeps unknown sync routes on 404 and rejects malformed cursors", async () => {
       const { request } = await start()
       expect((await request("GET", "/sync/unknown")).status).toBe(404)

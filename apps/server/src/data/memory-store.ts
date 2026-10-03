@@ -944,8 +944,11 @@ export class MemoryDataStore implements DataStore {
     payload: Record<string, unknown>,
   ): Promise<void> {
     const updatedAt = new Date()
-    this.settings.set(`${userId}:${tab}`, { payload: structuredClone(payload), updatedAt })
-    this.recordSyncActions([settingsUpdated(userId, tab, payload, updatedAt)])
+    const key = `${userId}:${tab}`
+    // Clients send only the keys that changed, so merge them into the stored tab.
+    const merged = { ...this.settings.get(key)?.payload, ...structuredClone(payload) }
+    this.settings.set(key, { payload: merged, updatedAt })
+    this.recordSyncActions([settingsUpdated(userId, tab, merged, updatedAt)])
   }
 
   async getUnreadSnapshot(userId: string, view?: number): Promise<UnreadSnapshot> {

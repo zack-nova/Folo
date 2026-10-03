@@ -1533,14 +1533,18 @@ export class PostgresDataStore implements DataStore {
   ): Promise<void> {
     const updatedAt = new Date()
     await this.database.transaction(async (transaction) => {
-      await transaction
+      // Clients send only the keys that changed, so merge them into the stored tab.
+      const [saved] = await transaction
         .insert(settings)
         .values({ userId, tab, payload, updatedAt })
         .onConflictDoUpdate({
           target: [settings.userId, settings.tab],
-          set: { payload, updatedAt },
+          set: { payload: sql`${settings.payload} || excluded.payload`, updatedAt },
         })
-      await appendSyncActions(transaction, [settingsUpdated(userId, tab, payload, updatedAt)])
+        .returning({ payload: settings.payload })
+      await appendSyncActions(transaction, [
+        settingsUpdated(userId, tab, saved?.payload ?? payload, updatedAt),
+      ])
     })
   }
 }
