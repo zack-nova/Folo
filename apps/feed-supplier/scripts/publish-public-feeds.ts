@@ -13,6 +13,7 @@ Presets contain personal subscriptions and stay outside the repository.
 Options:
   --grant <name>          Consumer grant name (required; case-insensitive)
   --create-grant          Create the grant if no active grant matches
+  --allow-unresolved      Publish even when some preset entries cannot be resolved
   --subscriptions <file>  Subscription preset (required)
   --web-lists <file>      Web list preset (required)
   --out <file>            Output file (default: <grant-name>.opml)
@@ -26,6 +27,7 @@ Environment:
 
 const { values } = parseArgs({
   options: {
+    "allow-unresolved": { default: false, type: "boolean" },
     "create-grant": { default: false, type: "boolean" },
     "dry-run": { default: false, type: "boolean" },
     grant: { type: "string" },
@@ -60,6 +62,7 @@ const filename =
 const out = values.out ?? `${filename}.opml`
 const result = await publishPublicFeeds({
   adminToken: process.env.FEED_SUPPLIER_ADMIN_TOKEN,
+  allowUnresolved: values["allow-unresolved"],
   baseURL: process.env.FEED_SUPPLIER_ADMIN_URL ?? "http://127.0.0.1:3001",
   createGrant: values["create-grant"],
   dryRun: values["dry-run"],

@@ -111,6 +111,14 @@ describe.each(repositories)("public link metadata and credential usage (%s)", (_
 
   it("reports which links depend on personal credentials", async () => {
     const { grant, request, server, suffix } = await start()
+    // A secret pasted into the address would end up in the links table, audit and reports.
+    const pasted = await request<{ code: string; message: string }>(
+      "POST",
+      `/v1/admin/public-feed-grants/${grant.id}/links`,
+      { sourceURL: `rsshub://pasted-${suffix}/feed?token=personal-secret` },
+    )
+    expect(pasted.status).toBe(400)
+    expect(pasted.body.message).toContain("Bind the secret query parameter token")
     const template = async (
       key: string,
       routePathTemplate: string,
@@ -332,6 +340,18 @@ describe("credential dependency", () => {
     }
   })
 
+  it("does not call an address with a pasted secret credential-free", async () => {
+    catalog.matchTemplate.mockResolvedValueOnce({
+      key: "t",
+      rssHubCredentials: [],
+      secretQueryBindings: {},
+    })
+    expect(
+      (await resolveCredentialDependency("rsshub://example/feed?token=abc", repository, catalog))
+        .status,
+    ).toBe("unknown")
+  })
+
   it("names a bound credential that no longer exists instead of hiding it", async () => {
     repository.findRouteBySourceURL.mockResolvedValueOnce({
       secretQueryBindings: { token: "gone" },
@@ -352,6 +372,54 @@ describe("RSSHub catalog credential declarations", () => {
     const byKey = new Map(entries.map((entry) => [entry.route.key, entry.route.rssHubCredentials]))
     expect(byKey.get("twitter-user")).toContainEqual({ name: "TWITTER_AUTH_TOKEN", required: true })
     expect(byKey.get("v2ex-tab")).toEqual([])
+  })
+
+  it("only syncs the fields a preset states, including an explicit null", async () => {
+    const stored = {
+      description: "maintained locally",
+      enabled: true,
+      id: "1",
+      key: "plain",
+      rssHubCredentials: [],
+    }
+    const entry = (route: object) => ({
+      route: {
+        category: "Test",
+        key: "plain",
+        parameters: [],
+        routePathTemplate: "/plain",
+        title: "P",
+        ...route,
+      },
+      testParameters: {},
+    })
+    const options = {
+      adminToken: "admin",
+      apply: true,
+      baseURL: "http://supplier:3001",
+      enable: false,
+    }
+
+    const silent = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ routes: [stored] }))
+    const omitted = await parseCatalogPreset(
+      JSON.stringify({ description: "t", routes: [entry({})] }),
+    )
+    expect(await importCatalogPreset(omitted, { ...options, fetchImplementation: silent })).toEqual(
+      [expect.objectContaining({ status: "exists" })],
+    )
+    expect(silent).toHaveBeenCalledOnce()
+
+    const reset = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ routes: [stored] }))
+      .mockResolvedValueOnce(Response.json({ route: { ...stored, rssHubCredentials: null } }))
+    const undeclared = await parseCatalogPreset(
+      JSON.stringify({ description: "t", routes: [entry({ rssHubCredentials: null })] }),
+    )
+    expect(
+      await importCatalogPreset(undeclared, { ...options, fetchImplementation: reset }),
+    ).toEqual([expect.objectContaining({ status: "updated" })])
+    expect(JSON.parse(String(reset.mock.calls[1]![1]?.body))).toEqual({ rssHubCredentials: null })
   })
 
   it("brings existing templates up to date and reports them without --apply", async () => {

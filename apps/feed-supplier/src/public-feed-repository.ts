@@ -62,9 +62,12 @@ export interface PublicFeedRepository {
     metadata: Pick<StoredPublicFeedLink, "category" | "title">,
     audit: AuditEventDraft,
   ): Promise<StoredPublicFeedLink | null>
-  /** Stores tokens re-encrypted under the active key, in one transaction. */
+  /**
+   * Stores tokens re-encrypted under the active key, in one transaction. A link whose token hash
+   * changed since it was read (rotated meanwhile) is skipped; returns the links updated.
+   */
   reencryptPublicFeedLinkTokens(
-    updates: Array<Pick<StoredPublicFeedLink, "id" | "token">>,
+    updates: Array<Pick<StoredPublicFeedLink, "id" | "token" | "tokenHash">>,
     audit: AuditEventDraft,
   ): Promise<number>
   revokePublicFeedLink(

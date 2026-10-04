@@ -2,6 +2,7 @@ import type { SourceCredentialDependency } from "@follow/feed-source-contracts"
 import { parseRssHubSource } from "@follow/feed-source-contracts"
 
 import type { SupplierRepository } from "./repository"
+import { secretQueryParameter } from "./secret-parameters"
 import type { SourceCatalogService } from "./source-catalog"
 
 const noCredentials: SourceCredentialDependency = {
@@ -32,6 +33,8 @@ export const resolveCredentialDependency = async (
   }
   if (protocol === "weblist:" || protocol === "pagechange:") return noCredentials
   if (protocol !== "rsshub:") return unknownCredentials
+  // A secret pasted into the address is a personal credential nobody declared.
+  if (secretQueryParameter(new URL(sourceURL))) return unknownCredentials
 
   let source: ReturnType<typeof parseRssHubSource>
   try {

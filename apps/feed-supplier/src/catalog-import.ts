@@ -86,11 +86,14 @@ export const parseCatalogPreset = async (text: string): Promise<CatalogPresetEnt
     return {
       route: {
         ...route,
-        description: route.description ?? null,
         documentationURL: route.documentationURL ?? null,
         enabled: false,
         parameters,
-        rssHubCredentials: route.rssHubCredentials ?? null,
+        // Omitted fields stay undefined so an import never overwrites what the preset leaves out.
+        ...(route.description === undefined ? {} : { description: route.description }),
+        ...(route.rssHubCredentials === undefined
+          ? {}
+          : { rssHubCredentials: route.rssHubCredentials }),
       },
       testParameters,
     }
@@ -137,12 +140,13 @@ const metadataChanges = (
   const changes: Partial<
     Pick<SourceCatalogRouteAdministration, "description" | "rssHubCredentials">
   > = {}
-  if ((preset.description ?? null) !== (route.description ?? null))
-    changes.description = preset.description ?? null
+  // Only fields the preset states are synced; an explicit null is a statement too.
+  if (preset.description !== undefined && preset.description !== (route.description ?? null)) {
+    changes.description = preset.description
+  }
   if (
-    preset.rssHubCredentials !== null &&
     preset.rssHubCredentials !== undefined &&
-    JSON.stringify(preset.rssHubCredentials) !== JSON.stringify(route.rssHubCredentials)
+    JSON.stringify(preset.rssHubCredentials) !== JSON.stringify(route.rssHubCredentials ?? null)
   ) {
     changes.rssHubCredentials = preset.rssHubCredentials
   }

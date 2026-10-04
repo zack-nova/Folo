@@ -587,16 +587,18 @@ export class MemorySupplierRepository implements SupplierRepository {
   }
 
   async reencryptPublicFeedLinkTokens(
-    updates: Array<Pick<StoredPublicFeedLink, "id" | "token">>,
+    updates: Array<Pick<StoredPublicFeedLink, "id" | "token" | "tokenHash">>,
     audit: AuditEventDraft,
   ): Promise<number> {
-    if (updates.length === 0) return 0
+    let updated = 0
     for (const update of updates) {
       const link = this.publicFeedLinks.get(update.id)
-      if (link) this.publicFeedLinks.set(update.id, cloneLink({ ...link, token: update.token }))
+      if (!link || !link.tokenHash.equals(update.tokenHash)) continue
+      this.publicFeedLinks.set(update.id, cloneLink({ ...link, token: update.token }))
+      updated += 1
     }
-    this.appendAudit(audit)
-    return updates.length
+    if (updated > 0) this.appendAudit(audit)
+    return updated
   }
 
   async revokePublicFeedLink(

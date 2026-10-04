@@ -79,6 +79,7 @@ export const reencryptPublicFeedTokens = async (
   const updates = stale.map((link) => ({
     id: link.id,
     token: cipher.encrypt(cipherId(link.id), cipher.decrypt(cipherId(link.id), link.token)),
+    tokenHash: link.tokenHash,
   }))
   return repository.reencryptPublicFeedLinkTokens(
     updates,

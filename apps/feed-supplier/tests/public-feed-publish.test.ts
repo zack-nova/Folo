@@ -201,17 +201,37 @@ describe("public feed publishing", () => {
     expect(server.links).toHaveProperty("size", 2)
   })
 
-  it("leaves unresolved web lists out of the OPML", async () => {
+  it("publishes nothing while entries are unresolved unless that is allowed", async () => {
     const server = stub()
-    const result = await publishPublicFeeds(
-      options(
+    const withMissing = preset([
+      native,
+      rsshub,
+      { category: "Updates", key: "missing", title: "Missing", webList: "not-in-preset" },
+    ])
+    await expect(
+      publishPublicFeeds(options(server.fetchImplementation, withMissing)),
+    ).rejects.toThrow("Nothing was published because 1 entry is unresolved: missing")
+    expect(server.calls.every((call) => call.startsWith("GET"))).toBe(true)
+
+    const result = await publishPublicFeeds({
+      ...options(server.fetchImplementation, withMissing),
+      allowUnresolved: true,
+    })
+    expect(result.opml?.match(/type="rss"/g)).toHaveLength(2)
+  })
+
+  it("leaves unresolved web lists out of the OPML when allowed", async () => {
+    const server = stub()
+    const result = await publishPublicFeeds({
+      ...options(
         server.fetchImplementation,
         preset([
           native,
           { category: "Updates", key: "missing", title: "Missing", webList: "not-in-preset" },
         ]),
       ),
-    )
+      allowUnresolved: true,
+    })
     expect(result.unresolvedCount).toBe(1)
     expect(result.opml?.match(/type="rss"/g)).toHaveLength(1)
     expect(result.lines.join("\n")).toContain("Left out missing")

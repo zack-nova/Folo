@@ -25,6 +25,7 @@ import {
 } from "./public-feed-service"
 import { RedisSourceResponseCache } from "./redis-source-response-cache"
 import type { SupplierRepository } from "./repository"
+import { secretQueryParameter } from "./secret-parameters"
 import { SourceCatalogService } from "./source-catalog"
 import type { ResolvedRssHubSource } from "./source-registry"
 import { SourceRegistry, SourceRegistryError } from "./source-registry"
@@ -750,7 +751,11 @@ export const buildFeedSupplier = async ({
       // Links are only issued for sources this supplier can serve right now.
       async (sourceURL) => {
         try {
-          const protocol = new URL(sourceURL).protocol
+          const url = new URL(sourceURL)
+          const protocol = url.protocol
+          // Secrets belong in bound credentials; a link must not store or report one.
+          const secret = secretQueryParameter(url)
+          if (secret) throw new Error(`Bind the secret query parameter ${secret} as a credential`)
           if (protocol === "rsshub:") await registry.resolve(sourceURL)
           else if (protocol === "pagechange:") await pageChanges.materializeFeed(sourceURL)
           else if (protocol === "weblist:") await webLists.materializeFeed(sourceURL)

@@ -12,6 +12,8 @@ import type { WebListPreset } from "./web-list-import"
 
 export interface PublishOptions {
   adminToken: string
+  /** Publish the resolved entries even when others could not be resolved */
+  allowUnresolved?: boolean
   baseURL: string
   createGrant?: boolean
   dryRun?: boolean
@@ -73,11 +75,17 @@ export const publishPublicFeeds = async (options: PublishOptions): Promise<Publi
       fetchImplementation: options.fetchImplementation,
     },
   )
+  const unresolvedSummary = () =>
+    `${unresolved.length} ${unresolved.length === 1 ? "entry is" : "entries are"} unresolved: ${unresolved.map((entry) => entry.key).join(", ")}`
   // An entry that failed to resolve still has its link; revoking "missing" links now would cut
   // off a live subscription because of a typo or a transient supplier error.
   if (options.revokeMissing && unresolved.length > 0) {
+    throw new Error(`--revoke-missing needs every preset entry resolved; ${unresolvedSummary()}`)
+  }
+  // A partial run would still change links and replace the consumer's OPML with a shorter one.
+  if (!options.allowUnresolved && unresolved.length > 0) {
     throw new Error(
-      `--revoke-missing needs every preset entry resolved; ${unresolved.length} ${unresolved.length === 1 ? "entry is" : "entries are"} unresolved: ${unresolved.map((entry) => entry.key).join(", ")}`,
+      `Nothing was published because ${unresolvedSummary()}; fix them or pass --allow-unresolved`,
     )
   }
   const metadataBySource = new Map<string, ResolvedSubscription>()

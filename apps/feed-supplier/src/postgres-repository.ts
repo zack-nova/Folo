@@ -1258,27 +1258,32 @@ export class PostgresSupplierRepository implements SupplierRepository {
   }
 
   async reencryptPublicFeedLinkTokens(
-    updates: Array<Pick<StoredPublicFeedLink, "id" | "token">>,
+    updates: Array<Pick<StoredPublicFeedLink, "id" | "token" | "tokenHash">>,
     audit: AuditEventDraft,
   ): Promise<number> {
     if (updates.length === 0) return 0
-    return this.withMutation(audit, async (client) => {
+    return this.withTransaction(async (client) => {
+      let updated = 0
       for (const update of updates) {
-        await client.query(
+        // Skips a link rotated since it was read, whose new token must keep its own ciphertext.
+        const result = await client.query(
           `update public_feed_links set
             token_ciphertext = $2, token_initialization_vector = $3,
             token_authentication_tag = $4, token_key_id = $5
-          where id = $1`,
+          where id = $1 and token_hash = $6`,
           [
             update.id,
             update.token.ciphertext,
             update.token.initializationVector,
             update.token.authenticationTag,
             update.token.keyId,
+            update.tokenHash,
           ],
         )
+        updated += result.rowCount ?? 0
       }
-      return updates.length
+      if (updated > 0) await this.appendAudit(client, audit)
+      return updated
     })
   }
 
