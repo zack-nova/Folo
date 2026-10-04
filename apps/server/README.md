@@ -69,7 +69,7 @@ pnpm server:db:down
 - `FEED_POLL_INTERVAL_MS`：已订阅 Feed 的刷新周期，默认 15 分钟。
 - `FEED_POLL_CONCURRENCY`：轮询并发数，默认 4，最大 32。
 - `FEED_RETRY_BASE_DELAY_MS`：单个 Feed 获取失败后的指数退避基数，默认 1 分钟，最长 24 小时。
-- `FEED_SUPPLIER_URL`、`FEED_SUPPLIER_TOKEN`：可选阶段 5A 内部供给服务地址和独立 Bearer Token；必须成对配置。
+- `FEED_SUPPLIER_URL`、`FEED_SUPPLIER_TOKEN`：可选的外部供给服务地址和独立 Bearer Token；必须成对配置。
 - `AI_API_KEY`、`AI_PROVIDER_BASE_URL`、`AI_PROVIDER_MODEL`：可选的环境托管 Provider。也可以登录后通过
   `/api/extensions/ai/provider` 保存 BYOK 配置；数据库只保存 AES-256-GCM 密文和末四位提示。
 - `AI_ENCRYPTION_SECRET`：用于加密数据库 BYOK，默认复用 `BETTER_AUTH_SECRET`。生产环境建议独立设置且必须
@@ -86,6 +86,38 @@ pnpm server:db:down
 `no-new-privileges`、进程数限制和滚动日志启动 API。请在宿主机上使用 Caddy、Nginx 或同类反向代理终止
 TLS，只把可信公网域名转发到 `127.0.0.1:3000`。代理链上还有其他代理（例如 CDN）时，把它们的地址段加入
 `TRUST_PROXY`；不要把 API 端口改为 `0.0.0.0` 后直接暴露公网。
+
+### 连接独立供给端
+
+生产核心 Compose 只包含 `api` 和核心 PostgreSQL。未设置 `FEED_SUPPLIER_URL` 和
+`FEED_SUPPLIER_TOKEN` 时直接启动，普通 RSS/Atom 和核心功能照常运行：
+
+```bash
+cp apps/server/.env.production.example apps/server/.env.production
+FOLO_ENV_FILE=.env.production docker compose -f apps/server/compose.production.yaml \
+  --env-file apps/server/.env.production up -d --wait
+```
+
+同一宿主机的供给端先按 [`apps/feed-supplier/README.md`](../feed-supplier/README.md) 部署，并创建
+`folo-sources-internal` 外部 Docker 网络。将核心环境文件中的 `FEED_SUPPLIER_URL` 设置为
+`http://feed-supplier:3001`，`FEED_SUPPLIER_TOKEN` 设置为供给端的 `INTERNAL_TOKEN`，再启动核心：
+
+```bash
+docker network create folo-sources-internal
+node scripts/preflight-self-hosted.mjs --core-external-supplier
+FOLO_ENV_FILE=.env.production docker compose -f apps/server/compose.production.yaml \
+  -f apps/server/compose.same-host-supplier.yaml \
+  --env-file apps/server/.env.production up -d --wait
+```
+
+`docker network create` 只需执行一次；已存在时无需重复创建。同宿主覆盖文件只让 `api` 加入共享网络；
+核心 PostgreSQL 留在核心私网，供给端 PostgreSQL、RSSHub 和 Redis 留在供给端私网。不同主机时不使用
+覆盖文件，把 `FEED_SUPPLIER_URL` 指向供给端私网地址或 WireGuard/Tailscale 隧道地址，用上述第一条核心
+Compose 命令启动。不要把 `/v1/` 管理或内部接口放到公网代理后面；供给端公开代理只转发 `/f/*`。
+
+生产预检的 `--core-external-supplier` 与 `--supplier` 模式会检查各自独立 Compose 及同宿主覆盖文件；
+本地开发继续使用 `preflight:self-hosted` 和 `preflight:self-hosted:sources`。独立部署的供给端备份说明见
+[`apps/feed-supplier/README.md`](../feed-supplier/README.md)。
 
 Prometheus 抓取配置需要携带认证：
 
