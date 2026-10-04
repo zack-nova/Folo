@@ -221,7 +221,7 @@ FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
 ```
 
 默认写入按授权名命名的 OPML，文件权限为 `0600`，其中包含可读取私有来源的链接，应妥善保管。
-`--dry-run` 只打印变更计划；默认保留不再出现在预设中的旧链接，加 `--revoke-missing` 才作废它们。
+`--dry-run` 只打印变更计划；默认保留不再出现在预设中的旧链接，加 `--revoke-missing` 才作废它们，且只要还有预设条目未能解析就拒绝执行。
 普通 HTTP(S) 订阅保持原地址，供给端来源使用授权链接。自托管 Folo 仍使用上面的
 `sources:export:opml` 导出逻辑地址。
 

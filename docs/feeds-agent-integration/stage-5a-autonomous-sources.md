@@ -377,7 +377,7 @@ GET    /v1/admin/credential-usage[?grantId=]                          个人凭�
 发布到阅读器时，以仓库外的订阅预设为唯一清单，运行 `pnpm --filter @follow/feed-supplier sources:publish`
 （指定 `--grant`、`--subscriptions`、`--web-lists`，首次可加 `--create-grant`），再把生成的 OPML 导入官方
 Folo 或其他阅读器。命令复用有效授权链接并同步标题和类别；`--dry-run` 预览变更，`--revoke-missing` 作废
-清单中已删除的来源链接。OPML 含私有链接，以 `0600` 保存。自托管 Folo 继续使用 `sources:export:opml`
+清单中已删除的来源链接；只要还有条目未能解析，它就拒绝执行，避免因拼写错误或供给端暂时故障作废仍在使用的链接。OPML 含私有链接，以 `0600` 保存。自托管 Folo 继续使用 `sources:export:opml`
 导出的逻辑地址。
 
 ## 配置与启动

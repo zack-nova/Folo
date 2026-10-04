@@ -187,6 +187,20 @@ describe("public feed publishing", () => {
     expect(published.opml).toContain("https://feeds.example.com/f/")
   })
 
+  it("refuses to revoke links while any preset entry is unresolved", async () => {
+    const server = stub()
+    await publishPublicFeeds(options(server.fetchImplementation, preset([rsshub, web])))
+    expect(server.links).toHaveProperty("size", 2)
+    const before = server.calls.length
+    // The web list no longer resolves, e.g. after a typo in its preset key.
+    const broken = preset([rsshub, { ...web, webList: "not-in-preset" }])
+    await expect(
+      publishPublicFeeds({ ...options(server.fetchImplementation, broken), revokeMissing: true }),
+    ).rejects.toThrow("--revoke-missing needs every preset entry resolved")
+    expect(server.calls.slice(before).every((call) => call.startsWith("GET"))).toBe(true)
+    expect(server.links).toHaveProperty("size", 2)
+  })
+
   it("leaves unresolved web lists out of the OPML", async () => {
     const server = stub()
     const result = await publishPublicFeeds(
@@ -201,5 +215,76 @@ describe("public feed publishing", () => {
     expect(result.unresolvedCount).toBe(1)
     expect(result.opml?.match(/type="rss"/g)).toHaveLength(1)
     expect(result.lines.join("\n")).toContain("Left out missing")
+  })
+})
+
+describe("public feed publishing against the supplier", () => {
+  it("publishes, republishes without changes and reports declared credentials", async () => {
+    const { buildFeedSupplier } = await import("../src/server")
+    const { loadFeedSupplierConfig } = await import("../src/config")
+    const config = loadFeedSupplierConfig({
+      INTERNAL_TOKEN: "internal-supplier-token-0000000000000000",
+      NODE_ENV: "test",
+      PUBLIC_FEED_BASE_URL: "https://feeds.example.com",
+      RSSHUB_BASE_URL: "http://rsshub:1200",
+    })
+    const server = await buildFeedSupplier({
+      config,
+      fetchImplementation: vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () => new Response("<rss><channel /></rss>")),
+    })
+    // Routes the admin client's requests into the supplier in-process.
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = new URL(String(input))
+      const response = await server.inject({
+        method: (init?.method ?? "GET") as "DELETE" | "GET" | "PATCH" | "POST",
+        url: url.pathname + url.search,
+        headers: Object.fromEntries(new Headers(init?.headers).entries()),
+        payload: init?.body ? String(init.body) : undefined,
+      })
+      return new Response(response.statusCode === 204 ? null : response.body, {
+        status: response.statusCode,
+        headers: { "content-type": String(response.headers["content-type"] ?? "text/plain") },
+      })
+    }
+    await server.inject({
+      method: "POST",
+      url: "/v1/admin/catalog/routes",
+      headers: { authorization: `Bearer ${config.adminToken}` },
+      payload: {
+        category: "Social",
+        key: "demo-feed",
+        parameters: [],
+        routePathTemplate: "/demo/feed",
+        rssHubCredentials: [{ name: "DEMO_COOKIE", required: true }],
+        title: "Demo",
+      },
+    })
+    const publish = (extra: { createGrant?: boolean } = {}) =>
+      publishPublicFeeds({
+        adminToken: config.adminToken,
+        baseURL: "http://supplier.internal",
+        fetchImplementation,
+        grantName: "Official Folo",
+        subscriptions: preset([native, rsshub]),
+        webLists,
+        ...extra,
+      })
+
+    const first = await publish({ createGrant: true })
+    expect(first.opml).toContain('xmlUrl="https://example.com/feed"')
+    const link = first.opml?.match(/xmlUrl="(https:\/\/feeds\.example\.com\/f\/[\w-]{43})"/)?.[1]
+    expect(link).toBeDefined()
+    expect(first.lines.join("\n")).toContain("RSSHub: uses DEMO_COOKIE (required)")
+    expect(first.lines.join("\n")).not.toContain(link!)
+
+    const served = await server.inject({ method: "GET", url: new URL(link!).pathname })
+    expect(served.statusCode).toBe(200)
+
+    const second = await publish()
+    expect(second.opml).toBe(first.opml)
+    expect(second.lines.join("\n")).toContain("0 new, 0 updated, 1 unchanged")
+    await server.close()
   })
 })

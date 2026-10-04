@@ -73,6 +73,13 @@ export const publishPublicFeeds = async (options: PublishOptions): Promise<Publi
       fetchImplementation: options.fetchImplementation,
     },
   )
+  // An entry that failed to resolve still has its link; revoking "missing" links now would cut
+  // off a live subscription because of a typo or a transient supplier error.
+  if (options.revokeMissing && unresolved.length > 0) {
+    throw new Error(
+      `--revoke-missing needs every preset entry resolved; ${unresolved.length} ${unresolved.length === 1 ? "entry is" : "entries are"} unresolved: ${unresolved.map((entry) => entry.key).join(", ")}`,
+    )
+  }
   const metadataBySource = new Map<string, ResolvedSubscription>()
   for (const entry of resolved) {
     if (isNativeFeed(entry.url)) continue
