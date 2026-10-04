@@ -141,6 +141,9 @@
 
 验收标准：官方能力关闭、失效或不可用时，自有核心仍完整可用；官方只增强来源获取能力，不拥有本应用主数据。
 
+第一刀的范围、落点和对本节的修订见 [ADR-0034](./adr/0034-acquire-selected-sources-through-the-official-folo-account.md)
+和 [`stage-5b-official-acquisition.md`](./stage-5b-official-acquisition.md)。
+
 ## 扩展 FOLO Action
 
 在现有 Action 结果中增加“执行条目评估”操作。Action 继续负责匹配 Entry 和声明要执行的操作，不直接承担队列、重试或结果存储。

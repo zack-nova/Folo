@@ -16,6 +16,7 @@
 - [stage-3-frontend-fusion.md](./stage-3-frontend-fusion.md)：Featured 时间线、评估详情、失败恢复、范围重评和自主 AI 设置的 Folo 前端融合。
 - [stage-4-3-incremental-sync.md](./stage-4-3-incremental-sync.md)：上游 SDK 0.3.96 兼容修复（位置性分页游标、收藏分页、契约扫描）与服务端增量同步变更日志。
 - [stage-5a-autonomous-sources.md](./stage-5a-autonomous-sources.md)：自主数据源契约、自建 RSSHub、独立配置库、加密凭据、审计、页面变化、网页列表源与后续切片。
+- [stage-5b-official-acquisition.md](./stage-5b-official-acquisition.md)：阶段 5B 第一刀的实施计划：经供给端用官方 Folo 账号获取指定 `rsshub://` 来源，尚未开始实现。
 - [feeds-agent-CONTEXT.md](./feeds-agent-CONTEXT.md)：Feeds Agent 当前领域语言和已解决歧义快照。
 - [adr/0012-store-processing-results-by-content-version.md](./adr/0012-store-processing-results-by-content-version.md)：旧处理结果版本化 ADR，已被后续设计取代。
 - [adr/0023-split-feed-core-and-supplier-services.md](./adr/0023-split-feed-core-and-supplier-services.md)：feed_core 与 feed_supplier 拆分边界。
@@ -29,6 +30,7 @@
 - [adr/0031-publish-web-list-items-as-feed-entries.md](./adr/0031-publish-web-list-items-as-feed-entries.md)：网页列表/列表 JSON 条目逐条发布、按 URL 去重与详情失败不阻塞发布的决策。
 - [adr/0032-scope-owner-source-management-with-a-dedicated-token.md](./adr/0032-scope-owner-source-management-with-a-dedicated-token.md)：所有者经核心管理网页列表源时使用独立管理令牌、严格响应校验与能力门控的决策。
 - [adr/0033-publish-sources-as-a-private-rss-service.md](./adr/0033-publish-sources-as-a-private-rss-service.md)：供给端独立部署为私有 RSS 服务，内部通道与按使用方授权、每源独立能力地址的公开通道并存，个人凭据依赖统一可见。
+- [adr/0034-acquire-selected-sources-through-the-official-folo-account.md](./adr/0034-acquire-selected-sources-through-the-official-folo-account.md)：（提议中）官方获取适配器放在供给端，逻辑地址不变、按地址绑定提供方，影子订阅只增删自己创建的，失败时不自动切换。
 
 ## 推荐开发阶段
 
