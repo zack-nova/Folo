@@ -374,6 +374,12 @@ GET    /v1/admin/credential-usage[?grantId=]                          个人凭�
 `publicLinkRotatedCount` 为其数量；完成后旧密钥可以从 `CREDENTIAL_DECRYPTION_KEYS_JSON` 中移除，已发出的
 链接地址不变。
 
+发布到阅读器时，以仓库外的订阅预设为唯一清单，运行 `pnpm --filter @follow/feed-supplier sources:publish`
+（指定 `--grant`、`--subscriptions`、`--web-lists`，首次可加 `--create-grant`），再把生成的 OPML 导入官方
+Folo 或其他阅读器。命令复用有效授权链接并同步标题和类别；`--dry-run` 预览变更，`--revoke-missing` 作废
+清单中已删除的来源链接。OPML 含私有链接，以 `0600` 保存。自托管 Folo 继续使用 `sources:export:opml`
+导出的逻辑地址。
+
 ## 配置与启动
 
 本地最小闭环：

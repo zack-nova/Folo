@@ -211,6 +211,20 @@ FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
 网页列表条目按名称在供给端查到实际的 `weblist://` 地址；尚未创建的来源会被列出并以非零退出码提示。X 订阅在配置
 `TWITTER_AUTH_TOKEN` 前导入会出现在 OPML 导入结果的失败列表中，配置后重新导入即可。
 
+官方 Folo 或其他阅读器使用公开订阅时，以同一份仓库外预设发布到一个使用方授权，再导入生成的 OPML：
+
+```bash
+FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
+  pnpm --filter @follow/feed-supplier sources:publish \
+  --grant "Official Folo" --create-grant \
+  --subscriptions ~/presets/subscriptions.json --web-lists ~/presets/web-lists.json
+```
+
+默认写入按授权名命名的 OPML，文件权限为 `0600`，其中包含可读取私有来源的链接，应妥善保管。
+`--dry-run` 只打印变更计划；默认保留不再出现在预设中的旧链接，加 `--revoke-missing` 才作废它们。
+普通 HTTP(S) 订阅保持原地址，供给端来源使用授权链接。自托管 Folo 仍使用上面的
+`sources:export:opml` 导出逻辑地址。
+
 ## 生产规模化
 
 生产环境必须配置 Redis。`feed-supplier` 用 Redis DB 1 保存可重建的 RSSHub 响应缓存、每路由固定窗口
