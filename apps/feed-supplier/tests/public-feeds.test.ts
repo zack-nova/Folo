@@ -12,6 +12,7 @@ import { PostgresSupplierRepository } from "../src/postgres-repository"
 import { FixedWindowLimiter, redactPublicFeedURL } from "../src/public-feed-routes"
 import type { SupplierRepository } from "../src/repository"
 import { buildFeedSupplier } from "../src/server"
+import { isolatedDatabaseURL } from "./support/postgres-database"
 
 const baseEnvironment = {
   INTERNAL_TOKEN: "internal-supplier-token-0000000000000000",
@@ -26,6 +27,8 @@ const config = loadFeedSupplierConfig({
 })
 const admin = { authorization: `Bearer ${config.adminToken}` }
 const databaseURL = process.env.TEST_FEED_SUPPLIER_DATABASE_URL
+  ? await isolatedDatabaseURL(process.env.TEST_FEED_SUPPLIER_DATABASE_URL, "public_feeds")
+  : undefined
 
 const repositories: Array<[string, () => SupplierRepository | undefined]> = [
   ["memory", () => undefined],
@@ -396,6 +399,8 @@ describe.each([
         id: crypto.randomUUID(),
         grantId,
         sourceURL: "rsshub://example/late",
+        title: null,
+        category: null,
         tokenHash: Buffer.alloc(32, 7),
         token: {
           authenticationTag: Buffer.alloc(16),

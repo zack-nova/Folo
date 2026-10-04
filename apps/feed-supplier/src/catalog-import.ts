@@ -43,6 +43,10 @@ const presetSchema = z
                     .strict(),
                 ),
                 routePathTemplate: z.string(),
+                rssHubCredentials: z
+                  .array(z.object({ name: z.string(), required: z.boolean() }).strict())
+                  .nullable()
+                  .optional(),
                 title: z.string(),
               })
               .strict(),
@@ -86,6 +90,7 @@ export const parseCatalogPreset = async (text: string): Promise<CatalogPresetEnt
         documentationURL: route.documentationURL ?? null,
         enabled: false,
         parameters,
+        rssHubCredentials: route.rssHubCredentials ?? null,
       },
       testParameters,
     }
@@ -118,7 +123,31 @@ export interface CatalogImportOptions {
   only?: Set<string>
 }
 
-export type CatalogImportStatus = "created" | "enabled" | "exists" | "planned" | "test_failed"
+export type CatalogImportStatus =
+  "created" | "enabled" | "exists" | "outdated" | "planned" | "test_failed" | "updated"
+
+/**
+ * Descriptive fields an existing template takes over from the preset. Templates, parameters and
+ * bindings are left alone because changing them changes which addresses the route serves.
+ */
+const metadataChanges = (
+  route: SourceCatalogRouteAdministration,
+  preset: CatalogPresetEntry["route"],
+) => {
+  const changes: Partial<
+    Pick<SourceCatalogRouteAdministration, "description" | "rssHubCredentials">
+  > = {}
+  if ((preset.description ?? null) !== (route.description ?? null))
+    changes.description = preset.description ?? null
+  if (
+    preset.rssHubCredentials !== null &&
+    preset.rssHubCredentials !== undefined &&
+    JSON.stringify(preset.rssHubCredentials) !== JSON.stringify(route.rssHubCredentials)
+  ) {
+    changes.rssHubCredentials = preset.rssHubCredentials
+  }
+  return changes
+}
 
 export interface CatalogImportResult {
   contentBytes: number | null
@@ -134,8 +163,9 @@ interface CatalogTestResponse {
 }
 
 /**
- * Create the preset routes that do not exist yet (matched by key). With `enable`, each disabled
- * route is tested with its sample parameters and enabled only when the test passes.
+ * Create the preset routes that do not exist yet (matched by key) and bring the description and
+ * RSSHub credential declarations of existing ones up to date. With `enable`, each disabled route
+ * is tested with its sample parameters and enabled only when the test passes.
  */
 export const importCatalogPreset = async (
   entries: CatalogPresetEntry[],
@@ -165,7 +195,22 @@ export const importCatalogPreset = async (
       results.push({ ...base, status: "planned" })
       continue
     }
-    const status: CatalogImportStatus = route ? "exists" : "created"
+    let status: CatalogImportStatus = route ? "exists" : "created"
+    if (route) {
+      const changes = metadataChanges(route, entry.route)
+      if (Object.keys(changes).length > 0) {
+        if (!options.apply) {
+          results.push({ ...base, status: "outdated" })
+          continue
+        }
+        ;({ route } = await client.request<{ route: SourceCatalogRouteAdministration }>(
+          "PATCH",
+          `v1/admin/catalog/routes/${route.id}`,
+          changes,
+        ))
+        status = "updated"
+      }
+    }
     if (!route) {
       ;({ route } = await client.request<{ route: SourceCatalogRouteAdministration }>(
         "POST",

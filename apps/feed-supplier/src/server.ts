@@ -7,6 +7,7 @@ import { z } from "zod"
 import { registerSourceAdminRoutes, registerWebListRoutes } from "./admin-routes"
 import type { FeedSupplierConfig } from "./config"
 import { CredentialCipher } from "./credential-cipher"
+import { resolveCredentialDependency } from "./credential-dependency"
 import { MemorySupplierRepository } from "./memory-repository"
 import { PageChangeError, PageChangeService, startPageChangeScheduler } from "./page-change-service"
 import { PageFetcher } from "./page-fetcher"
@@ -17,7 +18,11 @@ import {
   registerPublicFeedAdminRoutes,
   registerPublicFeedRoute,
 } from "./public-feed-routes"
-import { PublicFeedError, PublicFeedService } from "./public-feed-service"
+import {
+  PublicFeedError,
+  PublicFeedService,
+  reencryptPublicFeedTokens,
+} from "./public-feed-service"
 import { RedisSourceResponseCache } from "./redis-source-response-cache"
 import type { SupplierRepository } from "./repository"
 import { SourceCatalogService } from "./source-catalog"
@@ -720,11 +725,14 @@ export const buildFeedSupplier = async ({
     registerWebListRoutes(server, webLists, "/v1/manage/web-list-sources")
   }
 
+  const publicFeedCipher = new CredentialCipher(config.credentialActiveKeyId, config.credentialKeys)
   registerSourceAdminRoutes({
     webLists,
     catalog,
     pageChanges,
     registry,
+    rotatePublicFeedTokens: (actor) =>
+      reencryptPublicFeedTokens(repository, publicFeedCipher, actor),
     server,
     testRoute,
   })
@@ -737,7 +745,7 @@ export const buildFeedSupplier = async ({
     }
     const publicFeeds = new PublicFeedService(
       repository,
-      new CredentialCipher(config.credentialActiveKeyId, config.credentialKeys),
+      publicFeedCipher,
       config.publicFeedBaseURL,
       // Links are only issued for sources this supplier can serve right now.
       async (sourceURL) => {
@@ -755,6 +763,7 @@ export const buildFeedSupplier = async ({
           )
         }
       },
+      (sourceURL) => resolveCredentialDependency(sourceURL, repository, catalog),
     )
     registerPublicFeedAdminRoutes(server, publicFeeds)
     registerPublicFeedRoute(server, publicFeeds, async (sourceURL, conditional) => {

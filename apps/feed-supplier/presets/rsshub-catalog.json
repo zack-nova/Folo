@@ -7,6 +7,24 @@
         "title": "X 用户时间线",
         "category": "社交媒体",
         "routePathTemplate": "/twitter/user/:id",
+        "rssHubCredentials": [
+          {
+            "name": "TWITTER_AUTH_TOKEN",
+            "required": true
+          },
+          {
+            "name": "TWITTER_THIRD_PARTY_API",
+            "required": false
+          },
+          {
+            "name": "TWITTER_CONSUMER_KEY",
+            "required": false
+          },
+          {
+            "name": "TWITTER_CONSUMER_SECRET",
+            "required": false
+          }
+        ],
         "parameters": [
           {
             "key": "id",
@@ -17,7 +35,7 @@
             "description": "不带 @ 的 X 用户名"
           }
         ],
-        "description": "需要在 .env.rsshub 中为 RSSHub 配置 TWITTER_AUTH_TOKEN。",
+        "description": "需要在 .env.rsshub 中为 RSSHub 配置 TWITTER_AUTH_TOKEN；也可改用 TWITTER_THIRD_PARTY_API 或 TWITTER_CONSUMER_KEY/TWITTER_CONSUMER_SECRET。",
         "documentationURL": "https://docs.rsshub.app/routes/twitter"
       },
       "testParameters": {
@@ -30,6 +48,7 @@
         "title": "V2EX 最热 / 最新主题",
         "category": "社区",
         "routePathTemplate": "/v2ex/topics/:type",
+        "rssHubCredentials": [],
         "parameters": [
           {
             "key": "type",
@@ -62,6 +81,7 @@
         "title": "V2EX 标签",
         "category": "社区",
         "routePathTemplate": "/v2ex/tab/:tabid",
+        "rssHubCredentials": [],
         "parameters": [
           {
             "key": "tabid",
@@ -85,6 +105,12 @@
         "title": "知乎热榜",
         "category": "社区",
         "routePathTemplate": "/zhihu/hot",
+        "rssHubCredentials": [
+          {
+            "name": "ZHIHU_COOKIES",
+            "required": false
+          }
+        ],
         "parameters": [],
         "description": "可在 .env.rsshub 中配置 ZHIHU_COOKIES 提高稳定性。",
         "documentationURL": "https://docs.rsshub.app/routes/zhihu"
@@ -97,6 +123,7 @@
         "title": "知乎想法热榜",
         "category": "社区",
         "routePathTemplate": "/zhihu/pin/hotlist",
+        "rssHubCredentials": [],
         "parameters": [],
         "description": null,
         "documentationURL": "https://docs.rsshub.app/routes/zhihu"
@@ -109,6 +136,7 @@
         "title": "知乎日报",
         "category": "社区",
         "routePathTemplate": "/zhihu/daily",
+        "rssHubCredentials": [],
         "parameters": [],
         "description": null,
         "documentationURL": "https://docs.rsshub.app/routes/zhihu"
@@ -121,6 +149,7 @@
         "title": "华尔街见闻最热文章",
         "category": "财经",
         "routePathTemplate": "/wallstreetcn/hot",
+        "rssHubCredentials": [],
         "parameters": [],
         "description": null,
         "documentationURL": "https://docs.rsshub.app/routes/wallstreetcn"
@@ -133,6 +162,7 @@
         "title": "华尔街见闻实时快讯",
         "category": "财经",
         "routePathTemplate": "/wallstreetcn/live",
+        "rssHubCredentials": [],
         "parameters": [],
         "description": null,
         "documentationURL": "https://docs.rsshub.app/routes/wallstreetcn"
@@ -145,6 +175,7 @@
         "title": "财联社电报",
         "category": "财经",
         "routePathTemplate": "/cls/telegraph",
+        "rssHubCredentials": [],
         "parameters": [],
         "description": null,
         "documentationURL": "https://docs.rsshub.app/routes/cls"
@@ -157,6 +188,7 @@
         "title": "财联社热门文章",
         "category": "财经",
         "routePathTemplate": "/cls/hot",
+        "rssHubCredentials": [],
         "parameters": [],
         "description": null,
         "documentationURL": "https://docs.rsshub.app/routes/cls"
@@ -169,6 +201,7 @@
         "title": "财联社深度",
         "category": "财经",
         "routePathTemplate": "/cls/depth",
+        "rssHubCredentials": [],
         "parameters": [],
         "description": null,
         "documentationURL": "https://docs.rsshub.app/routes/cls"
@@ -181,6 +214,7 @@
         "title": "雪球股票信息",
         "category": "财经",
         "routePathTemplate": "/xueqiu/stock_info/:id",
+        "rssHubCredentials": [],
         "parameters": [
           {
             "key": "id",
@@ -204,6 +238,7 @@
         "title": "雪球股票评论",
         "category": "财经",
         "routePathTemplate": "/xueqiu/stock_comments/:id",
+        "rssHubCredentials": [],
         "parameters": [
           {
             "key": "id",
@@ -227,6 +262,12 @@
         "title": "GitHub 用户仓库",
         "category": "开发",
         "routePathTemplate": "/github/repos/:user",
+        "rssHubCredentials": [
+          {
+            "name": "GITHUB_ACCESS_TOKEN",
+            "required": false
+          }
+        ],
         "parameters": [
           {
             "key": "user",
@@ -249,6 +290,7 @@
         "title": "GitHub 主题",
         "category": "开发",
         "routePathTemplate": "/github/topics/:name",
+        "rssHubCredentials": [],
         "parameters": [
           {
             "key": "name",
@@ -271,6 +313,12 @@
         "title": "B 站 UP 主投稿",
         "category": "视频",
         "routePathTemplate": "/bilibili/user/video/:uid",
+        "rssHubCredentials": [
+          {
+            "name": "BILIBILI_COOKIE_*",
+            "required": false
+          }
+        ],
         "parameters": [
           {
             "key": "uid",
@@ -293,6 +341,12 @@
         "title": "B 站热搜",
         "category": "视频",
         "routePathTemplate": "/bilibili/hot-search",
+        "rssHubCredentials": [
+          {
+            "name": "BILIBILI_COOKIE_*",
+            "required": false
+          }
+        ],
         "parameters": [],
         "description": "需要 RSSHub chromium-bundled 镜像（RSSHUB_IMAGE）。",
         "documentationURL": "https://docs.rsshub.app/routes/bilibili"
@@ -305,6 +359,12 @@
         "title": "B 站视频搜索",
         "category": "视频",
         "routePathTemplate": "/bilibili/vsearch/:kw",
+        "rssHubCredentials": [
+          {
+            "name": "BILIBILI_COOKIE_*",
+            "required": false
+          }
+        ],
         "parameters": [
           {
             "key": "kw",
@@ -314,7 +374,7 @@
             "type": "string"
           }
         ],
-        "description": "需要在 .env.rsshub 中为 RSSHub 配置 BILIBILI_COOKIE_<uid>。",
+        "description": "需要 RSSHub chromium-bundled 镜像（RSSHUB_IMAGE）；可选在 .env.rsshub 中配置 BILIBILI_COOKIE_<uid> 以跳过浏览器获取访客 Cookie。",
         "documentationURL": "https://docs.rsshub.app/routes/bilibili"
       },
       "testParameters": {
@@ -327,6 +387,12 @@
         "title": "微博热搜榜",
         "category": "社交媒体",
         "routePathTemplate": "/weibo/search/hot",
+        "rssHubCredentials": [
+          {
+            "name": "WEIBO_COOKIES",
+            "required": false
+          }
+        ],
         "parameters": [],
         "description": "需要 RSSHub chromium-bundled 镜像（RSSHUB_IMAGE）。可选在 .env.rsshub 中配置 WEIBO_COOKIES。",
         "documentationURL": "https://docs.rsshub.app/routes/weibo"

@@ -141,6 +141,8 @@ export type SourceAuditAction =
   | "public_feed_link.created"
   | "public_feed_link.revoked"
   | "public_feed_link.rotated"
+  | "public_feed_link.reencrypted"
+  | "public_feed_link.updated"
 
 export interface SourceAuditEvent {
   action: SourceAuditAction

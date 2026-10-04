@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises"
 
 import type {
   PageChangeEvent,
+  RssHubCredentialRequirement,
   SourceAuditAction,
   SourceAuditEvent,
   SourceAuditVerification,
@@ -69,6 +70,7 @@ interface CatalogRouteRow extends QueryResultRow {
   parameters: unknown
   route_key: string
   route_path_template: string
+  rsshub_credentials: unknown
   secret_query_bindings: unknown
   title: string
   updated_at: Date | string
@@ -173,6 +175,12 @@ const parseCatalogParameters = (value: unknown): SourceCatalogParameter[] => {
   return value as SourceCatalogParameter[]
 }
 
+const parseRssHubCredentials = (value: unknown): RssHubCredentialRequirement[] | null => {
+  if (value === null || value === undefined) return null
+  if (!Array.isArray(value)) throw new Error("Persisted RSSHub credentials are invalid")
+  return value as RssHubCredentialRequirement[]
+}
+
 const catalogRouteFromRow = (row: CatalogRouteRow): SourceCatalogRouteAdministration => {
   const secretQueryBindings = parseBindings(row.secret_query_bindings)
   return {
@@ -180,7 +188,7 @@ const catalogRouteFromRow = (row: CatalogRouteRow): SourceCatalogRouteAdministra
     createdAt: isoTimestamp(row.created_at),
     deletedAt: optionalTimestamp(row.deleted_at),
     description: row.description,
-    rssHubCredentials: null,
+    rssHubCredentials: parseRssHubCredentials(row.rsshub_credentials),
     documentationURL: row.documentation_url,
     enabled: row.enabled,
     id: row.id,
@@ -284,6 +292,8 @@ interface PublicFeedLinkRow {
   id: string
   grant_id: string
   source_url: string
+  title: string | null
+  category: string | null
   token_hash: Buffer
   token_ciphertext: Buffer
   token_initialization_vector: Buffer
@@ -308,6 +318,8 @@ const publicFeedLinkFromRow = (row: PublicFeedLinkRow): StoredPublicFeedLink => 
   id: row.id,
   grantId: row.grant_id,
   sourceURL: row.source_url,
+  title: row.title,
+  category: row.category,
   tokenHash: row.token_hash,
   token: {
     authenticationTag: row.token_authentication_tag,
@@ -348,6 +360,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
         "003_source_catalog.sql",
         "004_web_list_sources.sql",
         "005_public_feeds.sql",
+        "006_link_metadata_and_credentials.sql",
       ].map(async (filename, index) => ({
         sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
         version: index + 1,
@@ -784,8 +797,8 @@ export class PostgresSupplierRepository implements SupplierRepository {
           `insert into source_catalog_routes
             (id, route_key, title, description, category, documentation_url,
              route_path_template, parameters, secret_query_bindings, enabled, deleted_at,
-             created_at, updated_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13)
+             created_at, updated_at, rsshub_credentials)
+           values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14::jsonb)
            returning *`,
           this.catalogRouteParameters(route),
         )
@@ -812,7 +825,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
              route_key = $2, title = $3, description = $4, category = $5,
              documentation_url = $6, route_path_template = $7, parameters = $8::jsonb,
              secret_query_bindings = $9::jsonb, enabled = $10, deleted_at = $11,
-             updated_at = $13
+             updated_at = $13, rsshub_credentials = $14::jsonb
            -- $12 (created_at) never changes; PostgreSQL still needs a type for every parameter.
            where id = $1 and deleted_at is null and $12::timestamptz is not null returning *`,
           this.catalogRouteParameters(route),
@@ -1161,8 +1174,8 @@ export class PostgresSupplierRepository implements SupplierRepository {
         await client.query(
           `insert into public_feed_links (
             id, grant_id, source_url, token_hash, token_ciphertext, token_initialization_vector,
-            token_authentication_tag, token_key_id, created_at
-          ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            token_authentication_tag, token_key_id, created_at, title, category
+          ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             link.id,
             link.grantId,
@@ -1173,6 +1186,8 @@ export class PostgresSupplierRepository implements SupplierRepository {
             link.token.authenticationTag,
             link.token.keyId,
             link.createdAt,
+            link.title,
+            link.category,
           ],
         )
         return link
@@ -1224,6 +1239,46 @@ export class PostgresSupplierRepository implements SupplierRepository {
         ],
       )
       return result.rows[0] ? publicFeedLinkFromRow(result.rows[0]) : null
+    })
+  }
+
+  async updatePublicFeedLinkMetadata(
+    id: string,
+    metadata: Pick<StoredPublicFeedLink, "category" | "title">,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedLink | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<PublicFeedLinkRow>(
+        `update public_feed_links set title = $2, category = $3
+          where id = $1 and revoked_at is null returning *`,
+        [id, metadata.title, metadata.category],
+      )
+      return result.rows[0] ? publicFeedLinkFromRow(result.rows[0]) : null
+    })
+  }
+
+  async reencryptPublicFeedLinkTokens(
+    updates: Array<Pick<StoredPublicFeedLink, "id" | "token">>,
+    audit: AuditEventDraft,
+  ): Promise<number> {
+    if (updates.length === 0) return 0
+    return this.withMutation(audit, async (client) => {
+      for (const update of updates) {
+        await client.query(
+          `update public_feed_links set
+            token_ciphertext = $2, token_initialization_vector = $3,
+            token_authentication_tag = $4, token_key_id = $5
+          where id = $1`,
+          [
+            update.id,
+            update.token.ciphertext,
+            update.token.initializationVector,
+            update.token.authenticationTag,
+            update.token.keyId,
+          ],
+        )
+      }
+      return updates.length
     })
   }
 
@@ -1331,6 +1386,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
       route.deletedAt,
       route.createdAt,
       route.updatedAt,
+      route.rssHubCredentials === null ? null : JSON.stringify(route.rssHubCredentials),
     ]
   }
 

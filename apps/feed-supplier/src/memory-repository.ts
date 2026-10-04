@@ -573,6 +573,32 @@ export class MemorySupplierRepository implements SupplierRepository {
     return cloneLink(rotated)
   }
 
+  async updatePublicFeedLinkMetadata(
+    id: string,
+    metadata: Pick<StoredPublicFeedLink, "category" | "title">,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedLink | null> {
+    const link = this.publicFeedLinks.get(id)
+    if (!link || link.revokedAt) return null
+    link.title = metadata.title
+    link.category = metadata.category
+    this.appendAudit(audit)
+    return cloneLink(link)
+  }
+
+  async reencryptPublicFeedLinkTokens(
+    updates: Array<Pick<StoredPublicFeedLink, "id" | "token">>,
+    audit: AuditEventDraft,
+  ): Promise<number> {
+    if (updates.length === 0) return 0
+    for (const update of updates) {
+      const link = this.publicFeedLinks.get(update.id)
+      if (link) this.publicFeedLinks.set(update.id, cloneLink({ ...link, token: update.token }))
+    }
+    this.appendAudit(audit)
+    return updates.length
+  }
+
   async revokePublicFeedLink(
     id: string,
     revokedAt: string,

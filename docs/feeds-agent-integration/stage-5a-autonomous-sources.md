@@ -348,13 +348,31 @@ GET    /v1/admin/public-feed-grants
 POST   /v1/admin/public-feed-grants                                   { name }
 POST   /v1/admin/public-feed-grants/:grantId/revoke
 GET    /v1/admin/public-feed-grants/:grantId/links                    不含链接地址
-POST   /v1/admin/public-feed-grants/:grantId/links                    { sourceURL }，返回链接地址
-GET    /v1/admin/public-feed-grants/:grantId/export                   有效链接及其地址
+POST   /v1/admin/public-feed-grants/:grantId/links                    { sourceURL, title?, category? }，返回链接地址
+PATCH  /v1/admin/public-feed-grants/:grantId/links/:linkId            { title?, category? }，链接地址不变
+GET    /v1/admin/public-feed-grants/:grantId/export                   有效链接及其地址、标题、类别
 POST   /v1/admin/public-feed-grants/:grantId/links/:linkId/rotate
 DELETE /v1/admin/public-feed-grants/:grantId/links/:linkId
+GET    /v1/admin/credential-usage[?grantId=]                          个人凭据依赖总览
 ```
 
-来源类别、个人凭据依赖总览和按授权导出 OPML 属于下一切片。
+**个人凭据依赖总览。** 每条有效链接按来源报告 `uses`、`none` 或 `unknown`：
+
+- `rsshub://` 地址合并两类凭据：路由实例与匹配的目录模板绑定的供给端凭据（按名称，不含值），以及模板
+  `rssHubCredentials` 声明的 RSSHub 部署凭据（环境变量名，标明是否必需）。模板未声明（`null`）或地址不属于
+  任何模板时报告 `unknown`，不按“无凭据”处理；匹配时包含已停用的模板，因为 RSSHub 读取环境变量与是否在此
+  启用无关。
+- `weblist://` 与 `pagechange://` 第一版不支持登录 Cookie，报告 `none`。
+
+仓库内的 `presets/rsshub-catalog.json` 已按 RSSHub 源码（2026-10-03 的 `master`）为每条路由声明凭据：X 用户
+时间线必需 `TWITTER_AUTH_TOKEN`（也可改用 `TWITTER_THIRD_PARTY_API` 或开发者 API 密钥），知乎热榜、GitHub
+仓库、B 站和微博路由可选使用对应 Cookie 或令牌，其余路由不使用。`sources:import:catalog --apply` 会把预设中
+更新过的描述和凭据声明同步到已存在的模板（结果为 `updated`；不加 `--apply` 时报告 `outdated`），不改动模板、
+参数和绑定。
+
+**密钥轮换。** `POST /v1/admin/credentials/rotate` 同时把仍在旧密钥下的有效链接令牌重新加密，响应中的
+`publicLinkRotatedCount` 为其数量；完成后旧密钥可以从 `CREDENTIAL_DECRYPTION_KEYS_JSON` 中移除，已发出的
+链接地址不变。
 
 ## 配置与启动
 
