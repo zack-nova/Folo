@@ -180,6 +180,7 @@ const catalogRouteFromRow = (row: CatalogRouteRow): SourceCatalogRouteAdministra
     createdAt: isoTimestamp(row.created_at),
     deletedAt: optionalTimestamp(row.deleted_at),
     description: row.description,
+    rssHubCredentials: null,
     documentationURL: row.documentation_url,
     enabled: row.enabled,
     id: row.id,

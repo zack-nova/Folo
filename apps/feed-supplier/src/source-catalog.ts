@@ -341,6 +341,7 @@ export class SourceCatalogService {
       parameters: input.parameters,
       requiresCredentials: Object.keys(input.secretQueryBindings ?? {}).length > 0,
       routePathTemplate: input.routePathTemplate,
+      rssHubCredentials: null,
       secretQueryBindings: input.secretQueryBindings ?? {},
       title: input.title,
       updatedAt: now,

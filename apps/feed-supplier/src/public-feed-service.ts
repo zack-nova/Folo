@@ -229,6 +229,8 @@ const linkSummary = (link: StoredPublicFeedLink): PublicFeedLink => ({
   id: link.id,
   grantId: link.grantId,
   sourceURL: link.sourceURL,
+  title: null,
+  category: null,
   createdAt: link.createdAt,
   rotatedAt: link.rotatedAt,
   revokedAt: link.revokedAt,
