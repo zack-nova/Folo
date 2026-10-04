@@ -321,6 +321,41 @@ GET    /api/extensions/sources/web-lists/:sourceId/items?limit=20
 这些接口只接受实例所有者会话。管理令牌只能访问供给端 `/v1/manage/web-list-sources`，不能读取凭据、目录绑定、
 审计或 Feed；核心对供给端响应做严格 schema 校验后再返回浏览器。未配置管理令牌时行为与 5A.6 相同。
 
+## 5A.10 私有 RSS 公开通道
+
+供给端除了供自托管 Folo 使用的内部通道，还可以把来源以私有链接发布给官方 Folo 和其他阅读器，决策见
+ADR-0033。设置 `PUBLIC_FEED_BASE_URL`（只能是不带路径的源站地址，生产环境必须是 HTTPS）后才提供；未设置时与之前完全相同。
+
+- **订阅授权：** 每个使用方一个授权（例如“官方 Folo”“手机阅读器”），授权内每个来源一条独立链接
+  `https://<域名>/f/<令牌>`，令牌为 256 位随机值。数据库只存令牌的 SHA-256 摘要，以及用凭据密钥加密的
+  原文（用于再次导出）。可以单独轮换或作废一条链接；作废授权会同时停用它的全部链接。
+- **签发校验：** 只能为供给端当前能提供的来源签发链接：`rsshub://` 需能被路由注册表解析，
+  `pagechange://` 与 `weblist://` 需对应现有来源。
+- **对外行为：** 公开路由不需要内部令牌，内部经同一套 `/v1/feeds/*` 读取，缓存、请求合并和限流与内部通道
+  一致。无效、已轮换、已作废或来源已删除的链接一律返回 404。响应只保留 `content-type`、`ETag`、
+  `Last-Modified`，附带 `Cache-Control: private, no-cache` 与 `X-Robots-Tag: noindex, nofollow`，不返回内部
+  诊断头和上游错误细节。
+- **限流与日志：** 每个客户端地址每分钟最多 30 次无效访问，超过后在查库之前直接返回 429；每条链接每分钟
+  最多 30 次读取。计数在进程内并有容量上限。请求日志中的 `/f/` 令牌被脱敏。`TRUST_PROXY` 列出可信反向
+  代理，客户端地址按其转发头识别；生产环境启用公开链接时必须配置，否则所有客户端共用代理地址的配额。
+- **访问记录：** 每条链接记录最近访问时间、客户端地址和 User-Agent（同一链接每分钟最多写一次），授权列表
+  汇总显示，用于发现泄露。
+
+管理接口只接受 `ADMIN_TOKEN`，不经公网代理暴露，所有变更写入审计链：
+
+```text
+GET    /v1/admin/public-feed-grants
+POST   /v1/admin/public-feed-grants                                   { name }
+POST   /v1/admin/public-feed-grants/:grantId/revoke
+GET    /v1/admin/public-feed-grants/:grantId/links                    不含链接地址
+POST   /v1/admin/public-feed-grants/:grantId/links                    { sourceURL }，返回链接地址
+GET    /v1/admin/public-feed-grants/:grantId/export                   有效链接及其地址
+POST   /v1/admin/public-feed-grants/:grantId/links/:linkId/rotate
+DELETE /v1/admin/public-feed-grants/:grantId/links/:linkId
+```
+
+来源类别、个人凭据依赖总览和按授权导出 OPML 属于下一切片。
+
 ## 配置与启动
 
 本地最小闭环：

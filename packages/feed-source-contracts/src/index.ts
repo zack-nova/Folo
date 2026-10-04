@@ -123,6 +123,11 @@ export type SourceAuditAction =
   | "web_list_source.deleted"
   | "web_list_source.tested"
   | "web_list_source.updated"
+  | "public_feed_grant.created"
+  | "public_feed_grant.revoked"
+  | "public_feed_link.created"
+  | "public_feed_link.revoked"
+  | "public_feed_link.rotated"
 
 export interface SourceAuditEvent {
   action: SourceAuditAction
@@ -134,7 +139,14 @@ export interface SourceAuditEvent {
   previousHash: string | null
   resourceId: string | null
   resourceType:
-    "catalog_route" | "credential" | "page_source" | "route" | "system" | "web_list_source"
+    | "catalog_route"
+    | "credential"
+    | "page_source"
+    | "public_feed_grant"
+    | "public_feed_link"
+    | "route"
+    | "system"
+    | "web_list_source"
   sequence: number
 }
 
@@ -425,4 +437,39 @@ export const parseRssHubSource = (input: string): RssHubSource => {
     routePath: `/${sourceURL.hostname}${sourceURL.pathname}`,
     search: sourceURL.search,
   }
+}
+
+/**
+ * A consumer allowed to read sources through public subscription links (ADR-0033), such as
+ * official Folo or a phone reader. Revoking it disables every link it holds.
+ */
+export interface PublicFeedGrant {
+  id: string
+  name: string
+  createdAt: string
+  revokedAt: string | null
+  activeLinkCount: number
+  /** Latest access across the grant's links */
+  lastAccessAt: string | null
+  lastAccessIP: string | null
+  lastAccessUserAgent: string | null
+}
+
+/** One source exposed to one grant under its own unguessable link. */
+export interface PublicFeedLink {
+  id: string
+  grantId: string
+  /** Logical source address: rsshub://, pagechange:// or weblist:// */
+  sourceURL: string
+  createdAt: string
+  rotatedAt: string | null
+  revokedAt: string | null
+  lastAccessAt: string | null
+  lastAccessIP: string | null
+  lastAccessUserAgent: string | null
+}
+
+/** A link together with its subscription URL; only returned when issued or exported. */
+export interface IssuedPublicFeedLink extends PublicFeedLink {
+  url: string
 }
