@@ -1,0 +1,18 @@
+# Run Caddy on the supplier host; the container port stays bound to loopback.
+feeds.example.com {
+    # Capability tokens are part of /f/ URLs. Disable access logs for this site.
+    log {
+        output discard
+    }
+
+    handle /f/* {
+        reverse_proxy 127.0.0.1:3001 {
+            # Replace client-supplied forwarding headers at the public edge.
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+
+    handle {
+        respond 404
+    }
+}

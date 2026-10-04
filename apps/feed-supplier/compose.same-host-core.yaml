@@ -1,0 +1,9 @@
+services:
+  feed-supplier:
+    networks:
+      - sources-link
+
+networks:
+  sources-link:
+    external: true
+    name: folo-sources-internal

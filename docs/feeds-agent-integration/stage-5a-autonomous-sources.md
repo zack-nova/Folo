@@ -329,7 +329,7 @@ GET    /api/extensions/sources/web-lists/:sourceId/items?limit=20
 pnpm dev:self-hosted:sources
 ```
 
-主 API 环境文件只增加：
+生产供给端使用独立的 `apps/feed-supplier/compose.production.yaml`，可先于核心部署。主 API 环境文件只增加：
 
 ```dotenv
 FEED_SUPPLIER_URL=http://feed-supplier:3001
@@ -340,6 +340,7 @@ FEED_SUPPLIER_TOKEN=<独立的 32+ 字符随机令牌>
 
 ```dotenv
 FEED_SUPPLIER_ADMIN_TOKEN=<独立管理令牌>
+FEED_SUPPLIER_TOKEN=<与核心 FEED_SUPPLIER_TOKEN 相同的内部令牌>
 FEED_SUPPLIER_DATABASE_URL=<独立 PostgreSQL URL>
 FEED_SUPPLIER_POSTGRES_PASSWORD=<独立数据库密码>
 FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY=<base64 编码的 32 字节随机 key>
@@ -361,16 +362,31 @@ PAGE_SCHEDULER_POLL_INTERVAL_MS=60000
 RSSHUB_ACCESS_KEY=<另一独立随机密钥>
 RSSHUB_REDIS_URL=redis://redis:6379/0
 RSSHUB_IMAGE=diygod/rsshub@sha256:<经过验证的镜像摘要>
+PUBLIC_FEED_BASE_URL=
+TRUST_PROXY=loopback,uniquelocal
 ```
 
-供给端的数据库、管理、加密、审计和 RSSHub 密钥放在独立 sources 环境文件；API 环境文件只能包含
-`FEED_SUPPLIER_URL` 和 `FEED_SUPPLIER_TOKEN`。启用 Compose profile：
+供给端的数据库、管理、加密、审计和 RSSHub 密钥只放在供给端环境文件；API 环境文件只保存
+`FEED_SUPPLIER_URL`、`FEED_SUPPLIER_TOKEN` 及可选的网页列表管理令牌。供给端独立启动：
 
 ```bash
-docker compose --env-file apps/server/.env.production \
-  --env-file apps/feed-supplier/.env.production \
-  -f apps/server/compose.production.yaml --profile sources up -d --wait
+cp apps/feed-supplier/.env.production.example apps/feed-supplier/.env.production
+node scripts/preflight-self-hosted.mjs --supplier
+docker compose -f apps/feed-supplier/compose.production.yaml \
+  --env-file apps/feed-supplier/.env.production up -d --wait
 ```
+
+供给端默认只在宿主机 `127.0.0.1:3001` 监听，RSSHub、Redis 和供给数据库不发布宿主端口。
+同一宿主机部署核心时，先创建 `folo-sources-internal` 外部 Docker 网络，再分别给供给端和核心加载
+`compose.same-host-core.yaml`、`compose.same-host-supplier.yaml` 覆盖文件；只有供给端和核心 API
+加入共享网络，核心通过 `http://feed-supplier:3001` 访问供给端。分处不同主机时，不加载覆盖文件，
+将供给端端口仅绑定到私网或 WireGuard/Tailscale 隧道接口，并把核心 `FEED_SUPPLIER_URL` 指向该地址。
+核心未配置供给端时继续独立运行。具体命令见两个应用的 README。
+
+公开订阅链接的 HTTPS 基础地址由 `PUBLIC_FEED_BASE_URL` 设置；留空禁用公开链接。公开反向代理
+只转发 `/f/*`，其余路径返回 404，且不得记录包含令牌的请求路径。Caddy 与 nginx 示例位于
+`apps/feed-supplier/deploy/`；`TRUST_PROXY` 仅列入可信代理 IP、CIDR 或
+`loopback`/`linklocal`/`uniquelocal`。`/f/` 端点属于 ADR-0033 后续实现。
 
 认证/AI/指标、供给端内部认证、供给端管理、凭据加密、审计、供给数据库和 RSSHub 访问密钥必须相互独立。
 数据库备份必须与当前 keyring 和审计 HMAC key 一起纳入加密备份，但不能放在同一个明文归档中。

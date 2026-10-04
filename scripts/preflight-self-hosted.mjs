@@ -9,6 +9,24 @@ import { fileURLToPath } from "node:url"
 
 const rootPath = fileURLToPath(new URL("..", import.meta.url))
 const includeSources = process.argv.includes("--sources")
+const supplierProduction = process.argv.includes("--supplier")
+const coreExternalSupplier = process.argv.includes("--core-external-supplier")
+const productionMode = supplierProduction || coreExternalSupplier
+
+if (process.argv.includes("--help")) {
+  console.info(`Usage: node scripts/preflight-self-hosted.mjs [--sources | --supplier | --core-external-supplier]
+
+  (no flag)                 Local core development stack
+  --sources                Local core and sources development stack
+  --supplier               Standalone production supplier and same-host overlay
+  --core-external-supplier Production core and same-host supplier overlay`)
+  process.exit(0)
+}
+
+if ([includeSources, supplierProduction, coreExternalSupplier].filter(Boolean).length > 1) {
+  console.error("Choose only one preflight mode.")
+  process.exit(2)
+}
 
 const results = []
 
@@ -32,11 +50,11 @@ const addResult = (status, title, detail, hint) => {
 
 const clean = (value) => value.trim().replace(/\s+/g, " ")
 
-const run = (command, args, timeoutMs = 10_000) => {
+const run = (command, args, timeoutMs = 10_000, envOverrides = {}) => {
   const result = spawnSync(command, args, {
     cwd: rootPath,
     encoding: "utf8",
-    env: process.env,
+    env: { ...process.env, ...envOverrides },
     timeout: timeoutMs,
   })
 
@@ -48,8 +66,8 @@ const run = (command, args, timeoutMs = 10_000) => {
   }
 }
 
-const commandOutput = (command, args, timeoutMs) => {
-  const result = run(command, args, timeoutMs)
+const commandOutput = (command, args, timeoutMs, envOverrides) => {
+  const result = run(command, args, timeoutMs, envOverrides)
   if (result.error) return { ok: false, result }
   return { ok: result.status === 0, result }
 }
@@ -266,7 +284,7 @@ const checkDocker = () => {
     addResult("pass", "Docker daemon", `Server ${daemon.result.stdout}`)
   }
 
-  if (includeSources) {
+  if (includeSources || supplierProduction) {
     const buildx = commandOutput("docker", ["buildx", "version"])
     if (!buildx.ok) {
       addResult(
@@ -282,6 +300,103 @@ const checkDocker = () => {
 }
 
 const checkComposeFile = () => {
+  if (productionMode) {
+    const app = supplierProduction ? "feed-supplier" : "server"
+    const base = `apps/${app}/compose.production.yaml`
+    const overlay = supplierProduction
+      ? "apps/feed-supplier/compose.same-host-core.yaml"
+      : "apps/server/compose.same-host-supplier.yaml"
+    const productionEnvFile = `apps/${app}/.env.production`
+    const envFile = existsSync(join(rootPath, productionEnvFile))
+      ? productionEnvFile
+      : `apps/${app}/.env.production.example`
+    const envOverrides = coreExternalSupplier
+      ? {
+          FOLO_ENV_FILE:
+            envFile === productionEnvFile ? ".env.production" : ".env.production.example",
+        }
+      : {}
+    const expectedServices = supplierProduction
+      ? ["feed-supplier", "feed-supplier-postgres", "redis", "rsshub"]
+      : ["api", "postgres"]
+
+    for (const [label, files] of [
+      ["Production Compose", [base]],
+      ["Same-host Compose overlay", [base, overlay]],
+    ]) {
+      const args = [
+        "compose",
+        ...files.flatMap((file) => ["-f", file]),
+        "--env-file",
+        envFile,
+        "config",
+        "--format",
+        "json",
+      ]
+      const config = commandOutput("docker", args, 10_000, envOverrides)
+      if (!config.ok) {
+        addResult(
+          "fail",
+          label,
+          config.result.stderr || config.result.error?.message || "docker compose config failed.",
+          `Check ${files.join(" and ")} and ${envFile}.`,
+        )
+        continue
+      }
+
+      let parsed
+      try {
+        parsed = JSON.parse(config.result.stdout)
+      } catch {
+        addResult("fail", label, "Docker Compose did not return valid JSON.")
+        continue
+      }
+      const actualServices = Object.keys(parsed.services ?? {})
+      if (coreExternalSupplier && files.length === 1) {
+        const apiEnvironment = parsed.services?.api?.environment ?? {}
+        if (!apiEnvironment.FEED_SUPPLIER_URL || !apiEnvironment.FEED_SUPPLIER_TOKEN) {
+          addResult(
+            "fail",
+            "External supplier configuration",
+            `FEED_SUPPLIER_URL and FEED_SUPPLIER_TOKEN must both be set in ${envFile}.`,
+          )
+        } else {
+          addResult("pass", "External supplier configuration", "URL and internal token are set.")
+        }
+      }
+      const missing = expectedServices.filter((service) => !actualServices.includes(service))
+      const unexpected = actualServices.filter((service) => !expectedServices.includes(service))
+      const sharedNetwork = parsed.networks?.["sources-link"]
+      const linkedServices = actualServices.filter((service) =>
+        Object.hasOwn(parsed.services[service].networks ?? {}, "sources-link"),
+      )
+      const expectedLinked = supplierProduction ? "feed-supplier" : "api"
+      const invalidLink =
+        files.length === 2
+          ? sharedNetwork?.external !== true ||
+            sharedNetwork?.name !== "folo-sources-internal" ||
+            linkedServices.length !== 1 ||
+            linkedServices[0] !== expectedLinked
+          : linkedServices.length > 0
+
+      if (missing.length || unexpected.length || invalidLink) {
+        addResult(
+          "fail",
+          label,
+          `Services: ${actualServices.join(", ")}; shared-network members: ${linkedServices.join(", ") || "none"}.`,
+          "Only the API and supplier may join the optional external network; database, Redis and RSSHub must stay isolated.",
+        )
+      } else {
+        addResult(
+          "pass",
+          label,
+          `Services: ${actualServices.join(", ")}; shared-network members: ${linkedServices.join(", ") || "none"}.`,
+        )
+      }
+    }
+    return
+  }
+
   const args = ["compose", "-f", "apps/server/compose.yaml"]
   if (includeSources) args.push("--profile", "sources")
   args.push("config", "--services")
@@ -329,11 +444,15 @@ const canConnect = (port) =>
   })
 
 const checkPorts = async () => {
-  const ports = [
-    { name: "Desktop Web", port: 2233 },
-    { name: "API", port: 3000 },
-    { name: "Postgres", port: 54329 },
-  ]
+  const ports = productionMode
+    ? []
+    : [
+        { name: "Desktop Web", port: 2233 },
+        { name: "API", port: 3000 },
+        { name: "Postgres", port: 54329 },
+      ]
+  if (supplierProduction) ports.push({ name: "Feed Supplier", port: 3001 })
+  if (coreExternalSupplier) ports.push({ name: "API", port: 3000 })
   if (includeSources) {
     ports.push(
       { name: "Feed Supplier", port: 3001 },
@@ -387,13 +506,15 @@ const checkWorkspace = () => {
 
 checkNode()
 checkPnpm()
-checkWorkspace()
+if (!productionMode) checkWorkspace()
 checkDockerConfig()
 checkDocker()
 checkComposeFile()
 await checkPorts()
 
-console.info(`\nFolo self-hosted preflight${includeSources ? " with sources" : ""}\n`)
+console.info(
+  `\nFolo self-hosted preflight${supplierProduction ? " for standalone supplier" : coreExternalSupplier ? " for external-supplier core" : includeSources ? " with sources" : ""}\n`,
+)
 for (const result of results) {
   console.info(`${icons[result.status]} [${labels[result.status]}] ${result.title}`)
   if (result.detail) console.info(`  ${result.detail}`)
@@ -411,5 +532,13 @@ if (failures.length > 0) {
   process.exitCode = 1
 } else {
   console.info(`Preflight passed with ${warnings.length} warning(s).`)
-  console.info(includeSources ? "Next: pnpm dev:self-hosted:sources" : "Next: pnpm dev:self-hosted")
+  console.info(
+    supplierProduction
+      ? "Next: follow the standalone production command in apps/feed-supplier/README.md."
+      : coreExternalSupplier
+        ? "Next: follow the matching production topology in apps/server/README.md."
+        : includeSources
+          ? "Next: pnpm dev:self-hosted:sources"
+          : "Next: pnpm dev:self-hosted",
+  )
 }

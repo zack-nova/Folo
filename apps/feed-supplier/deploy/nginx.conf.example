@@ -1,0 +1,22 @@
+# Include inside nginx's http context. Supply TLS certificates for this host.
+server {
+    listen 443 ssl;
+    server_name feeds.example.com;
+    ssl_certificate /etc/letsencrypt/live/feeds.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/feeds.example.com/privkey.pem;
+
+    # Capability tokens are in /f/ paths; do not record request paths here.
+    access_log off;
+    error_log /dev/null crit;
+
+    location ^~ /f/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    location / {
+        return 404;
+    }
+}

@@ -194,7 +194,7 @@ FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
 | `zhihu-hot`                                                      | 可选 `ZHIHU_COOKIES`，提高稳定性                                                                                      |
 
 复制 [`.env.rsshub.example`](./.env.rsshub.example) 为 `apps/feed-supplier/.env.rsshub`（或用 `RSSHUB_ENV_FILE` 指向其他
-路径），只保留填写了值的行：RSSHub 会把空字符串当作已配置。两个 Compose 文件都以可选 `env_file` 读取它，重启 RSSHub
+路径），只保留填写了值的行：RSSHub 会把空字符串当作已配置。开发和生产 Compose 都以可选 `env_file` 读取它，重启 RSSHub
 后重跑带 `--enable` 的导入即可启用之前留下的停用模板。
 
 订阅清单同样保存在仓库外的本地预设文件中，格式见
@@ -248,27 +248,57 @@ RSSHub 配额，因此不会影响常规 RSS 推送逻辑。
 “设置 → 运维”显示同一份摘要。响应头 `x-folo-cache: HIT|MISS` 和可选的
 `x-folo-coalesced: true` 可用于单次请求诊断。
 
-生产需分别复制主 API 与 sources 环境文件：
+## 独立生产部署
+
+供给端可以先于 Folo 核心启动。复制环境模板并替换所有示例密钥；`FEED_SUPPLIER_TOKEN` 是供给端的
+`INTERNAL_TOKEN`，只在核心需要连接时把相同值写入核心环境文件。数据库 URL 中的密码必须与
+`FEED_SUPPLIER_POSTGRES_PASSWORD` 一致，且应进行 URL 编码。RSSHub 镜像应固定到验证过的 digest；需要浏览器的
+路由应选带 Chromium 的镜像。
 
 ```bash
-cp apps/server/.env.production.example apps/server/.env.production
 cp apps/feed-supplier/.env.production.example apps/feed-supplier/.env.production
-
-docker compose \
-  --env-file apps/server/.env.production \
-  --env-file apps/feed-supplier/.env.production \
-  -f apps/server/compose.production.yaml --profile sources up -d --wait
+node scripts/preflight-self-hosted.mjs --supplier
+docker compose -f apps/feed-supplier/compose.production.yaml \
+  --env-file apps/feed-supplier/.env.production up -d --wait
 ```
 
-备份与恢复演练：
+默认只把供给端的 `3001` 端口发布到宿主机 `127.0.0.1`；RSSHub、Redis 和供给数据库没有宿主端口，
+并且只在供应端私有 Docker 网络中。`FEED_SUPPLIER_BIND_ADDRESS` 和 `FEED_SUPPLIER_PORT` 可修改宿主绑定；
+不同主机连接时只绑定私网接口或隧道接口，不直接暴露在公网。`PUBLIC_FEED_BASE_URL` 留空会禁用公开订阅链接；
+启用时填入 HTTPS 域名基础地址，例如 `https://feeds.example.com`。`TRUST_PROXY` 只列入可信代理地址段，
+支持 IP、CIDR、`loopback`、`linklocal`、`uniquelocal`。
+
+公开订阅仅允许通过 TLS 反向代理访问 `/f/*`。示例见
+[`deploy/Caddyfile.example`](./deploy/Caddyfile.example) 和
+[`deploy/nginx.conf.example`](./deploy/nginx.conf.example)：其他路径返回 404，代理不记录含令牌的请求路径，
+并转发客户端地址。管理接口、内部 Feed 接口及 `/ready` 只通过本机或私网访问。当前 `/f/` 端点由
+ADR-0033 的后续实现提供；部署配置不会自行创建该端点。
+
+同一宿主机运行核心时，先创建一次共享网络，再用两个独立 Compose 项目的同宿主覆盖文件启动。
+只有 `api` 和 `feed-supplier` 加入该网络，核心不能直接访问 RSSHub、Redis 或供给数据库：
 
 ```bash
+docker network create folo-sources-internal
+docker compose -f apps/feed-supplier/compose.production.yaml \
+  -f apps/feed-supplier/compose.same-host-core.yaml \
+  --env-file apps/feed-supplier/.env.production up -d --wait
+```
+
+核心的 `FEED_SUPPLIER_URL` 设为 `http://feed-supplier:3001`。不同主机时，不使用同宿主覆盖文件；
+核心把 `FEED_SUPPLIER_URL` 指向供应端私网地址或 WireGuard/Tailscale 隧道地址，并开放对应的私网绑定端口。
+两种拓扑的核心启动命令见 [`apps/server/README.md`](../server/README.md)。不连接核心时，供给端仍可独立运行。
+
+备份与恢复演练脚本仍支持开发 Compose。对独立生产 Compose，只需指定供给端 Compose 与环境文件：
+
+```bash
+export FEED_SUPPLIER_COMPOSE_FILE="$PWD/apps/feed-supplier/compose.production.yaml"
+export FEED_SUPPLIER_SOURCES_ENV_FILE="$PWD/apps/feed-supplier/.env.production"
 pnpm sources:backup ./feed-supplier.dump
 pnpm sources:restore:drill ./feed-supplier.dump
 ```
 
-生产备份时同时设置 `FEED_SUPPLIER_COMPOSE_FILE`、`FEED_SUPPLIER_MAIN_ENV_FILE` 和
-`FEED_SUPPLIER_SOURCES_ENV_FILE`，脚本会用相同的双环境文件解析生产 Compose。
+`FEED_SUPPLIER_MAIN_ENV_FILE` 在这个独立部署中不需要。备份文件应与凭据加密 keyring 和审计 HMAC key
+一起保管，恢复演练使用隔离临时数据库，不覆盖运行中的供给数据库。
 
 生产必须设置彼此独立的内部、管理、数据库、凭据加密、审计和 RSSHub 密钥。阶段 5A 完整契约见
 [`stage-5a-autonomous-sources.md`](../../docs/feeds-agent-integration/stage-5a-autonomous-sources.md)。
