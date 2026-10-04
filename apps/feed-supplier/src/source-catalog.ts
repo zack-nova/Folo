@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import type {
+  RssHubCredentialRequirement,
   RssHubSource,
   SourceCatalogParameter,
   SourceCatalogParameterValue,
@@ -24,6 +25,7 @@ export interface CreateCatalogRouteInput {
   key: string
   parameters: SourceCatalogParameter[]
   routePathTemplate: string
+  rssHubCredentials?: RssHubCredentialRequirement[] | null
   secretQueryBindings?: Record<string, string>
   title: string
 }
@@ -36,6 +38,7 @@ export interface UpdateCatalogRouteInput {
   key?: string
   parameters?: SourceCatalogParameter[]
   routePathTemplate?: string
+  rssHubCredentials?: RssHubCredentialRequirement[] | null
   secretQueryBindings?: Record<string, string>
   title?: string
 }
@@ -341,6 +344,7 @@ export class SourceCatalogService {
       parameters: input.parameters,
       requiresCredentials: Object.keys(input.secretQueryBindings ?? {}).length > 0,
       routePathTemplate: input.routePathTemplate,
+      rssHubCredentials: input.rssHubCredentials ?? null,
       secretQueryBindings: input.secretQueryBindings ?? {},
       title: input.title,
       updatedAt: now,
@@ -378,6 +382,8 @@ export class SourceCatalogService {
       parameters: input.parameters ?? current.parameters,
       requiresCredentials: Object.keys(bindings).length > 0,
       routePathTemplate: input.routePathTemplate ?? current.routePathTemplate,
+      rssHubCredentials:
+        input.rssHubCredentials === undefined ? current.rssHubCredentials : input.rssHubCredentials,
       secretQueryBindings: bindings,
       title: input.title ?? current.title,
       updatedAt: new Date().toISOString(),
@@ -392,6 +398,7 @@ export class SourceCatalogService {
         enabled: route.enabled,
         key: route.key,
         parameterCount: route.parameters.length,
+        rssHubCredentialCount: route.rssHubCredentials?.length ?? null,
       }),
     )
   }
@@ -472,8 +479,23 @@ export class SourceCatalogService {
   }
 
   async resolve(source: RssHubSource): Promise<ResolvedCatalogSource | null> {
+    const route = await this.matchTemplate(source, { includeDisabled: false })
+    return route
+      ? { route, secretQuery: await this.resolveSecrets(route.secretQueryBindings) }
+      : null
+  }
+
+  /**
+   * The most specific template an address belongs to, without resolving its secrets. RSSHub reads
+   * its environment whether or not a template is enabled here, so credential lookups include
+   * disabled templates.
+   */
+  async matchTemplate(
+    source: RssHubSource,
+    { includeDisabled }: { includeDisabled: boolean },
+  ): Promise<SourceCatalogRouteAdministration | null> {
     const routes = (await this.repository.listCatalogRoutes())
-      .filter((route) => route.enabled)
+      .filter((route) => includeDisabled || route.enabled)
       .sort(
         (left, right) =>
           templateSpecificity(right) - templateSpecificity(left) ||
@@ -487,8 +509,7 @@ export class SourceCatalogService {
         if (error instanceof URIError) continue
         throw error
       }
-      if (!values) continue
-      return { route, secretQuery: await this.resolveSecrets(route.secretQueryBindings) }
+      if (values) return route
     }
     return null
   }

@@ -32,6 +32,8 @@ export interface RegisterSourceAdminRoutesOptions {
   registry: SourceRegistry
   webLists: WebListService
   pageChanges: PageChangeService
+  /** Re-encrypts public link tokens still under an older credential key; returns the count. */
+  rotatePublicFeedTokens: (actor: string) => Promise<number>
   server: FastifyInstance
   testRoute: (sourceURL: string, preResolved?: ResolvedRssHubSource) => Promise<RouteTestResult>
 }
@@ -145,6 +147,17 @@ const catalogDocumentationURL = z
   .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
     message: "Documentation URL must use HTTP or HTTPS",
   })
+/** An RSSHub environment variable, or a family of them such as BILIBILI_COOKIE_*. */
+const rssHubCredentialRequirement = z
+  .object({
+    name: z
+      .string()
+      .max(64)
+      .regex(/^[A-Z][A-Z0-9_]*\*?$/, "Credential names are RSSHub environment variable names"),
+    required: z.boolean(),
+  })
+  .strict()
+
 const catalogFields = {
   category: z.string().trim().min(1).max(128),
   description: z.string().trim().max(1_000).nullable(),
@@ -157,6 +170,7 @@ const catalogFields = {
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   parameters: z.array(catalogParameter).max(32),
   routePathTemplate: z.string().min(2).max(1_024),
+  rssHubCredentials: z.array(rssHubCredentialRequirement).max(16).nullable(),
   secretQueryBindings,
   title: z.string().trim().min(1).max(128),
 }
@@ -166,6 +180,7 @@ const catalogRouteCreate = z
     description: catalogFields.description.optional(),
     documentationURL: catalogFields.documentationURL.optional(),
     enabled: catalogFields.enabled.optional(),
+    rssHubCredentials: catalogFields.rssHubCredentials.optional(),
     secretQueryBindings: catalogFields.secretQueryBindings.optional(),
   })
   .strict()
@@ -221,6 +236,7 @@ export const registerSourceAdminRoutes = ({
   registry,
   pageChanges,
   webLists,
+  rotatePublicFeedTokens,
   server,
   testRoute,
 }: RegisterSourceAdminRoutesOptions): void => {
@@ -485,9 +501,11 @@ export const registerSourceAdminRoutes = ({
     },
   )
 
-  server.post("/v1/admin/credentials/rotate", async (request) => ({
-    rotatedCount: await registry.rotateCredentials(actorFor(request)),
-  }))
+  server.post("/v1/admin/credentials/rotate", async (request) => {
+    const rotatedCount = await registry.rotateCredentials(actorFor(request))
+    // Public link tokens share the credential keyring, so retiring a key must cover them too.
+    return { publicLinkRotatedCount: await rotatePublicFeedTokens(actorFor(request)), rotatedCount }
+  })
 
   server.get("/v1/admin/routes", async () => ({ routes: await registry.listRoutes() }))
 

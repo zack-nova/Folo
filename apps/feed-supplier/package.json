@@ -9,6 +9,7 @@
     "prod:lock:check": "tsx ../../scripts/update-production-lockfile.ts --app feed-supplier --check",
     "prod:lock:update": "tsx ../../scripts/update-production-lockfile.ts --app feed-supplier",
     "sources:export:opml": "tsx scripts/export-subscriptions-opml.ts",
+    "sources:publish": "tsx scripts/publish-public-feeds.ts",
     "sources:import:catalog": "tsx scripts/import-catalog-routes.ts",
     "sources:import:web-lists": "tsx scripts/import-web-list-sources.ts",
     "start": "tsx --env-file-if-exists=.env src/index.ts",

@@ -8,6 +8,7 @@ import type { StoredPageChangeSource } from "./page-change-repository"
 import type { PageFetcher } from "./page-fetcher"
 import { PageFetchError } from "./page-fetcher"
 import type { SupplierRepository } from "./repository"
+import { secretQueryParameter } from "./secret-parameters"
 
 export interface CreatePageChangeSourceInput {
   confirmDelaySeconds?: number
@@ -158,9 +159,7 @@ const validateTargetURL = (value: string): string => {
   if (url.username || url.password) {
     throw new PageChangeError("page_url_invalid", "Page URL must not contain credentials", 400)
   }
-  const secretParameter = [...url.searchParams.keys()].find((key) =>
-    /^(?:access_?token|api_?key|auth|key|signature|token)$/i.test(key),
-  )
+  const secretParameter = secretQueryParameter(url)
   if (secretParameter) {
     throw new PageChangeError(
       "page_url_secret_forbidden",

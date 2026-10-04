@@ -152,7 +152,16 @@ export const registerPublicFeedRoute = (
 }
 
 const grantCreate = z.object({ name: z.string() }).strict()
-const linkCreate = z.object({ sourceURL: z.string().min(1).max(2048) }).strict()
+const linkMetadata = {
+  category: z.string().max(512).nullable().optional(),
+  title: z.string().max(1_024).nullable().optional(),
+}
+const linkCreate = z.object({ sourceURL: z.string().min(1).max(2048), ...linkMetadata }).strict()
+const linkUpdate = z
+  .object(linkMetadata)
+  .strict()
+  .refine((body) => Object.keys(body).length > 0, "At least one field is required")
+const usageQuery = z.object({ grantId: z.uuid().optional() }).strict()
 
 const handlePublicFeedError = (error: unknown, reply: FastifyReply) => {
   if (error instanceof PublicFeedError) {
@@ -219,6 +228,7 @@ export const registerPublicFeedAdminRoutes = (
             request.params.grantId,
             parsed.data.sourceURL,
             actorFor(request),
+            { category: parsed.data.category, title: parsed.data.title },
           ),
         })
       } catch (error) {
@@ -254,6 +264,36 @@ export const registerPublicFeedAdminRoutes = (
       }
     },
   )
+
+  server.patch<{ Params: { grantId: string; linkId: string } }>(
+    `${prefix}/:grantId/links/:linkId`,
+    async (request, reply) => {
+      const parsed = linkUpdate.safeParse(request.body)
+      if (!parsed.success) return invalidBody(reply, parsed.error)
+      try {
+        return {
+          link: await service.updateLinkMetadata(
+            request.params.grantId,
+            request.params.linkId,
+            parsed.data,
+            actorFor(request),
+          ),
+        }
+      } catch (error) {
+        return handlePublicFeedError(error, reply)
+      }
+    },
+  )
+
+  server.get("/v1/admin/credential-usage", async (request, reply) => {
+    const parsed = usageQuery.safeParse(request.query)
+    if (!parsed.success) return invalidBody(reply, parsed.error)
+    try {
+      return await service.credentialUsage(parsed.data.grantId)
+    } catch (error) {
+      return handlePublicFeedError(error, reply)
+    }
+  })
 
   server.delete<{ Params: { grantId: string; linkId: string } }>(
     `${prefix}/:grantId/links/:linkId`,

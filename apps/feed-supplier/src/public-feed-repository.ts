@@ -18,6 +18,8 @@ export interface StoredPublicFeedLink {
   id: string
   grantId: string
   sourceURL: string
+  title: string | null
+  category: string | null
   /** SHA-256 of the link token */
   tokenHash: Buffer
   /** The token, encrypted so that links can be exported again */
@@ -55,6 +57,19 @@ export interface PublicFeedRepository {
     rotatedAt: string,
     audit: AuditEventDraft,
   ): Promise<StoredPublicFeedLink | null>
+  updatePublicFeedLinkMetadata(
+    id: string,
+    metadata: Pick<StoredPublicFeedLink, "category" | "title">,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedLink | null>
+  /**
+   * Stores tokens re-encrypted under the active key, in one transaction. A link whose token hash
+   * changed since it was read (rotated meanwhile) is skipped; returns the links updated.
+   */
+  reencryptPublicFeedLinkTokens(
+    updates: Array<Pick<StoredPublicFeedLink, "id" | "token" | "tokenHash">>,
+    audit: AuditEventDraft,
+  ): Promise<number>
   revokePublicFeedLink(
     id: string,
     revokedAt: string,

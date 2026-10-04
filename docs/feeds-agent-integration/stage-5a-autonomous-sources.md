@@ -329,7 +329,8 @@ ADR-0033。设置 `PUBLIC_FEED_BASE_URL`（只能是不带路径的源站地址�
 - **订阅授权：** 每个使用方一个授权（例如“官方 Folo”“手机阅读器”），授权内每个来源一条独立链接
   `https://<域名>/f/<令牌>`，令牌为 256 位随机值。数据库只存令牌的 SHA-256 摘要，以及用凭据密钥加密的
   原文（用于再次导出）。可以单独轮换或作废一条链接；作废授权会同时停用它的全部链接。
-- **签发校验：** 只能为供给端当前能提供的来源签发链接：`rsshub://` 需能被路由注册表解析，
+- **签发校验：** 地址中带 `token`、`key`、`auth` 等秘密查询参数的来源不能签发链接，秘密必须作为凭据绑定；
+  只能为供给端当前能提供的来源签发链接：`rsshub://` 需能被路由注册表解析，
   `pagechange://` 与 `weblist://` 需对应现有来源。
 - **对外行为：** 公开路由不需要内部令牌，内部经同一套 `/v1/feeds/*` 读取，缓存、请求合并和限流与内部通道
   一致。无效、已轮换、已作废或来源已删除的链接一律返回 404。响应只保留 `content-type`、`ETag`、
@@ -348,13 +349,38 @@ GET    /v1/admin/public-feed-grants
 POST   /v1/admin/public-feed-grants                                   { name }
 POST   /v1/admin/public-feed-grants/:grantId/revoke
 GET    /v1/admin/public-feed-grants/:grantId/links                    不含链接地址
-POST   /v1/admin/public-feed-grants/:grantId/links                    { sourceURL }，返回链接地址
-GET    /v1/admin/public-feed-grants/:grantId/export                   有效链接及其地址
+POST   /v1/admin/public-feed-grants/:grantId/links                    { sourceURL, title?, category? }，返回链接地址
+PATCH  /v1/admin/public-feed-grants/:grantId/links/:linkId            { title?, category? }，链接地址不变
+GET    /v1/admin/public-feed-grants/:grantId/export                   有效链接及其地址、标题、类别
 POST   /v1/admin/public-feed-grants/:grantId/links/:linkId/rotate
 DELETE /v1/admin/public-feed-grants/:grantId/links/:linkId
+GET    /v1/admin/credential-usage[?grantId=]                          个人凭据依赖总览
 ```
 
-来源类别、个人凭据依赖总览和按授权导出 OPML 属于下一切片。
+**个人凭据依赖总览。** 每条有效链接按来源报告 `uses`、`none` 或 `unknown`：
+
+- `rsshub://` 地址合并两类凭据：路由实例与匹配的目录模板绑定的供给端凭据（按名称，不含值），以及模板
+  `rssHubCredentials` 声明的 RSSHub 部署凭据（环境变量名，标明是否必需）。模板未声明（`null`）或地址不属于
+  任何模板时报告 `unknown`，不按“无凭据”处理；匹配时包含已停用的模板，因为 RSSHub 读取环境变量与是否在此
+  启用无关。
+- `weblist://` 与 `pagechange://` 第一版不支持登录 Cookie，报告 `none`。
+
+仓库内的 `presets/rsshub-catalog.json` 已按 RSSHub 源码（2026-10-03 的 `master`）为每条路由声明凭据：X 用户
+时间线必需 `TWITTER_AUTH_TOKEN`（也可改用 `TWITTER_THIRD_PARTY_API` 或开发者 API 密钥），知乎热榜、GitHub
+仓库、B 站和微博路由可选使用对应 Cookie 或令牌，其余路由不使用。`sources:import:catalog --apply` 会把预设中
+更新过的描述和凭据声明同步到已存在的模板（结果为 `updated`；不加 `--apply` 时报告 `outdated`），不改动模板、
+参数和绑定。
+
+**密钥轮换。** `POST /v1/admin/credentials/rotate` 同时把仍在旧密钥下的有效链接令牌重新加密，响应中的
+`publicLinkRotatedCount` 为其数量；完成后旧密钥可以从 `CREDENTIAL_DECRYPTION_KEYS_JSON` 中移除，已发出的
+链接地址不变。
+
+发布到阅读器时，以仓库外的订阅预设为唯一清单，运行 `pnpm --filter @follow/feed-supplier sources:publish`
+（指定 `--grant`、`--subscriptions`、`--web-lists`，首次可加 `--create-grant`），再把生成的 OPML 导入官方
+Folo 或其他阅读器。命令复用有效授权链接并同步标题和类别；`--dry-run` 预览变更，`--revoke-missing` 作废
+清单中已删除的来源链接；只要还有条目未能解析，整个命令默认在任何变更之前中止（加 `--allow-unresolved` 才只发布已解析的条目，
+此时 `--revoke-missing` 仍会拒绝），避免因拼写错误或供给端暂时故障改动链接或用不完整的 OPML 覆盖旧文件。OPML 含私有链接，以 `0600` 保存。自托管 Folo 继续使用 `sources:export:opml`
+导出的逻辑地址。
 
 ## 配置与启动
 

@@ -12,6 +12,7 @@ import { PostgresSupplierRepository } from "../src/postgres-repository"
 import { FixedWindowLimiter, redactPublicFeedURL } from "../src/public-feed-routes"
 import type { SupplierRepository } from "../src/repository"
 import { buildFeedSupplier } from "../src/server"
+import { isolatedDatabaseURL } from "./support/postgres-database"
 
 const baseEnvironment = {
   INTERNAL_TOKEN: "internal-supplier-token-0000000000000000",
@@ -26,6 +27,8 @@ const config = loadFeedSupplierConfig({
 })
 const admin = { authorization: `Bearer ${config.adminToken}` }
 const databaseURL = process.env.TEST_FEED_SUPPLIER_DATABASE_URL
+  ? await isolatedDatabaseURL(process.env.TEST_FEED_SUPPLIER_DATABASE_URL, "public_feeds")
+  : undefined
 
 const repositories: Array<[string, () => SupplierRepository | undefined]> = [
   ["memory", () => undefined],
@@ -396,6 +399,8 @@ describe.each([
         id: crypto.randomUUID(),
         grantId,
         sourceURL: "rsshub://example/late",
+        title: null,
+        category: null,
         tokenHash: Buffer.alloc(32, 7),
         token: {
           authenticationTag: Buffer.alloc(16),
@@ -412,6 +417,59 @@ describe.each([
     )
     expect(created).toBeNull()
     expect(await repository.listPublicFeedLinks(grantId)).toEqual([])
+    await repository.close()
+  })
+
+  it("does not re-encrypt a token that was rotated after it was read", async () => {
+    const repository = create()
+    await repository.initialize()
+    const grantId = crypto.randomUUID()
+    const linkId = crypto.randomUUID()
+    const audit = () => createAuditDraft("test", "public_feed_link.reencrypted", "system", null, {})
+    await repository.createPublicFeedGrant(
+      {
+        id: grantId,
+        name: `Race ${grantId}`,
+        createdAt: new Date().toISOString(),
+        revokedAt: null,
+      },
+      audit(),
+    )
+    const encrypted = (fill: number) => ({
+      authenticationTag: Buffer.alloc(16, fill),
+      ciphertext: Buffer.from(`ciphertext-${fill}`),
+      initializationVector: Buffer.alloc(12, fill),
+      keyId: `key-${fill}`,
+    })
+    await repository.createPublicFeedLink(
+      {
+        id: linkId,
+        grantId,
+        sourceURL: "rsshub://example/race",
+        title: null,
+        category: null,
+        tokenHash: Buffer.alloc(32, 1),
+        token: encrypted(1),
+        createdAt: new Date().toISOString(),
+        rotatedAt: null,
+        revokedAt: null,
+        lastAccess: null,
+      },
+      audit(),
+    )
+    // The link is rotated (new token, new hash) between the read and the re-encryption.
+    await repository.rotatePublicFeedLink(
+      linkId,
+      { tokenHash: Buffer.alloc(32, 2), token: encrypted(2) },
+      new Date().toISOString(),
+      audit(),
+    )
+    const updated = await repository.reencryptPublicFeedLinkTokens(
+      [{ id: linkId, token: encrypted(3), tokenHash: Buffer.alloc(32, 1) }],
+      audit(),
+    )
+    expect(updated).toBe(0)
+    expect((await repository.findPublicFeedLink(linkId))?.token.keyId).toBe("key-2")
     await repository.close()
   })
 })

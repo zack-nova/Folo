@@ -86,8 +86,21 @@ export interface SourceCatalogRoute {
   updatedAt: string
 }
 
+/** An RSSHub deployment credential (an environment variable of the RSSHub container). */
+export interface RssHubCredentialRequirement {
+  /** Environment variable name, e.g. TWITTER_AUTH_TOKEN */
+  name: string
+  /** False when the route works without it and only gains from it */
+  required: boolean
+}
+
 export interface SourceCatalogRouteAdministration extends SourceCatalogRoute {
   deletedAt: string | null
+  /**
+   * RSSHub deployment credentials the route uses (ADR-0033). Null while undeclared, which the
+   * credential overview reports as unknown rather than as none.
+   */
+  rssHubCredentials: RssHubCredentialRequirement[] | null
   secretQueryBindings: Record<string, string>
 }
 
@@ -128,6 +141,8 @@ export type SourceAuditAction =
   | "public_feed_link.created"
   | "public_feed_link.revoked"
   | "public_feed_link.rotated"
+  | "public_feed_link.reencrypted"
+  | "public_feed_link.updated"
 
 export interface SourceAuditEvent {
   action: SourceAuditAction
@@ -461,6 +476,9 @@ export interface PublicFeedLink {
   grantId: string
   /** Logical source address: rsshub://, pagechange:// or weblist:// */
   sourceURL: string
+  /** Reader-facing title and category, usually taken from the subscription preset */
+  title: string | null
+  category: string | null
   createdAt: string
   rotatedAt: string | null
   revokedAt: string | null
@@ -472,4 +490,33 @@ export interface PublicFeedLink {
 /** A link together with its subscription URL; only returned when issued or exported. */
 export interface IssuedPublicFeedLink extends PublicFeedLink {
   url: string
+}
+
+/**
+ * Which personal credentials a source depends on (ADR-0033). `uses` when any credential is
+ * bound or declared, `none` when the source is known to need none, `unknown` otherwise.
+ */
+export interface SourceCredentialDependency {
+  status: "none" | "unknown" | "uses"
+  /** Names of supplier credentials bound to the route's secret query parameters */
+  boundCredentials: string[]
+  /** RSSHub deployment credentials declared on the matching catalog template */
+  rssHubCredentials: RssHubCredentialRequirement[]
+  /** Key of the catalog template the address matched, if any */
+  catalogRouteKey: string | null
+}
+
+export interface PublicFeedCredentialUsage {
+  grantId: string
+  grantName: string
+  linkId: string
+  sourceURL: string
+  title: string | null
+  category: string | null
+  dependency: SourceCredentialDependency
+}
+
+/** Every active public link with its credential dependency, for the owner's overview. */
+export interface CredentialUsageReport {
+  links: PublicFeedCredentialUsage[]
 }

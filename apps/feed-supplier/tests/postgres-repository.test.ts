@@ -145,7 +145,7 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
       method: "POST",
       url: "/v1/admin/credentials/rotate",
     })
-    expect(rotation.json()).toEqual({ rotatedCount: 1 })
+    expect(rotation.json()).toEqual({ publicLinkRotatedCount: 0, rotatedCount: 1 })
     const credentials = await secondServer.inject({
       headers,
       method: "GET",

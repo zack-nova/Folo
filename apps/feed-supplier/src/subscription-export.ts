@@ -6,11 +6,11 @@ import type { WebListPreset } from "./web-list-import"
 
 const subscriptionURL = z.string().refine((value) => {
   try {
-    return ["http:", "https:", "rsshub:"].includes(new URL(value).protocol)
+    return ["http:", "https:", "rsshub:", "pagechange:"].includes(new URL(value).protocol)
   } catch {
     return false
   }
-}, "Subscription URL must use http, https or rsshub")
+}, "Subscription URL must use http, https, rsshub or pagechange")
 
 const presetSchema = z
   .object({
