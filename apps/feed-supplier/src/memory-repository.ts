@@ -9,6 +9,11 @@ import type {
 import type { AuditEventDraft } from "./audit"
 import { auditEventHash, auditHashesMatch } from "./audit"
 import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
+import type {
+  PublicFeedAccess,
+  StoredPublicFeedGrant,
+  StoredPublicFeedLink,
+} from "./public-feed-repository"
 import type { StoredCredential, SupplierRepository } from "./repository"
 import { RepositoryConflictError } from "./repository"
 import type { StoredWebListItem, StoredWebListSource } from "./web-list-repository"
@@ -43,7 +48,22 @@ const clonePageSource = (source: StoredPageChangeSource): StoredPageChangeSource
 
 const clonePageEvent = (event: PageChangeEvent): PageChangeEvent => ({ ...event })
 
+// structuredClone turns a Buffer into a plain Uint8Array, so links are copied field by field.
+const cloneLink = (link: StoredPublicFeedLink): StoredPublicFeedLink => ({
+  ...link,
+  tokenHash: Buffer.from(link.tokenHash),
+  token: {
+    authenticationTag: Buffer.from(link.token.authenticationTag),
+    ciphertext: Buffer.from(link.token.ciphertext),
+    initializationVector: Buffer.from(link.token.initializationVector),
+    keyId: link.token.keyId,
+  },
+  lastAccess: link.lastAccess ? { ...link.lastAccess } : null,
+})
+
 export class MemorySupplierRepository implements SupplierRepository {
+  private readonly publicFeedGrants = new Map<string, StoredPublicFeedGrant>()
+  private readonly publicFeedLinks = new Map<string, StoredPublicFeedLink>()
   private readonly webListSources = new Map<string, StoredWebListSource>()
   private readonly webListItems = new Map<string, StoredWebListItem[]>()
   private readonly auditEvents: SourceAuditEvent[] = []
@@ -461,6 +481,123 @@ export class MemorySupplierRepository implements SupplierRepository {
       previousHash = event.eventHash
     }
     return { brokenAtSequence: null, checkedEvents: this.auditEvents.length, valid: true }
+  }
+
+  async createPublicFeedGrant(
+    grant: StoredPublicFeedGrant,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedGrant> {
+    const normalizedName = grant.name.toLocaleLowerCase()
+    if (
+      [...this.publicFeedGrants.values()].some(
+        (existing) => !existing.revokedAt && existing.name.toLocaleLowerCase() === normalizedName,
+      )
+    ) {
+      throw new RepositoryConflictError("An active public feed grant already uses this name")
+    }
+    this.publicFeedGrants.set(grant.id, { ...grant })
+    this.appendAudit(audit)
+    return { ...grant }
+  }
+
+  async findPublicFeedGrant(id: string): Promise<StoredPublicFeedGrant | null> {
+    const grant = this.publicFeedGrants.get(id)
+    return grant ? { ...grant } : null
+  }
+
+  async listPublicFeedGrants(): Promise<StoredPublicFeedGrant[]> {
+    return [...this.publicFeedGrants.values()]
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .map((grant) => ({ ...grant }))
+  }
+
+  async revokePublicFeedGrant(
+    id: string,
+    revokedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedGrant | null> {
+    const grant = this.publicFeedGrants.get(id)
+    if (!grant || grant.revokedAt) return null
+    grant.revokedAt = revokedAt
+    for (const link of this.publicFeedLinks.values()) {
+      if (link.grantId === id && !link.revokedAt) link.revokedAt = revokedAt
+    }
+    this.appendAudit(audit)
+    return { ...grant }
+  }
+
+  async createPublicFeedLink(
+    link: StoredPublicFeedLink,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedLink | null> {
+    const grant = this.publicFeedGrants.get(link.grantId)
+    if (!grant || grant.revokedAt) return null
+    if (
+      [...this.publicFeedLinks.values()].some(
+        (existing) =>
+          !existing.revokedAt &&
+          existing.grantId === link.grantId &&
+          existing.sourceURL === link.sourceURL,
+      )
+    ) {
+      throw new RepositoryConflictError("This grant already has an active link for the source")
+    }
+    this.publicFeedLinks.set(link.id, cloneLink(link))
+    this.appendAudit(audit)
+    return cloneLink(link)
+  }
+
+  async findPublicFeedLink(id: string): Promise<StoredPublicFeedLink | null> {
+    const link = this.publicFeedLinks.get(id)
+    return link ? cloneLink(link) : null
+  }
+
+  async listPublicFeedLinks(grantId: string): Promise<StoredPublicFeedLink[]> {
+    return [...this.publicFeedLinks.values()]
+      .filter((link) => link.grantId === grantId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .map(cloneLink)
+  }
+
+  async rotatePublicFeedLink(
+    id: string,
+    replacement: Pick<StoredPublicFeedLink, "token" | "tokenHash">,
+    rotatedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedLink | null> {
+    const link = this.publicFeedLinks.get(id)
+    if (!link || link.revokedAt) return null
+    const rotated = cloneLink({ ...link, ...replacement, rotatedAt })
+    this.publicFeedLinks.set(id, rotated)
+    this.appendAudit(audit)
+    return cloneLink(rotated)
+  }
+
+  async revokePublicFeedLink(
+    id: string,
+    revokedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedLink | null> {
+    const link = this.publicFeedLinks.get(id)
+    if (!link || link.revokedAt) return null
+    link.revokedAt = revokedAt
+    this.appendAudit(audit)
+    return cloneLink(link)
+  }
+
+  async findActivePublicFeedLinkByTokenHash(
+    tokenHash: Buffer,
+  ): Promise<StoredPublicFeedLink | null> {
+    for (const link of this.publicFeedLinks.values()) {
+      if (link.revokedAt || !link.tokenHash.equals(tokenHash)) continue
+      return this.publicFeedGrants.get(link.grantId)?.revokedAt === null ? cloneLink(link) : null
+    }
+    return null
+  }
+
+  async recordPublicFeedAccess(id: string, access: PublicFeedAccess): Promise<void> {
+    const link = this.publicFeedLinks.get(id)
+    if (link) link.lastAccess = { ...access }
   }
 
   private appendAudit(draft: AuditEventDraft): void {

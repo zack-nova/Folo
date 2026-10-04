@@ -15,6 +15,11 @@ import { Pool } from "pg"
 import type { AuditDetails, AuditEventDraft } from "./audit"
 import { auditEventHash, auditHashesMatch } from "./audit"
 import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
+import type {
+  PublicFeedAccess,
+  StoredPublicFeedGrant,
+  StoredPublicFeedLink,
+} from "./public-feed-repository"
 import type { StoredCredential, SupplierRepository } from "./repository"
 import { RepositoryConflictError } from "./repository"
 import type { WebListSourceRow } from "./web-list-postgres"
@@ -267,6 +272,60 @@ export interface PostgresSupplierRepositoryOptions {
   maxConnections: number
 }
 
+interface PublicFeedGrantRow {
+  id: string
+  name: string
+  created_at: Date
+  revoked_at: Date | null
+}
+
+interface PublicFeedLinkRow {
+  id: string
+  grant_id: string
+  source_url: string
+  token_hash: Buffer
+  token_ciphertext: Buffer
+  token_initialization_vector: Buffer
+  token_authentication_tag: Buffer
+  token_key_id: string
+  created_at: Date
+  rotated_at: Date | null
+  revoked_at: Date | null
+  last_access_at: Date | null
+  last_access_ip: string | null
+  last_access_user_agent: string | null
+}
+
+const publicFeedGrantFromRow = (row: PublicFeedGrantRow): StoredPublicFeedGrant => ({
+  id: row.id,
+  name: row.name,
+  createdAt: row.created_at.toISOString(),
+  revokedAt: row.revoked_at?.toISOString() ?? null,
+})
+
+const publicFeedLinkFromRow = (row: PublicFeedLinkRow): StoredPublicFeedLink => ({
+  id: row.id,
+  grantId: row.grant_id,
+  sourceURL: row.source_url,
+  tokenHash: row.token_hash,
+  token: {
+    authenticationTag: row.token_authentication_tag,
+    ciphertext: row.token_ciphertext,
+    initializationVector: row.token_initialization_vector,
+    keyId: row.token_key_id,
+  },
+  createdAt: row.created_at.toISOString(),
+  rotatedAt: row.rotated_at?.toISOString() ?? null,
+  revokedAt: row.revoked_at?.toISOString() ?? null,
+  lastAccess: row.last_access_at
+    ? {
+        at: row.last_access_at.toISOString(),
+        ip: row.last_access_ip,
+        userAgent: row.last_access_user_agent,
+      }
+    : null,
+})
+
 export class PostgresSupplierRepository implements SupplierRepository {
   private readonly auditKey: Buffer
   private readonly pool: Pool
@@ -287,6 +346,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
         "002_page_change_sources.sql",
         "003_source_catalog.sql",
         "004_web_list_sources.sql",
+        "005_public_feeds.sql",
       ].map(async (filename, index) => ({
         sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
         version: index + 1,
@@ -1029,6 +1089,175 @@ export class PostgresSupplierRepository implements SupplierRepository {
         previousHash,
         eventHash,
       ],
+    )
+  }
+
+  async createPublicFeedGrant(
+    grant: StoredPublicFeedGrant,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedGrant> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        await client.query(
+          "insert into public_feed_grants (id, name, created_at, revoked_at) values ($1, $2, $3, $4)",
+          [grant.id, grant.name, grant.createdAt, grant.revokedAt],
+        )
+        return grant
+      })
+    } catch (error) {
+      if (isUniqueViolation(error))
+        throw new RepositoryConflictError("An active public feed grant already uses this name")
+      throw error
+    }
+  }
+
+  async findPublicFeedGrant(id: string): Promise<StoredPublicFeedGrant | null> {
+    const result = await this.pool.query<PublicFeedGrantRow>(
+      "select * from public_feed_grants where id = $1",
+      [id],
+    )
+    return result.rows[0] ? publicFeedGrantFromRow(result.rows[0]) : null
+  }
+
+  async listPublicFeedGrants(): Promise<StoredPublicFeedGrant[]> {
+    const result = await this.pool.query<PublicFeedGrantRow>(
+      "select * from public_feed_grants order by created_at, id",
+    )
+    return result.rows.map(publicFeedGrantFromRow)
+  }
+
+  async revokePublicFeedGrant(
+    id: string,
+    revokedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedGrant | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<PublicFeedGrantRow>(
+        "update public_feed_grants set revoked_at = $2 where id = $1 and revoked_at is null returning *",
+        [id, revokedAt],
+      )
+      if (!result.rows[0]) return null
+      await client.query(
+        "update public_feed_links set revoked_at = $2 where grant_id = $1 and revoked_at is null",
+        [id, revokedAt],
+      )
+      return publicFeedGrantFromRow(result.rows[0])
+    })
+  }
+
+  async createPublicFeedLink(
+    link: StoredPublicFeedLink,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedLink | null> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        // Locking the grant orders this insert with a concurrent revocation of the grant.
+        const grant = await client.query(
+          "select 1 from public_feed_grants where id = $1 and revoked_at is null for update",
+          [link.grantId],
+        )
+        if (grant.rowCount === 0) return null
+        await client.query(
+          `insert into public_feed_links (
+            id, grant_id, source_url, token_hash, token_ciphertext, token_initialization_vector,
+            token_authentication_tag, token_key_id, created_at
+          ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            link.id,
+            link.grantId,
+            link.sourceURL,
+            link.tokenHash,
+            link.token.ciphertext,
+            link.token.initializationVector,
+            link.token.authenticationTag,
+            link.token.keyId,
+            link.createdAt,
+          ],
+        )
+        return link
+      })
+    } catch (error) {
+      if (isUniqueViolation(error))
+        throw new RepositoryConflictError("This grant already has an active link for the source")
+      throw error
+    }
+  }
+
+  async findPublicFeedLink(id: string): Promise<StoredPublicFeedLink | null> {
+    const result = await this.pool.query<PublicFeedLinkRow>(
+      "select * from public_feed_links where id = $1",
+      [id],
+    )
+    return result.rows[0] ? publicFeedLinkFromRow(result.rows[0]) : null
+  }
+
+  async listPublicFeedLinks(grantId: string): Promise<StoredPublicFeedLink[]> {
+    const result = await this.pool.query<PublicFeedLinkRow>(
+      "select * from public_feed_links where grant_id = $1 order by created_at, id",
+      [grantId],
+    )
+    return result.rows.map(publicFeedLinkFromRow)
+  }
+
+  async rotatePublicFeedLink(
+    id: string,
+    replacement: Pick<StoredPublicFeedLink, "token" | "tokenHash">,
+    rotatedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedLink | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<PublicFeedLinkRow>(
+        `update public_feed_links set
+          token_hash = $2, token_ciphertext = $3, token_initialization_vector = $4,
+          token_authentication_tag = $5, token_key_id = $6, rotated_at = $7
+        where id = $1 and revoked_at is null
+        returning *`,
+        [
+          id,
+          replacement.tokenHash,
+          replacement.token.ciphertext,
+          replacement.token.initializationVector,
+          replacement.token.authenticationTag,
+          replacement.token.keyId,
+          rotatedAt,
+        ],
+      )
+      return result.rows[0] ? publicFeedLinkFromRow(result.rows[0]) : null
+    })
+  }
+
+  async revokePublicFeedLink(
+    id: string,
+    revokedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredPublicFeedLink | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<PublicFeedLinkRow>(
+        "update public_feed_links set revoked_at = $2 where id = $1 and revoked_at is null returning *",
+        [id, revokedAt],
+      )
+      return result.rows[0] ? publicFeedLinkFromRow(result.rows[0]) : null
+    })
+  }
+
+  async findActivePublicFeedLinkByTokenHash(
+    tokenHash: Buffer,
+  ): Promise<StoredPublicFeedLink | null> {
+    const result = await this.pool.query<PublicFeedLinkRow>(
+      `select link.* from public_feed_links link
+        join public_feed_grants grant_record on grant_record.id = link.grant_id
+        where link.token_hash = $1 and link.revoked_at is null and grant_record.revoked_at is null`,
+      [tokenHash],
+    )
+    return result.rows[0] ? publicFeedLinkFromRow(result.rows[0]) : null
+  }
+
+  async recordPublicFeedAccess(id: string, access: PublicFeedAccess): Promise<void> {
+    await this.pool.query(
+      `update public_feed_links
+        set last_access_at = $2, last_access_ip = $3, last_access_user_agent = $4
+        where id = $1`,
+      [id, access.at, access.ip, access.userAgent],
     )
   }
 

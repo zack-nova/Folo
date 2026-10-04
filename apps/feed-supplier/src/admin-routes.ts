@@ -186,14 +186,14 @@ const catalogRender = z
   })
   .strict()
 
-const actorFor = (request: FastifyRequest): string => {
+export const actorFor = (request: FastifyRequest): string => {
   const actor = request.headers["x-folo-actor"]
   return typeof actor === "string" && /^[\w@. -]{1,128}$/.test(actor)
     ? actor
     : "feed-supplier-admin"
 }
 
-const invalidBody = (reply: FastifyReply, error: z.ZodError) =>
+export const invalidBody = (reply: FastifyReply, error: z.ZodError) =>
   reply.status(400).send({
     code: "invalid_request",
     message: error.issues[0]?.message ?? "Request is invalid",

@@ -1,3 +1,5 @@
+import { isIP } from "node:net"
+
 import type { SourceRegistryMode } from "@follow/feed-source-contracts"
 import { z } from "zod"
 
@@ -25,6 +27,65 @@ const upstreamURL = z.url().transform((value, context) => {
   }
   return url.toString().replace(/\/$/, "")
 })
+
+/** Public base of the subscription links (ADR-0033); empty disables the public channel. */
+const publicFeedBaseURL = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z
+    .url()
+    .transform((value, context) => {
+      const url = new URL(value)
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        context.addIssue({ code: "custom", message: "PUBLIC_FEED_BASE_URL must use HTTP or HTTPS" })
+        return z.NEVER
+      }
+      // Links are served at /f/<token> on this origin, so a path would produce dead links.
+      if (url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+        context.addIssue({
+          code: "custom",
+          message: "PUBLIC_FEED_BASE_URL must be an origin without a path, query or credentials",
+        })
+        return z.NEVER
+      }
+      return url.origin
+    })
+    .optional(),
+)
+
+/** Named ranges understood by proxy-addr, which Fastify uses to evaluate `trustProxy`. */
+const trustedProxyPresets = new Set(["linklocal", "loopback", "uniquelocal"])
+
+const isTrustedProxyEntry = (entry: string) => {
+  if (trustedProxyPresets.has(entry) || isIP(entry) !== 0) return true
+  const [address, prefix, ...rest] = entry.split("/")
+  const version = address ? isIP(address) : 0
+  if (version === 0 || prefix === undefined || rest.length > 0 || !/^\d+$/.test(prefix)) {
+    return false
+  }
+  return Number(prefix) <= (version === 4 ? 32 : 128)
+}
+
+/** Reverse proxies whose X-Forwarded-For is believed; same format as the core's TRUST_PROXY. */
+const trustedProxies = z
+  .string()
+  .default("")
+  .transform((value, context) => {
+    const entries = value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+    const invalid = entries.filter((entry) => !isTrustedProxyEntry(entry))
+    if (invalid.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: `TRUST_PROXY entries must be IP addresses, CIDR ranges or one of ${[
+          ...trustedProxyPresets,
+        ].join(", ")}: ${invalid.join(", ")}`,
+      })
+      return z.NEVER
+    }
+    return entries
+  })
 
 const postgresURL = z.url().transform((value, context) => {
   const url = new URL(value)
@@ -116,6 +177,7 @@ const supplierEnvironment = z
     PAGE_FETCH_TIMEOUT_MS: integer(15_000, 1_000),
     PAGE_SCHEDULER_POLL_INTERVAL_MS: integer(60_000, 1_000),
     PORT: integer(3001, 1).pipe(z.number().max(65_535)),
+    PUBLIC_FEED_BASE_URL: publicFeedBaseURL,
     REDIS_CONNECT_TIMEOUT_MS: integer(5_000, 500).pipe(z.number().max(30_000)),
     REDIS_URL: redisURL.optional(),
     ROUTE_REGISTRY_MODE: z.enum(["permissive", "managed_only"]).default("permissive"),
@@ -128,6 +190,7 @@ const supplierEnvironment = z
     RSSHUB_ROUTE_CONCURRENCY: integer(4, 1).pipe(z.number().max(32)),
     RSSHUB_ROUTE_RATE_LIMIT_MAX: integer(60, 1).pipe(z.number().max(10_000)),
     RSSHUB_ROUTE_RATE_LIMIT_WINDOW_SECONDS: integer(60, 1).pipe(z.number().max(3_600)),
+    TRUST_PROXY: trustedProxies,
   })
   .superRefine((environment, context) => {
     // The management token is checked in every environment: sharing it with the admin or
@@ -151,6 +214,25 @@ const supplierEnvironment = z
         code: "custom",
         message: "Production requires an independent DATABASE_URL",
         path: ["DATABASE_URL"],
+      })
+    }
+    if (
+      environment.PUBLIC_FEED_BASE_URL &&
+      new URL(environment.PUBLIC_FEED_BASE_URL).protocol !== "https:"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Production PUBLIC_FEED_BASE_URL must use HTTPS",
+        path: ["PUBLIC_FEED_BASE_URL"],
+      })
+    }
+    // Behind the reverse proxy every client would otherwise share its address, and one client
+    // presenting unknown links could exhaust the miss budget of everyone else.
+    if (environment.PUBLIC_FEED_BASE_URL && environment.TRUST_PROXY.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Production public links require TRUST_PROXY for the reverse proxy",
+        path: ["TRUST_PROXY"],
       })
     }
     if (!environment.REDIS_URL) {
@@ -250,6 +332,7 @@ export const loadFeedSupplierConfig = (environment: NodeJS.ProcessEnv) => {
     pageFetchTimeoutMs: parsed.PAGE_FETCH_TIMEOUT_MS,
     pageSchedulerPollIntervalMs: parsed.PAGE_SCHEDULER_POLL_INTERVAL_MS,
     port: parsed.PORT,
+    publicFeedBaseURL: parsed.PUBLIC_FEED_BASE_URL ?? null,
     redisConnectTimeoutMs: parsed.REDIS_CONNECT_TIMEOUT_MS,
     redisURL: parsed.REDIS_URL,
     registryMode: parsed.ROUTE_REGISTRY_MODE as SourceRegistryMode,
@@ -262,6 +345,7 @@ export const loadFeedSupplierConfig = (environment: NodeJS.ProcessEnv) => {
     rssHubRouteConcurrency: parsed.RSSHUB_ROUTE_CONCURRENCY,
     rssHubRouteRateLimitMax: parsed.RSSHUB_ROUTE_RATE_LIMIT_MAX,
     rssHubRouteRateLimitWindowSeconds: parsed.RSSHUB_ROUTE_RATE_LIMIT_WINDOW_SECONDS,
+    trustProxy: parsed.TRUST_PROXY,
   }
 }
 

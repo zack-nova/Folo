@@ -6,10 +6,18 @@ import { z } from "zod"
 
 import { registerSourceAdminRoutes, registerWebListRoutes } from "./admin-routes"
 import type { FeedSupplierConfig } from "./config"
+import { CredentialCipher } from "./credential-cipher"
 import { MemorySupplierRepository } from "./memory-repository"
 import { PageChangeError, PageChangeService, startPageChangeScheduler } from "./page-change-service"
 import { PageFetcher } from "./page-fetcher"
 import { PostgresSupplierRepository } from "./postgres-repository"
+import {
+  PUBLIC_FEED_ROUTE,
+  redactPublicFeedURL,
+  registerPublicFeedAdminRoutes,
+  registerPublicFeedRoute,
+} from "./public-feed-routes"
+import { PublicFeedError, PublicFeedService } from "./public-feed-service"
 import { RedisSourceResponseCache } from "./redis-source-response-cache"
 import type { SupplierRepository } from "./repository"
 import { SourceCatalogService } from "./source-catalog"
@@ -148,8 +156,18 @@ export const buildFeedSupplier = async ({
             censor: "[Redacted]",
             paths: ["req.headers.authorization", "req.query.url"],
           },
+          serializers: {
+            req: (request) => ({
+              method: request.method,
+              url: redactPublicFeedURL(request.url),
+              remoteAddress: request.ip,
+            }),
+          },
         }
       : false,
+    // Forwarding headers are only believed from these proxies, so a client that reaches the
+    // supplier directly cannot choose the address it is rate limited by.
+    trustProxy: config.trustProxy.length > 0 ? config.trustProxy.join(",") : false,
     requestTimeout:
       Math.max(
         config.rssHubFetchTimeoutMs,
@@ -373,6 +391,8 @@ export const buildFeedSupplier = async ({
 
   server.addHook("onRequest", async (request, reply) => {
     if (request.routeOptions.url === "/health" || request.routeOptions.url === "/ready") return
+    // Public subscription links carry their own capability token (ADR-0033).
+    if (request.routeOptions.url === PUBLIC_FEED_ROUTE) return
     const authorization = request.headers.authorization
     const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined
     const url = request.routeOptions.url
@@ -708,6 +728,53 @@ export const buildFeedSupplier = async ({
     server,
     testRoute,
   })
+
+  if (config.publicFeedBaseURL) {
+    const internalFeedPaths: Record<string, string> = {
+      "pagechange:": "/v1/feeds/page-change",
+      "rsshub:": "/v1/feeds/rsshub",
+      "weblist:": "/v1/feeds/web-list",
+    }
+    const publicFeeds = new PublicFeedService(
+      repository,
+      new CredentialCipher(config.credentialActiveKeyId, config.credentialKeys),
+      config.publicFeedBaseURL,
+      // Links are only issued for sources this supplier can serve right now.
+      async (sourceURL) => {
+        try {
+          const protocol = new URL(sourceURL).protocol
+          if (protocol === "rsshub:") await registry.resolve(sourceURL)
+          else if (protocol === "pagechange:") await pageChanges.materializeFeed(sourceURL)
+          else if (protocol === "weblist:") await webLists.materializeFeed(sourceURL)
+          else throw new Error("Unsupported source address")
+        } catch (error) {
+          throw new PublicFeedError(
+            "invalid_source",
+            error instanceof Error ? error.message.slice(0, 300) : "Invalid source",
+            400,
+          )
+        }
+      },
+    )
+    registerPublicFeedAdminRoutes(server, publicFeeds)
+    registerPublicFeedRoute(server, publicFeeds, async (sourceURL, conditional) => {
+      const path = internalFeedPaths[new URL(sourceURL).protocol]
+      if (!path) return { body: "", headers: {}, statusCode: 404 }
+      // Served through the internal route so caching, coalescing and limits stay identical.
+      const response = await server.inject({
+        method: "GET",
+        url: `${path}?url=${encodeURIComponent(sourceURL)}`,
+        headers: {
+          authorization: `Bearer ${config.internalToken}`,
+          ...(conditional.ifNoneMatch ? { "if-none-match": conditional.ifNoneMatch } : {}),
+          ...(conditional.ifModifiedSince
+            ? { "if-modified-since": conditional.ifModifiedSince }
+            : {}),
+        },
+      })
+      return { body: response.body, headers: response.headers, statusCode: response.statusCode }
+    })
+  }
 
   await server.ready()
   return server
