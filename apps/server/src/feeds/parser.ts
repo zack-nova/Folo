@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 
+import type { X2jOptions } from "fast-xml-parser"
 import { XMLParser } from "fast-xml-parser"
 
 import type { EntryRecord, FeedRecord } from "../data/types"
@@ -201,21 +202,55 @@ const atomFeed = (
   return { feed, entries }
 }
 
+const xhtmlFields = ["content", "summary"] as const
+
+const isXHTML = (value: XMLValue | undefined) =>
+  text(object(value)?.type)?.toLowerCase() === "xhtml"
+
+/**
+ * Atom `type="xhtml"` constructs hold markup as child elements, which the tree parser turns into
+ * nested objects without text. Replace them with their serialized markup, taken from a second
+ * pass that leaves those nodes unparsed.
+ */
+const inlineAtomXHTML = (root: XMLNode, xml: string, options: X2jOptions): void => {
+  const entries = array(object(root.feed)?.entry).map(object)
+  if (!entries.some((entry) => xhtmlFields.some((field) => isXHTML(entry?.[field])))) return
+
+  const rawRoot = new XMLParser({
+    ...options,
+    stopNodes: xhtmlFields.map((field) => `feed.entry.${field}`),
+  }).parse(xml) as XMLNode
+  const rawEntries = array(object(rawRoot.feed)?.entry).map(object)
+  for (const [index, entry] of entries.entries()) {
+    for (const field of xhtmlFields) {
+      if (!entry || !isXHTML(entry[field])) continue
+      const markup = text(object(rawEntries[index]?.[field])?.["#text"])
+      // The specification wraps the markup in a single XHTML div that is not part of the content.
+      entry[field] =
+        markup
+          ?.replace(/^<(?:\w+:)?div\b[^>]*\/>$/, "")
+          .replace(/^<(?:\w+:)?div\b[^>]*>([\s\S]*)<\/(?:\w+:)?div>$/, "$1")
+          .trim() || null
+    }
+  }
+}
+
 export const parseFeed = (
   xml: string,
   sourceURL: string,
   fetchedAt = new Date(),
   identityURL = sourceURL,
 ): ParsedFeed => {
-  const parser = new XMLParser({
+  const options: X2jOptions = {
     attributeNamePrefix: "",
     ignoreAttributes: false,
     parseAttributeValue: false,
     parseTagValue: false,
     processEntities: true,
     trimValues: true,
-  })
-  const root = parser.parse(xml) as XMLNode
+  }
+  const root = new XMLParser(options).parse(xml) as XMLNode
+  inlineAtomXHTML(root, xml, options)
   const parsed =
     rssFeed(root, sourceURL, identityURL, fetchedAt) ??
     atomFeed(root, sourceURL, identityURL, fetchedAt)

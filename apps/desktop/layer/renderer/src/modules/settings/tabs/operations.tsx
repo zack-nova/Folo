@@ -214,7 +214,7 @@ const RuntimeActivity = ({ language, status }: { language: string; status: Opera
     <div className="grid gap-3 sm:grid-cols-2">
       <div className="rounded-xl border border-fill-secondary p-4">
         <div className="flex items-center gap-2 text-sm font-medium text-text">
-          <i className="i-mgc-radar-2-cute-re size-4 text-text-secondary" aria-hidden />
+          <i className="i-mgc-rada-cute-re size-4 text-text-secondary" aria-hidden />
           {t("operations.polling.title")}
         </div>
         {polling ? (
@@ -234,7 +234,7 @@ const RuntimeActivity = ({ language, status }: { language: string; status: Opera
       </div>
       <div className="rounded-xl border border-fill-secondary p-4">
         <div className="flex items-center gap-2 text-sm font-medium text-text">
-          <i className="i-mgc-broom-cute-re size-4 text-text-secondary" aria-hidden />
+          <i className="i-mgc-delete-2-cute-re size-4 text-text-secondary" aria-hidden />
           {t("operations.cleanup.title")}
         </div>
         {cleanup ? (
@@ -267,7 +267,7 @@ const SourceProviders = ({ providers }: { providers: OperationsStatus["source_pr
         >
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-medium text-text">
-              <i className="i-mgc-rss-2-cute-re size-4 text-text-secondary" aria-hidden />
+              <i className="i-mgc-rss-2-cute-fi size-4 text-text-secondary" aria-hidden />
               {t(`operations.sources.${provider.id}.title`)}
             </div>
             <span
@@ -481,7 +481,7 @@ export const SettingOperations = () => {
         />
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <MetricCard
-            icon="i-mgc-rss-2-cute-re"
+            icon="i-mgc-rss-2-cute-fi"
             label={t("operations.metrics.subscribed")}
             value={status.stats.subscribedFeeds}
           />

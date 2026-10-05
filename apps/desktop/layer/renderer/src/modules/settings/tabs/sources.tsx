@@ -141,7 +141,7 @@ const CatalogRouteCard = ({
           </p>
         </div>
         {route.requiresCredentials && (
-          <i aria-hidden className="i-mgc-lock-cute-re mt-0.5 size-4 shrink-0 text-green" />
+          <i aria-hidden className="i-mgc-key-2-cute-re mt-0.5 size-4 shrink-0 text-green" />
         )}
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-text-tertiary">
@@ -346,7 +346,7 @@ const SettingSourceCatalog = () => {
 
       {routes.length === 0 ? (
         <div className="rounded-xl border border-dashed border-fill p-8 text-center">
-          <i className="i-mgc-route-cute-re mx-auto size-7 text-text-tertiary" aria-hidden />
+          <i className="i-mgc-plugin-2-cute-re mx-auto size-7 text-text-tertiary" aria-hidden />
           <p className="mt-3 text-sm font-medium text-text">{t("source_catalog.empty_title")}</p>
           <p className="mt-1 text-xs text-text-secondary">
             {t("source_catalog.empty_description")}

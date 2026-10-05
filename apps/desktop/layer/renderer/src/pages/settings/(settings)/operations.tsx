@@ -3,7 +3,7 @@ import { SettingOperations } from "~/modules/settings/tabs/operations"
 import { SettingsTitle } from "~/modules/settings/title"
 import { defineSettingPageData } from "~/modules/settings/utils"
 
-const iconName = "i-mgc-pulse-cute-re"
+const iconName = "i-mgc-tool-cute-re"
 const priority = (1000 << 2) + 21
 
 export const handle = defineSettingPageData({

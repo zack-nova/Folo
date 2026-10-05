@@ -3,7 +3,7 @@ import { SettingSources } from "~/modules/settings/tabs/sources"
 import { SettingsTitle } from "~/modules/settings/title"
 import { defineSettingPageData } from "~/modules/settings/utils"
 
-const iconName = "i-mgc-route-cute-re"
+const iconName = "i-mgc-plugin-2-cute-re"
 const priority = (1000 << 2) + 22
 
 export const handle = defineSettingPageData({
