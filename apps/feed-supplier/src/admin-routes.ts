@@ -34,6 +34,8 @@ export interface RegisterSourceAdminRoutesOptions {
   pageChanges: PageChangeService
   /** Re-encrypts public link tokens still under an older credential key; returns the count. */
   rotatePublicFeedTokens: (actor: string) => Promise<number>
+  /** Re-encrypts the official account session (ADR-0034), when official acquisition is on. */
+  rotateOfficialAccountToken?: (actor: string) => Promise<number>
   server: FastifyInstance
   testRoute: (sourceURL: string, preResolved?: ResolvedRssHubSource) => Promise<RouteTestResult>
 }
@@ -237,6 +239,7 @@ export const registerSourceAdminRoutes = ({
   pageChanges,
   webLists,
   rotatePublicFeedTokens,
+  rotateOfficialAccountToken,
   server,
   testRoute,
 }: RegisterSourceAdminRoutesOptions): void => {
@@ -503,8 +506,15 @@ export const registerSourceAdminRoutes = ({
 
   server.post("/v1/admin/credentials/rotate", async (request) => {
     const rotatedCount = await registry.rotateCredentials(actorFor(request))
-    // Public link tokens share the credential keyring, so retiring a key must cover them too.
-    return { publicLinkRotatedCount: await rotatePublicFeedTokens(actorFor(request)), rotatedCount }
+    // Public link tokens and the official session share the credential keyring, so retiring a
+    // key must cover them too.
+    return {
+      officialAccountRotatedCount: rotateOfficialAccountToken
+        ? await rotateOfficialAccountToken(actorFor(request))
+        : 0,
+      publicLinkRotatedCount: await rotatePublicFeedTokens(actorFor(request)),
+      rotatedCount,
+    }
   })
 
   server.get("/v1/admin/routes", async () => ({ routes: await registry.listRoutes() }))

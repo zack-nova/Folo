@@ -8,6 +8,11 @@ import type {
 
 import type { AuditEventDraft } from "./audit"
 import { auditEventHash, auditHashesMatch } from "./audit"
+import type { EncryptedCredentialValue } from "./credential-cipher"
+import type {
+  OfficialAccountVerification,
+  StoredOfficialAccount,
+} from "./official-account-repository"
 import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
 import type {
   PublicFeedAccess,
@@ -61,7 +66,20 @@ const cloneLink = (link: StoredPublicFeedLink): StoredPublicFeedLink => ({
   lastAccess: link.lastAccess ? { ...link.lastAccess } : null,
 })
 
+const cloneEncrypted = (value: EncryptedCredentialValue): EncryptedCredentialValue => ({
+  authenticationTag: Buffer.from(value.authenticationTag),
+  ciphertext: Buffer.from(value.ciphertext),
+  initializationVector: Buffer.from(value.initializationVector),
+  keyId: value.keyId,
+})
+
+const cloneOfficialAccount = (account: StoredOfficialAccount): StoredOfficialAccount => ({
+  ...account,
+  token: cloneEncrypted(account.token),
+})
+
 export class MemorySupplierRepository implements SupplierRepository {
+  private readonly officialAccounts = new Map<string, StoredOfficialAccount>()
   private readonly publicFeedGrants = new Map<string, StoredPublicFeedGrant>()
   private readonly publicFeedLinks = new Map<string, StoredPublicFeedLink>()
   private readonly webListSources = new Map<string, StoredWebListSource>()
@@ -481,6 +499,75 @@ export class MemorySupplierRepository implements SupplierRepository {
       previousHash = event.eventHash
     }
     return { brokenAtSequence: null, checkedEvents: this.auditEvents.length, valid: true }
+  }
+
+  async findLinkedOfficialAccount(): Promise<StoredOfficialAccount | null> {
+    const account = [...this.officialAccounts.values()].find((item) => item.status !== "unlinked")
+    return account ? cloneOfficialAccount(account) : null
+  }
+
+  async linkOfficialAccount(
+    account: StoredOfficialAccount,
+    audit: AuditEventDraft,
+  ): Promise<StoredOfficialAccount> {
+    for (const existing of this.officialAccounts.values()) {
+      if (existing.status === "unlinked") continue
+      existing.status = "unlinked"
+      existing.unlinkedAt = account.linkedAt
+    }
+    this.officialAccounts.set(account.id, cloneOfficialAccount(account))
+    this.appendAudit(audit)
+    return cloneOfficialAccount(account)
+  }
+
+  async recordOfficialAccountVerification(
+    id: string,
+    verification: OfficialAccountVerification,
+    audit: AuditEventDraft,
+  ): Promise<StoredOfficialAccount | null> {
+    const account = this.officialAccounts.get(id)
+    if (!account || account.status !== "active") return null
+    Object.assign(account, verification)
+    this.appendAudit(audit)
+    return cloneOfficialAccount(account)
+  }
+
+  async markOfficialAccountAuthInvalid(
+    id: string,
+    at: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredOfficialAccount | null> {
+    const account = this.officialAccounts.get(id)
+    if (!account || account.status !== "active") return null
+    account.status = "auth_invalid"
+    account.authInvalidAt = at
+    this.appendAudit(audit)
+    return cloneOfficialAccount(account)
+  }
+
+  async unlinkOfficialAccount(
+    id: string,
+    at: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredOfficialAccount | null> {
+    const account = this.officialAccounts.get(id)
+    if (!account || account.status === "unlinked") return null
+    account.status = "unlinked"
+    account.unlinkedAt = at
+    this.appendAudit(audit)
+    return cloneOfficialAccount(account)
+  }
+
+  async reencryptOfficialAccountToken(
+    id: string,
+    token: EncryptedCredentialValue,
+    audit: AuditEventDraft,
+  ): Promise<boolean> {
+    const account = this.officialAccounts.get(id)
+    if (!account || account.status === "unlinked") return false
+    account.token = cloneEncrypted(token)
+    this.appendAudit(audit)
+    return true
   }
 
   async createPublicFeedGrant(

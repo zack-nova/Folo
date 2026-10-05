@@ -15,6 +15,11 @@ import { Pool } from "pg"
 
 import type { AuditDetails, AuditEventDraft } from "./audit"
 import { auditEventHash, auditHashesMatch } from "./audit"
+import type { EncryptedCredentialValue } from "./credential-cipher"
+import type {
+  OfficialAccountVerification,
+  StoredOfficialAccount,
+} from "./official-account-repository"
 import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
 import type {
   PublicFeedAccess,
@@ -339,6 +344,44 @@ const publicFeedLinkFromRow = (row: PublicFeedLinkRow): StoredPublicFeedLink => 
     : null,
 })
 
+interface OfficialAccountRow {
+  id: string
+  status: StoredOfficialAccount["status"]
+  external_user_id: string
+  role: string | null
+  feed_subscription_limit: number | null
+  rsshub_subscription_limit: number | null
+  token_ciphertext: Buffer
+  token_initialization_vector: Buffer
+  token_authentication_tag: Buffer
+  token_key_id: string
+  linked_at: Date
+  last_verified_at: Date
+  session_expires_at: Date | null
+  auth_invalid_at: Date | null
+  unlinked_at: Date | null
+}
+
+const officialAccountFromRow = (row: OfficialAccountRow): StoredOfficialAccount => ({
+  id: row.id,
+  status: row.status,
+  externalUserId: row.external_user_id,
+  role: row.role,
+  feedSubscriptionLimit: row.feed_subscription_limit,
+  rssHubSubscriptionLimit: row.rsshub_subscription_limit,
+  token: {
+    authenticationTag: row.token_authentication_tag,
+    ciphertext: row.token_ciphertext,
+    initializationVector: row.token_initialization_vector,
+    keyId: row.token_key_id,
+  },
+  linkedAt: row.linked_at.toISOString(),
+  lastVerifiedAt: row.last_verified_at.toISOString(),
+  sessionExpiresAt: row.session_expires_at?.toISOString() ?? null,
+  authInvalidAt: row.auth_invalid_at?.toISOString() ?? null,
+  unlinkedAt: row.unlinked_at?.toISOString() ?? null,
+})
+
 export class PostgresSupplierRepository implements SupplierRepository {
   private readonly auditKey: Buffer
   private readonly pool: Pool
@@ -361,6 +404,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
         "004_web_list_sources.sql",
         "005_public_feeds.sql",
         "006_link_metadata_and_credentials.sql",
+        "007_official_accounts.sql",
       ].map(async (filename, index) => ({
         sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
         version: index + 1,
@@ -1104,6 +1148,123 @@ export class PostgresSupplierRepository implements SupplierRepository {
         eventHash,
       ],
     )
+  }
+
+  async findLinkedOfficialAccount(): Promise<StoredOfficialAccount | null> {
+    const result = await this.pool.query<OfficialAccountRow>(
+      "select * from official_accounts where status <> 'unlinked'",
+    )
+    return result.rows[0] ? officialAccountFromRow(result.rows[0]) : null
+  }
+
+  async linkOfficialAccount(
+    account: StoredOfficialAccount,
+    audit: AuditEventDraft,
+  ): Promise<StoredOfficialAccount> {
+    return this.withMutation(audit, async (client) => {
+      await client.query(
+        "update official_accounts set status = 'unlinked', unlinked_at = $1 where status <> 'unlinked'",
+        [account.linkedAt],
+      )
+      await client.query(
+        `insert into official_accounts
+          (id, status, external_user_id, role, feed_subscription_limit, rsshub_subscription_limit,
+           token_ciphertext, token_initialization_vector, token_authentication_tag, token_key_id,
+           linked_at, last_verified_at, session_expires_at, auth_invalid_at, unlinked_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        [
+          account.id,
+          account.status,
+          account.externalUserId,
+          account.role,
+          account.feedSubscriptionLimit,
+          account.rssHubSubscriptionLimit,
+          account.token.ciphertext,
+          account.token.initializationVector,
+          account.token.authenticationTag,
+          account.token.keyId,
+          account.linkedAt,
+          account.lastVerifiedAt,
+          account.sessionExpiresAt,
+          account.authInvalidAt,
+          account.unlinkedAt,
+        ],
+      )
+      return account
+    })
+  }
+
+  async recordOfficialAccountVerification(
+    id: string,
+    verification: OfficialAccountVerification,
+    audit: AuditEventDraft,
+  ): Promise<StoredOfficialAccount | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<OfficialAccountRow>(
+        `update official_accounts
+           set role = $2, feed_subscription_limit = $3, rsshub_subscription_limit = $4,
+               last_verified_at = $5, session_expires_at = $6
+         where id = $1 and status = 'active'
+         returning *`,
+        [
+          id,
+          verification.role,
+          verification.feedSubscriptionLimit,
+          verification.rssHubSubscriptionLimit,
+          verification.lastVerifiedAt,
+          verification.sessionExpiresAt,
+        ],
+      )
+      return result.rows[0] ? officialAccountFromRow(result.rows[0]) : null
+    })
+  }
+
+  async markOfficialAccountAuthInvalid(
+    id: string,
+    at: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredOfficialAccount | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<OfficialAccountRow>(
+        `update official_accounts set status = 'auth_invalid', auth_invalid_at = $2
+         where id = $1 and status = 'active' returning *`,
+        [id, at],
+      )
+      return result.rows[0] ? officialAccountFromRow(result.rows[0]) : null
+    })
+  }
+
+  async unlinkOfficialAccount(
+    id: string,
+    at: string,
+    audit: AuditEventDraft,
+  ): Promise<StoredOfficialAccount | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<OfficialAccountRow>(
+        `update official_accounts set status = 'unlinked', unlinked_at = $2
+         where id = $1 and status <> 'unlinked' returning *`,
+        [id, at],
+      )
+      return result.rows[0] ? officialAccountFromRow(result.rows[0]) : null
+    })
+  }
+
+  async reencryptOfficialAccountToken(
+    id: string,
+    token: EncryptedCredentialValue,
+    audit: AuditEventDraft,
+  ): Promise<boolean> {
+    const updated = await this.withMutation(audit, async (client) => {
+      const result = await client.query(
+        `update official_accounts
+           set token_ciphertext = $2, token_initialization_vector = $3,
+               token_authentication_tag = $4, token_key_id = $5
+         where id = $1 and status <> 'unlinked'`,
+        [id, token.ciphertext, token.initializationVector, token.authenticationTag, token.keyId],
+      )
+      return result.rowCount ? true : null
+    })
+    return updated === true
   }
 
   async createPublicFeedGrant(
