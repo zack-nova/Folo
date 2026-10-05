@@ -1,5 +1,6 @@
 import { IN_ELECTRON } from "@follow/shared/constants"
-import { useWhoami, whoamiQueryKey } from "@follow/store/user/hooks"
+import { whoami } from "@follow/store/user/getters"
+import { fetchSessionUser, useWhoami, whoamiQueryKey } from "@follow/store/user/hooks"
 import { userSyncService } from "@follow/store/user/store"
 import { tracker } from "@follow/tracker"
 import { clearStorage } from "@follow/utils/ns"
@@ -18,7 +19,7 @@ import {
 import { ipcServices } from "~/lib/client"
 import { clearAuthSessionToken, getAuthSessionToken } from "~/lib/client-session"
 import { defineQuery } from "~/lib/defineQuery"
-import { clearLocalPersistStoreData } from "~/store/utils/clear"
+import { clearLocalDataOfOtherAccount, clearLocalPersistStoreData } from "~/store/utils/clear"
 
 const sessionCookieRefreshInterval = 1000 * 60 * 60 * 12
 
@@ -173,11 +174,20 @@ export const useAuthSessionCookieRefresh = (enabled: boolean) => {
   }, [enabled])
 }
 
-export const handleSessionChanges = () => {
+export const handleSessionChanges = async () => {
   setLoginModalShow(false)
   localStorage.removeItem(QUERY_PERSIST_KEY)
   const authSessionToken = getAuthSessionToken()
   ipcServices?.auth.sessionChanged(authSessionToken ?? undefined)
+  // Drop a previous account's local data now, before the reloaded app replays or shows it.
+  await fetchSessionUser()
+    .then(() => {
+      const user = whoami()
+      return user ? clearLocalDataOfOtherAccount(user.id) : false
+    })
+    .catch((error) => {
+      console.error("Failed to check the local data owner after the session changed", error)
+    })
   window.location.reload()
 }
 
