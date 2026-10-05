@@ -13,6 +13,7 @@ import { initI18n } from "~/i18n"
 import { hydrateSessionsFromLocalDb } from "~/modules/ai-chat-session"
 import { settingSyncQueue } from "~/modules/settings/helper/sync-queue"
 import { ElectronCloseEvent, ElectronShowEvent } from "~/providers/invalidate-query-provider"
+import { clearLocalDataOfOtherAccount } from "~/store/utils/clear"
 
 import { appLog } from "../lib/log"
 import { initAnalytics } from "./analytics"
@@ -89,7 +90,13 @@ export const initializeApp = async () => {
 
     await fetchSessionUser().catch(() => null)
 
-    if (!whoami()) {
+    const user = whoami()
+    if (!user) {
+      return
+    }
+    // Sign-in already does this before reloading; this catches sessions that changed otherwise.
+    if (await clearLocalDataOfOtherAccount(user.id)) {
+      window.location.reload()
       return
     }
     // With a sync cursor the settings were loaded in full once and are kept current by the
