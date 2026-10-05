@@ -1,5 +1,5 @@
-import { createAtomHooks } from "@follow/utils/jotai"
-import { atom, useAtomValue } from "jotai"
+import { createAtomHooks, jotaiStore } from "@follow/utils/jotai"
+import { atom, useAtomValueRawSync } from "jotai"
 import { selectAtom } from "jotai/utils"
 import { useMemo } from "react"
 import type { Location, NavigateFunction, Params } from "react-router"
@@ -26,13 +26,22 @@ export const [routeAtom, , , , getReadonlyRoute, setRoute] = createAtomHooks(
   }),
 )
 
+// StableRouterProvider writes the route in a layout effect during the first commit, after
+// route readers have rendered but before jotai's effect-based subscription is attached, so
+// that write would be missed and a deep link would render as the default timeline.
+// useSyncExternalStore re-reads the snapshot once subscribed and never misses it.
+const routeStoreOptions = { store: jotaiStore }
+
 const noop: [] = []
 export const useReadonlyRouteSelector = <T>(
   selector: (route: RouteAtom) => T,
   deps: any[] = noop,
 ): T =>
-  useAtomValue(useMemo(() => selectAtom(routeAtom, (route) => selector(route), shallow), deps))
-export const useReadonlyRoute = () => useAtomValue(routeAtom)
+  useAtomValueRawSync(
+    useMemo(() => selectAtom(routeAtom, (route) => selector(route), shallow), deps),
+    routeStoreOptions,
+  )
+export const useReadonlyRoute = () => useAtomValueRawSync(routeAtom, routeStoreOptions)
 
 // Vite HMR will create new router instance, but RouterProvider always stable
 
