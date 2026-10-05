@@ -334,6 +334,7 @@ const sourceFiles = async (repositoryRoot: string): Promise<string[]> =>
       // The inventory freezes client callsites only. Server implementations can share method names
       // with SDK routes and would otherwise be reported as false-positive client usage.
       "apps/server/**",
+      "apps/feed-supplier/**",
       "packages/compat-contracts/**",
     ],
   })

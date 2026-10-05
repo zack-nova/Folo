@@ -4,7 +4,7 @@
 import { createEnv } from "@t3-oss/env-core"
 import { z } from "zod"
 
-import { DEFAULT_VALUES } from "./env.common"
+import { DEFAULT_VALUES, isOfficialAPIURL } from "./env.common"
 
 export const env = createEnv({
   clientPrefix: "VITE_",
@@ -27,6 +27,9 @@ export const env = createEnv({
 
   skipValidation: "process" in globalThis ? process.env.VITEST === "true" : false,
 })
+
+/** False for self-hosted builds; see `isOfficialAPIURL`. */
+export const connectsToOfficialServer = isOfficialAPIURL(env.VITE_API_URL)
 
 function metaEnvIsEmpty() {
   try {
