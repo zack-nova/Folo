@@ -237,6 +237,15 @@ const numberFromUnknown = (value: unknown): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+// The client's FeedViewType.All: a request across every view, never a stored subscription view.
+const ALL_VIEWS = -1
+
+/** A view used to filter reads; the "all views" sentinel means no view filter at all. */
+const viewFilterFromUnknown = (value: unknown): number | undefined => {
+  const view = numberFromUnknown(value)
+  return view === ALL_VIEWS ? undefined : view
+}
+
 const dateFromUnknown = (value: unknown): Date | undefined => {
   if (typeof value !== "string" && typeof value !== "number" && !(value instanceof Date)) {
     return undefined
@@ -1848,7 +1857,7 @@ export const buildServer = async ({
               ),
             }
           : {}),
-        ...(typeof body.view === "number" ? { view: body.view } : {}),
+        ...(typeof body.view === "number" && body.view !== ALL_VIEWS ? { view: body.view } : {}),
         ...(dateFromUnknown(body.published_after)
           ? { publishedAfter: dateFromUnknown(body.published_after) }
           : {}),
@@ -2339,7 +2348,10 @@ export const buildServer = async ({
     }
 
     const query = request.query as Record<string, unknown>
-    const subscriptions = await dataStore.listSubscriptions(userId, numberFromUnknown(query.view))
+    const subscriptions = await dataStore.listSubscriptions(
+      userId,
+      viewFilterFromUnknown(query.view),
+    )
     const data = await Promise.all(
       subscriptions.map(async (subscription) => {
         const feed = await dataStore.getFeed(subscription.feedId)
@@ -2349,7 +2361,7 @@ export const buildServer = async ({
 
     const listSubscriptionRecords = await dataStore.listListSubscriptions(
       userId,
-      numberFromUnknown(query.view),
+      viewFilterFromUnknown(query.view),
     )
     const listData = await Promise.all(
       listSubscriptionRecords.map(async (subscription) => {
@@ -2994,7 +3006,7 @@ export const buildServer = async ({
     const cursor = dateFromUnknown(body.publishedAfter) ?? dateFromUnknown(body.publishedBefore)
     let rows = await dataStore.listEntries({
       userId,
-      view: numberFromUnknown(body.view),
+      view: viewFilterFromUnknown(body.view),
       feedId: typeof body.feedId === "string" ? body.feedId : undefined,
       feedIdList: Array.isArray(body.feedIdList)
         ? body.feedIdList.filter((id): id is string => typeof id === "string")
@@ -3170,7 +3182,7 @@ export const buildServer = async ({
     const query = request.query as Record<string, unknown>
     // The counts and the sync id come from one snapshot, so the client applies exactly the
     // counter changes logged after it.
-    const snapshot = await dataStore.getUnreadSnapshot(userId, numberFromUnknown(query.view))
+    const snapshot = await dataStore.getUnreadSnapshot(userId, viewFilterFromUnknown(query.view))
     return { code: 0, data: snapshot.counts, lastSyncId: snapshot.lastSyncId }
   })
 
@@ -3219,7 +3231,7 @@ export const buildServer = async ({
     }
     const body = (request.body ?? {}) as Record<string, unknown>
     const read = await dataStore.markAllAsRead(userId, {
-      view: numberFromUnknown(body.view),
+      view: viewFilterFromUnknown(body.view),
       feedId: typeof body.feedId === "string" ? body.feedId : undefined,
       feedIdList: Array.isArray(body.feedIdList)
         ? body.feedIdList.filter((id): id is string => typeof id === "string")
