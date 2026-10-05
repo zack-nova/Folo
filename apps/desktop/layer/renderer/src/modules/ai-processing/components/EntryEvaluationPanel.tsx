@@ -106,7 +106,7 @@ export const EntryEvaluationPanel = ({ entryId }: { entryId: string }) => {
         <div className="ml-auto flex items-center gap-2">
           {model.status === "failed" && model.jobId ? (
             <Button size="sm" disabled={mutations.retryJob.isPending} onClick={retry}>
-              <i className="i-mgc-refresh-3-cute-re mr-1.5 size-4" />
+              <i className="i-mgc-refresh-2-cute-re mr-1.5 size-4" />
               {t("ai_processing.entry.retry")}
             </Button>
           ) : (
@@ -125,7 +125,7 @@ export const EntryEvaluationPanel = ({ entryId }: { entryId: string }) => {
                   "mr-1.5 size-4",
                   model.status === "queued" || model.status === "running"
                     ? "i-mgc-loading-3-cute-re animate-spin f-motion-reduce:animate-none"
-                    : "i-mgc-sparkles-2-cute-re",
+                    : "i-mgc-magic-2-cute-re",
                 )}
               />
               {model.status === "queued" || model.status === "running"

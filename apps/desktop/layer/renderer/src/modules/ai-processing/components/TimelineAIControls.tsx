@@ -131,7 +131,7 @@ export const TimelineAIControls = ({ entryIds }: { entryIds: string[] }) => {
           }
         }}
       >
-        <i className="i-mgc-refresh-3-cute-re" />
+        <i className="i-mgc-refresh-2-cute-re" />
       </ActionButton>
     </>
   )
