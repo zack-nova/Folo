@@ -1,6 +1,6 @@
 # 阶段 5B：官方托管获取（第一刀）
 
-- 状态：计划中，尚未开始实现
+- 状态：5B.0 探查基本完成（见“5B.0 探查结果”），5B.1 起尚未开始实现
 - 决策：[ADR-0034](./adr/0034-acquire-selected-sources-through-the-official-folo-account.md)（`proposed`）
 - 已核对的官方 SDK 版本：`@follow-app/client-sdk` `0.3.96`
 
@@ -38,14 +38,16 @@
 
 | 用途                         | 方法与路径                     | 请求要点                               |
 | ---------------------------- | ------------------------------ | -------------------------------------- |
-| 校验令牌、读取账号与额度     | `GET /better-auth/get-session` | Bearer 令牌                            |
+| 校验令牌、读取账号与额度     | `GET /better-auth/get-session` | 会话 Cookie                            |
 | 列出官方账号已有订阅         | `GET /subscriptions`           |                                        |
 | 查询 Feed、取得官方 Feed ID  | `GET /feeds`                   | `url`                                  |
-| 创建影子订阅                 | `POST /subscriptions`          | `url`、`isPrivate: true`               |
+| 创建影子订阅                 | `POST /subscriptions`          | `url`；套餐允许时 `isPrivate: true`    |
 | 删除自己创建的影子订阅       | `DELETE /subscriptions`        | `feedId`                               |
 | 读取某个 Feed 的最新一页条目 | `POST /entries`                | `feedId`、`limit`、`withContent: true` |
+| 绑定前预览（无需登录）       | `GET /feeds`                   | `url`，默认返回最近 4 条               |
 
-请求和响应形状以 SDK `0.3.96` 的类型为起点，以 5B.0 录制的真实样本为准。
+所有需要登录的接口都以会话 Cookie 鉴权（`__Secure-better-auth.session_token`）；只带 `Authorization: Bearer`
+会得到空会话和 401。请求和响应形状以 SDK `0.3.96` 的类型为起点，以 5B.0 录制的真实样本为准。
 
 ## 切片
 
@@ -69,7 +71,9 @@
   供给端只在配置了官方 API 地址时才报告该 provider。
 - `apps/feed-supplier/src/config.ts`：
   - `FOLO_OFFICIAL_API_URL`：未设置时能力不存在；生产环境必须是 HTTPS，不得带凭据、查询或片段。
-  - `FOLO_OFFICIAL_ENTRY_LIMIT`（默认 50）、`FOLO_OFFICIAL_CACHE_TTL_SECONDS`（默认 300）、
+  - `FOLO_OFFICIAL_PROXY_URL`：可选的出站 HTTP 代理，只用于官方接口。中国大陆的节点直连官方 API 会被
+    重置，必须配置。
+  - `FOLO_OFFICIAL_ENTRY_LIMIT`（默认 50，上限 100，即官方单页上限）、`FOLO_OFFICIAL_CACHE_TTL_SECONDS`（默认 300）、
     `FOLO_OFFICIAL_FETCH_TIMEOUT_MS`、`FOLO_OFFICIAL_RATE_LIMIT_MAX` 与窗口、`FOLO_OFFICIAL_CONCURRENCY`
     （默认 2）。
 - 测试：契约单测；配置校验单测；核心对含 `folo_official` 和不含它的 provider 列表都能解析。
@@ -107,8 +111,12 @@
   `last_error_summary`、`consecutive_failure_count`。部分唯一索引保证每个逻辑地址最多一条未删除的绑定。
 - 建立绑定的校验：地址是合法的 `rsshub://` 逻辑地址；不含秘密查询参数；对应路由实例没有绑定供给端凭据；
   没有有效的公开链接；官方账号为 `active`。公开链接签发侧增加对称校验。
-- 建立流程：写入 `pending` → 查询官方是否已订阅 → 已订阅记 `adopted`，否则创建私有订阅记 `created` →
+- 建立流程：写入 `pending` → 查询官方是否已订阅 → 已订阅记 `adopted`，否则创建订阅记 `created`（见下） →
   保存官方 Feed ID 并转 `active`。失败转 `failed` 并保存错误摘要，可重试。
+- 创建影子订阅前检查额度：会话接口返回的 `rsshubSubscriptionLimit` 减去官方账号现有的 `rsshub://` 订阅数
+  不足时直接拒绝，不向官方发请求。
+- 私有订阅是付费功能。套餐不允许时（官方返回 402 `PRIVATE_SUBSCRIPTION`），默认拒绝创建；所有者以
+  `bind --allow-public` 明确同意后，才创建公开的影子订阅。接管已有订阅不受影响。
 - 解绑：转 `pending_deletion`，`delete_after` 为七天后；读取立即回到自建 RSSHub。七天内对同一地址重新
   绑定时复用原记录。清理任务挂在供给端现有调度循环上，到期后只删除 `created` 的影子订阅；删除失败时保留
   错误和下次重试时间。
@@ -156,6 +164,40 @@
   缺失或重复、官方账号额度占用。
 - 演练一次回退：解绑一个来源，确认它回到自建 RSSHub，且既有 Entry 不变。
 - 灰度通过后把 ADR-0034 改为 `accepted`。
+
+## 5B.0 探查结果
+
+2026-10-05 用所有者的官方账号（`free` 套餐）探查，脱敏样本在
+`apps/feed-supplier/tests/fixtures/folo-official/`。
+
+| 项目                 | 结论                                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------- |
+| 非官方客户端能否调用 | 能。如实的 User-Agent、不带任何客户端专有请求头，全部接口正常响应。                                  |
+| 鉴权方式             | 只认会话 Cookie；Bearer 无效。与 ADR 原文的“以 Bearer 方式”不符，ADR 已改为 Cookie。                 |
+| 会话有效期           | 签发后 30 天。会话接口每次响应都带 `Set-Cookie`，是否滚动续期尚未确认。                              |
+| 订阅额度             | `free`：Feed 150 个，RSSHub 订阅 30 个。账号现有 48 个订阅，其中 `rsshub://` 26 个，余 4 个。        |
+| 私有订阅             | `free` 不可用，返回 402（`code: 17003`，`feature: PRIVATE_SUBSCRIPTION`）。                          |
+| Entry 列表           | 按 `feedId` 返回，`withContent: true` 时正文完整（100 条全部有正文和 GUID），单页上限 100。          |
+| 翻页                 | `publishedBefore` 可用。                                                                             |
+| 无需登录的 Feed 预览 | `GET /feeds?url=` 返回元数据和最近 4 条（含正文、GUID）；`entriesLimit=50` 返回 422。                |
+| 未授权               | 401 `{"code":1000,"message":"Unauthorized"}`。                                                       |
+| 不支持的路由         | 400 `{"code":2003,"message":"Feed fetch error","reason":"404 Not Found"}`。                          |
+| 两步验证             | 该账号未开启，开启后创建订阅是否需要验证码未验证。                                                   |
+| 网络                 | 从中国大陆直连官方 API 在 TLS 握手前被重置；经代理可用，但偶发同样的断开，客户端需要对连接失败重试。 |
+
+对设计的影响：
+
+- 账号里已有的 26 个 `rsshub://` 订阅（X 7 个、YouTube 6 个、Telegram、Threads、Bluesky 等）正是自建 RSSHub
+  难以稳定获取的来源。第一刀的主要路径因此是**接管已有订阅**，不需要创建影子订阅，也不占新额度。
+- `free` 套餐只剩 4 个 RSSHub 额度且不能创建私有订阅，新建影子订阅只适合少量来源。
+
+尚未验证：
+
+- 影子订阅的创建与删除往返。私有创建被套餐拒绝，没有产生任何订阅；所有者决定不做公开创建的测试，
+  因此 5B.3 先只交付接管已有订阅，创建路径留到验证之后。
+- 同一路由经官方与自建 RSSHub 取得的 GUID 是否一致，需要一个可访问的自建 RSSHub 实例。
+- 官方限流和额度用尽时的响应形状：探查中没有触发。
+- 会话是否滚动续期：需要间隔数日再读一次会话。
 
 ## 发布顺序与回滚
 

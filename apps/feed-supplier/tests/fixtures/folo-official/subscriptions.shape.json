@@ -1,0 +1,28 @@
+{
+  "code": "number",
+  "data": [
+    {
+      "userId": "string",
+      "feedId": "string",
+      "view": "number",
+      "category": "string",
+      "title": "null",
+      "createdAt": "string",
+      "isPrivate": "boolean",
+      "hideFromTimeline": "null",
+      "feeds": {
+        "type": "string",
+        "id": "string",
+        "url": "string",
+        "title": "string",
+        "description": "string",
+        "siteUrl": "string",
+        "image": "string",
+        "errorMessage": "null",
+        "errorAt": "null",
+        "ownerUserId": "null",
+        "owner": "null"
+      }
+    }
+  ]
+}

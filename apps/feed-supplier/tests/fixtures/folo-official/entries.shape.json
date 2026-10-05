@@ -1,0 +1,47 @@
+{
+  "code": "number",
+  "data": [
+    {
+      "read": "boolean",
+      "view": "number",
+      "aiScore": "null",
+      "from": ["string"],
+      "entries": {
+        "id": "string",
+        "title": "string",
+        "url": "string",
+        "content": "string",
+        "description": "string",
+        "guid": "string",
+        "author": "string",
+        "authorUrl": "string",
+        "authorAvatar": "string",
+        "insertedAt": "string",
+        "publishedAt": "string",
+        "media": ["object"],
+        "categories": "null",
+        "attachments": "null",
+        "extra": "object",
+        "language": "null",
+        "summary": "null"
+      },
+      "feeds": {
+        "type": "string",
+        "id": "string",
+        "url": "string",
+        "title": "string",
+        "description": "string",
+        "siteUrl": "string",
+        "image": "string",
+        "errorMessage": "null",
+        "errorAt": "null",
+        "ownerUserId": "null"
+      },
+      "subscriptions": {
+        "category": "string",
+        "title": "null"
+      },
+      "settings": {}
+    }
+  ]
+}
