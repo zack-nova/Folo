@@ -1,0 +1,10 @@
+{
+  "code": 17003,
+  "message": "Free user no permission",
+  "action": "upgrade",
+  "feature": "PRIVATE_SUBSCRIPTION",
+  "attemptedValue": true,
+  "limitValue": false,
+  "role": "free",
+  "reason": "Limit PRIVATE_SUBSCRIPTION exceeded for role free"
+}

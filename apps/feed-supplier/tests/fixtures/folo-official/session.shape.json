@@ -1,0 +1,33 @@
+{
+  "user": {
+    "name": "string",
+    "email": "string",
+    "emailVerified": "boolean",
+    "image": "string",
+    "createdAt": "string",
+    "updatedAt": "string",
+    "stripeCustomerId": "null",
+    "twoFactorEnabled": "boolean",
+    "lastLoginMethod": "string",
+    "handle": "null",
+    "socialLinks": {},
+    "bio": "null",
+    "website": "null",
+    "deleted": "null",
+    "role": "string",
+    "inactive": "null",
+    "appleAppAccountToken": "string",
+    "id": "string"
+  },
+  "session": {
+    "expiresAt": "string",
+    "createdAt": "string",
+    "updatedAt": "string",
+    "userAgent": "string",
+    "userId": "string",
+    "id": "string"
+  },
+  "role": "string",
+  "feedSubscriptionLimit": "number",
+  "rsshubSubscriptionLimit": "number"
+}
