@@ -8,7 +8,11 @@ import { registerSourceAdminRoutes, registerWebListRoutes } from "./admin-routes
 import type { FeedSupplierConfig } from "./config"
 import { CredentialCipher } from "./credential-cipher"
 import { resolveCredentialDependency } from "./credential-dependency"
+import type { OfficialTransport } from "./folo-official-client"
+import { fetchTransport, FoloOfficialClient, proxyTransport } from "./folo-official-client"
 import { MemorySupplierRepository } from "./memory-repository"
+import { registerOfficialAccountRoutes } from "./official-account-routes"
+import { OfficialAccountService, reencryptOfficialAccountToken } from "./official-account-service"
 import { PageChangeError, PageChangeService, startPageChangeScheduler } from "./page-change-service"
 import { PageFetcher } from "./page-fetcher"
 import { PostgresSupplierRepository } from "./postgres-repository"
@@ -48,6 +52,8 @@ export interface BuildFeedSupplierOptions {
   config: FeedSupplierConfig
   fetchImplementation?: typeof fetch
   logger?: boolean
+  /** Replaces the official API transport in tests */
+  officialTransport?: OfficialTransport
   webListFetcher?: WebListFetcher
   pageFetcher?: PageFetcher
   repository?: SupplierRepository
@@ -104,6 +110,7 @@ export const buildFeedSupplier = async ({
   config,
   fetchImplementation: providedFetchImplementation,
   logger = false,
+  officialTransport: providedOfficialTransport,
   pageFetcher: providedPageFetcher,
   webListFetcher: providedWebListFetcher,
   repository: providedRepository,
@@ -154,6 +161,22 @@ export const buildFeedSupplier = async ({
       }),
   )
   const pageChanges = new PageChangeService(repository, pageFetcher)
+  const officialConfig = config.officialAcquisition
+  const officialAccounts = officialConfig
+    ? new OfficialAccountService(
+        repository,
+        new CredentialCipher(config.credentialActiveKeyId, config.credentialKeys),
+        new FoloOfficialClient({
+          apiURL: officialConfig.apiURL,
+          timeoutMs: officialConfig.fetchTimeoutMs,
+          transport:
+            providedOfficialTransport ??
+            (officialConfig.proxyURL
+              ? proxyTransport(officialConfig.proxyURL)
+              : fetchTransport(fetchImplementation)),
+        }),
+      )
+    : null
   const server = Fastify({
     bodyLimit: 16 * 1024,
     logger: logger
@@ -486,6 +509,8 @@ export const buildFeedSupplier = async ({
           persistenceStatus: persistenceReady ? ("ready" as const) : ("unavailable" as const),
           status: persistenceReady ? ("ready" as const) : ("unavailable" as const),
         },
+        // Only reported when configured: a core older than ADR-0034 rejects unknown providers.
+        ...(officialAccounts ? [await officialAccounts.providerHealth()] : []),
       ],
     }
   })
@@ -734,9 +759,13 @@ export const buildFeedSupplier = async ({
     registry,
     rotatePublicFeedTokens: (actor) =>
       reencryptPublicFeedTokens(repository, publicFeedCipher, actor),
+    rotateOfficialAccountToken: officialAccounts
+      ? (actor) => reencryptOfficialAccountToken(repository, publicFeedCipher, actor)
+      : undefined,
     server,
     testRoute,
   })
+  if (officialAccounts) registerOfficialAccountRoutes(server, officialAccounts)
 
   if (config.publicFeedBaseURL) {
     const internalFeedPaths: Record<string, string> = {

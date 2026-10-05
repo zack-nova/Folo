@@ -3,8 +3,10 @@ export const PAGE_CHANGE_CAPABILITY = "sources.page_change" as const
 export const SOURCE_ROUTE_CATALOG_CAPABILITY = "sources.route_catalog" as const
 export const WEB_LIST_CAPABILITY = "sources.web_list" as const
 export const WEB_LIST_MANAGEMENT_CAPABILITY = "sources.web_list_management" as const
+/** Selected sources fetched through the owner's official Folo account (ADR-0034). */
+export const FOLO_OFFICIAL_ACQUISITION_CAPABILITY = "sources.folo_official_acquisition" as const
 
-export type AutonomousSourceProviderId = "page_change" | "rsshub" | "web_list"
+export type AutonomousSourceProviderId = "folo_official" | "page_change" | "rsshub" | "web_list"
 export type AutonomousSourceProviderStatus = "disabled" | "ready" | "unavailable"
 export type SourceRegistryMode = "managed_only" | "permissive"
 
@@ -23,6 +25,8 @@ export interface AutonomousSourceProviderHealth {
   lastCycleAt?: string | null
   managedRouteCount?: number
   message: string | null
+  /** folo_official only: state of the linked official account, `unlinked` when there is none */
+  officialAccountStatus?: OfficialAccountStatus
   persistenceStatus?: "ready" | "unavailable"
   registryMode?: SourceRegistryMode
   rateLimitedRequestCount?: number
@@ -143,6 +147,11 @@ export type SourceAuditAction =
   | "public_feed_link.rotated"
   | "public_feed_link.reencrypted"
   | "public_feed_link.updated"
+  | "official_account.auth_invalid"
+  | "official_account.linked"
+  | "official_account.reencrypted"
+  | "official_account.unlinked"
+  | "official_account.verified"
 
 export interface SourceAuditEvent {
   action: SourceAuditAction
@@ -156,6 +165,7 @@ export interface SourceAuditEvent {
   resourceType:
     | "catalog_route"
     | "credential"
+    | "official_account"
     | "page_source"
     | "public_feed_grant"
     | "public_feed_link"
@@ -520,3 +530,30 @@ export interface PublicFeedCredentialUsage {
 export interface CredentialUsageReport {
   links: PublicFeedCredentialUsage[]
 }
+
+/** `auth_invalid` once the official API rejected the session; the owner must link again. */
+export type OfficialAccountStatus = "active" | "auth_invalid" | "unlinked"
+
+/** The official Folo account linked to this supplier (ADR-0034). The session is never returned. */
+export interface OfficialAccountSummary {
+  id: string
+  status: Exclude<OfficialAccountStatus, "unlinked">
+  /** Official user ID; the account's name and email are not stored */
+  externalUserId: string
+  /** Official plan, such as `free` */
+  role: string | null
+  feedSubscriptionLimit: number | null
+  rssHubSubscriptionLimit: number | null
+  linkedAt: string
+  lastVerifiedAt: string
+  /** When the official API says the session expires */
+  sessionExpiresAt: string | null
+  authInvalidAt: string | null
+}
+
+/** Errors the supplier reports for sources read through the official account. */
+export type OfficialAcquisitionErrorCode =
+  | "official_auth_invalid"
+  | "official_binding_inactive"
+  | "official_rate_limited"
+  | "official_unavailable"

@@ -12,6 +12,7 @@
     "sources:publish": "tsx scripts/publish-public-feeds.ts",
     "sources:import:catalog": "tsx scripts/import-catalog-routes.ts",
     "sources:import:web-lists": "tsx scripts/import-web-list-sources.ts",
+    "sources:official": "tsx scripts/official-account.ts",
     "start": "tsx --env-file-if-exists=.env src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

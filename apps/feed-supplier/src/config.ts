@@ -52,6 +52,37 @@ const publicFeedBaseURL = z.preprocess(
     .optional(),
 )
 
+/** Optional URL without credentials, query or fragment; empty disables the feature. */
+const optionalServiceURL = (name: string, allowCredentials = false) =>
+  z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z
+      .url()
+      .transform((value, context) => {
+        const url = new URL(value)
+        if (url.protocol !== "http:" && url.protocol !== "https:") {
+          context.addIssue({ code: "custom", message: `${name} must use HTTP or HTTPS` })
+          return z.NEVER
+        }
+        if (
+          (!allowCredentials && (url.username || url.password)) ||
+          url.search ||
+          url.hash ||
+          url.pathname !== "/"
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: `${name} must be an origin without a path, query${
+              allowCredentials ? "" : " or credentials"
+            }`,
+          })
+          return z.NEVER
+        }
+        return allowCredentials ? url.toString().replace(/\/$/, "") : url.origin
+      })
+      .optional(),
+  )
+
 /** Named ranges understood by proxy-addr, which Fastify uses to evaluate `trustProxy`. */
 const trustedProxyPresets = new Set(["linklocal", "loopback", "uniquelocal"])
 
@@ -160,6 +191,17 @@ const supplierEnvironment = z
     CREDENTIAL_ENCRYPTION_KEY_ID: keyId.default("local-primary"),
     DATABASE_MAX_CONNECTIONS: integer(10, 1).pipe(z.number().max(50)),
     DATABASE_URL: postgresURL.optional(),
+    // Official Folo acquisition (ADR-0034); without the API URL the feature does not exist.
+    FOLO_OFFICIAL_API_URL: optionalServiceURL("FOLO_OFFICIAL_API_URL"),
+    FOLO_OFFICIAL_CACHE_TTL_SECONDS: integer(300, 60).pipe(z.number().max(3_600)),
+    FOLO_OFFICIAL_CONCURRENCY: integer(2, 1).pipe(z.number().max(8)),
+    // The official API page holds at most 100 entries.
+    FOLO_OFFICIAL_ENTRY_LIMIT: integer(50, 1).pipe(z.number().max(100)),
+    FOLO_OFFICIAL_FETCH_TIMEOUT_MS: integer(30_000, 1_000).pipe(z.number().max(60_000)),
+    // Outbound HTTP proxy used for the official API only; mainland China nodes need one.
+    FOLO_OFFICIAL_PROXY_URL: optionalServiceURL("FOLO_OFFICIAL_PROXY_URL", true),
+    FOLO_OFFICIAL_RATE_LIMIT_MAX: integer(30, 1).pipe(z.number().max(1_000)),
+    FOLO_OFFICIAL_RATE_LIMIT_WINDOW_SECONDS: integer(60, 1).pipe(z.number().max(3_600)),
     HOST: z.string().default("0.0.0.0"),
     INTERNAL_TOKEN: z.string().min(32),
     // Optional third token held by the Folo core to manage web list sources for the owner.
@@ -214,6 +256,16 @@ const supplierEnvironment = z
         code: "custom",
         message: "Production requires an independent DATABASE_URL",
         path: ["DATABASE_URL"],
+      })
+    }
+    if (
+      environment.FOLO_OFFICIAL_API_URL &&
+      new URL(environment.FOLO_OFFICIAL_API_URL).protocol !== "https:"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Production FOLO_OFFICIAL_API_URL must use HTTPS",
+        path: ["FOLO_OFFICIAL_API_URL"],
       })
     }
     if (
@@ -319,6 +371,18 @@ export const loadFeedSupplierConfig = (environment: NodeJS.ProcessEnv) => {
     credentialKeys,
     databaseMaxConnections: parsed.DATABASE_MAX_CONNECTIONS,
     databaseURL: parsed.DATABASE_URL,
+    officialAcquisition: parsed.FOLO_OFFICIAL_API_URL
+      ? {
+          apiURL: parsed.FOLO_OFFICIAL_API_URL,
+          cacheTTLSeconds: parsed.FOLO_OFFICIAL_CACHE_TTL_SECONDS,
+          concurrency: parsed.FOLO_OFFICIAL_CONCURRENCY,
+          entryLimit: parsed.FOLO_OFFICIAL_ENTRY_LIMIT,
+          fetchTimeoutMs: parsed.FOLO_OFFICIAL_FETCH_TIMEOUT_MS,
+          proxyURL: parsed.FOLO_OFFICIAL_PROXY_URL ?? null,
+          rateLimitMax: parsed.FOLO_OFFICIAL_RATE_LIMIT_MAX,
+          rateLimitWindowSeconds: parsed.FOLO_OFFICIAL_RATE_LIMIT_WINDOW_SECONDS,
+        }
+      : null,
     host: parsed.HOST,
     internalToken: parsed.INTERNAL_TOKEN,
     managementToken: parsed.MANAGEMENT_TOKEN ?? null,
