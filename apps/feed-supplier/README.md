@@ -225,6 +225,25 @@ FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
 普通 HTTP(S) 订阅保持原地址，供给端来源使用授权链接。自托管 Folo 仍使用上面的
 `sources:export:opml` 导出逻辑地址。
 
+## 官方 Folo 账号
+
+官方托管获取（ADR-0034，阶段 5B）需要设置 `FOLO_OFFICIAL_API_URL=https://api.folo.is`；未设置时下面的接口
+和 `folo_official` provider 都不存在。中国大陆的节点直连官方 API 不通，需再设置只用于官方接口的
+`FOLO_OFFICIAL_PROXY_URL`（HTTP CONNECT 代理）。
+
+账号用所有者在官方 Folo 的会话令牌关联，令牌以密文保存，任何接口、日志和审计都不返回它。先用官方
+命令行登录取得令牌，再经管理隧道关联：
+
+```bash
+npx tsx apps/cli/src/index.ts login
+jq -r .token ~/.folo/config.json | pnpm --filter @follow/feed-supplier sources:official link
+pnpm --filter @follow/feed-supplier sources:official status
+```
+
+`link` 只从标准输入读取令牌。会话约 30 天过期；`verify` 重新校验并刷新套餐和额度，官方拒绝会话时
+账号转为 `auth_invalid`，此后不再发出官方请求，需要重新登录并再次 `link`。`unlink` 解除关联。凭据密钥
+轮换会同时重新加密官方会话（响应中的 `officialAccountRotatedCount`）。
+
 ## 生产规模化
 
 生产环境必须配置 Redis。`feed-supplier` 用 Redis DB 1 保存可重建的 RSSHub 响应缓存、每路由固定窗口

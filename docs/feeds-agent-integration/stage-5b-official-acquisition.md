@@ -1,6 +1,6 @@
 # 阶段 5B：官方托管获取（第一刀）
 
-- 状态：5B.0 探查基本完成（见“5B.0 探查结果”），5B.1 起尚未开始实现
+- 状态：5B.0 探查完成；5B.1、5B.2 已实现（见各切片的“实现说明”）；5B.3 起尚未开始
 - 决策：[ADR-0034](./adr/0034-acquire-selected-sources-through-the-official-folo-account.md)（`proposed`）
 - 已核对的官方 SDK 版本：`@follow-app/client-sdk` `0.3.96`
 
@@ -78,6 +78,9 @@
     （默认 2）。
 - 测试：契约单测；配置校验单测；核心对含 `folo_official` 和不含它的 provider 列表都能解析。
 
+实现说明：provider 健康字段目前只有账号状态 `officialAccountStatus`；有效与失败绑定数随 5B.3 的绑定表
+一起加入。供给端在 5B.2 就开始报告该 provider，桌面端运维页已有对应文案。
+
 ### 5B.2 官方账号关联
 
 - 迁移 `007_official_acquisition.sql`，表 `official_accounts`：`id`、`external_user_id`、`credential_id`
@@ -102,9 +105,24 @@
 - 测试：内存与 PostgreSQL 仓库；关联、校验、未授权转 `auth_invalid`、解除关联；允许清单拒绝表外请求；
   读取接口和审计中不出现令牌。
 
+实现说明（与上文的差异）：
+
+- 迁移为 `007_official_accounts.sql`，令牌以密文直接存在 `official_accounts` 中，不引用
+  `source_credentials`。凭据表中的值可以绑定到 RSSHub 路由的秘密查询参数，放在那里就可能被误绑定，
+  把官方会话发给 RSSHub。令牌仍用同一凭据密钥加密，但使用独立的密文标识，不能被当作凭据或公开链接
+  令牌解密。
+- 重新关联会在同一事务中解除旧账号，不会出现空档或两个已关联账号。
+- `auth_invalid` 后 `verify` 返回 409，不再用已被拒绝的会话请求官方；恢复方式是重新关联。
+- 官方接口不可用时 `verify` 返回 502，账号状态不变。
+- 解除关联时“全部绑定进入 `pending_deletion`”随 5B.3 实现，目前没有绑定。
+- 客户端只对“请求一定没有发出”的连接失败重试（拒绝连接、代理拒绝隧道、TLS 握手被重置），最多 4 次；
+  请求可能已发出时不重试，避免重复写入。
+- 已经用所有者的会话经本机代理实测：连续 5 次会话校验都一次成功；伪造令牌被判为 `auth_invalid`。
+  多次调用后会话过期时间不变，未观察到逐次续期。
+
 ### 5B.3 获取绑定与影子订阅
 
-- 同一迁移，表 `official_acquisition_bindings`：`id`、`source_url`、`account_id`、`external_feed_id`、
+- 迁移 `008`，表 `official_acquisition_bindings`：`id`、`source_url`、`account_id`、`external_feed_id`、
   `origin`（`created`、`adopted`）、`status`（`pending`、`active`、`failed`、`pending_deletion`、
   `deleted`）、`created_at`、`activated_at`、`last_creation_error`、`disabled_at`、`delete_after`、
   `deleted_at`、`last_cleanup_error`、`next_cleanup_retry_at`、`last_success_at`、`last_error_code`、
@@ -198,6 +216,15 @@
 - 同一路由经官方与自建 RSSHub 取得的 GUID 是否一致，需要一个可访问的自建 RSSHub 实例。
 - 官方限流和额度用尽时的响应形状：探查中没有触发。
 - 会话是否滚动续期：需要间隔数日再读一次会话。
+
+## 部署位置
+
+2026-10-05 所有者决定：官方获取放在**新加坡节点**，自托管 Folo 核心也部署到该节点，在核心中阅读。
+
+- 新加坡节点直连官方 API 正常（5 次均为 200，约 0.3 秒），不需要 `FOLO_OFFICIAL_PROXY_URL`。
+- 家中 Mac mini 不启用官方获取；如以后启用，必须配置代理，例如 `http://host.docker.internal:7890`。
+- 借官方取得的内容只经内部通道交给核心，不能签发公开链接（ADR-0034），所以在核心部署之前，官方获取
+  没有可读的地方。核心部署单独规划。
 
 ## 发布顺序与回滚
 

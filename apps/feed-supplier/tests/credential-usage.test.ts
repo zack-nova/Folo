@@ -298,9 +298,14 @@ describe.each(rotationRepositories)("public link key rotation (%s)", (_name, cre
       CREDENTIAL_ENCRYPTION_KEY_ID: "new-key",
     })
     const rotation = await call(rotating, "POST", "/v1/admin/credentials/rotate")
-    expect(rotation.json()).toEqual({ publicLinkRotatedCount: 1, rotatedCount: 0 })
+    expect(rotation.json()).toEqual({
+      officialAccountRotatedCount: 0,
+      publicLinkRotatedCount: 1,
+      rotatedCount: 0,
+    })
     // Running it again finds nothing left under the old key.
     expect((await call(rotating, "POST", "/v1/admin/credentials/rotate")).json()).toEqual({
+      officialAccountRotatedCount: 0,
       publicLinkRotatedCount: 0,
       rotatedCount: 0,
     })

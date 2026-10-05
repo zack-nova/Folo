@@ -159,6 +159,40 @@ describe("feed supplier fetcher", () => {
     ])
   })
 
+  it("accepts the official acquisition provider next to the autonomous ones", async () => {
+    const fetcher = new FeedSupplierFetcher({
+      baseURL: "http://feed-supplier:3001",
+      fetchImplementation: vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          providers: [
+            { configured: true, id: "rsshub", message: null, status: "ready" },
+            { configured: true, id: "page_change", message: null, status: "ready" },
+            { configured: true, id: "web_list", message: null, status: "ready" },
+            {
+              configured: true,
+              id: "folo_official",
+              message: "The official session was rejected; link the account again",
+              officialAccountStatus: "auth_invalid",
+              persistenceStatus: "ready",
+              status: "unavailable",
+            },
+          ],
+        }),
+      ),
+      token: "internal-feed-supplier-token-000000000000",
+    })
+
+    const statuses = await fetcher.getProviderStatuses()
+
+    expect(statuses.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: "rsshub", status: "ready" },
+      { id: "page_change", status: "ready" },
+      { id: "web_list", status: "ready" },
+      { id: "folo_official", status: "unavailable" },
+    ])
+    expect(statuses[3]).toMatchObject({ officialAccountStatus: "auth_invalid" })
+  })
+
   it("reports every provider unavailable when the supplier omits web list status", async () => {
     const fetcher = new FeedSupplierFetcher({
       baseURL: "http://feed-supplier:3001",

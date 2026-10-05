@@ -62,10 +62,11 @@ export type OperationsStatus = {
     configured: boolean
     dueSourceCount?: number
     enabledSourceCount?: number
-    id: "page_change" | "rsshub" | "web_list"
+    id: "folo_official" | "page_change" | "rsshub" | "web_list"
     lastCycleAt?: string | null
     managedRouteCount?: number
     message: string | null
+    officialAccountStatus?: "active" | "auth_invalid" | "unlinked"
     persistenceStatus?: "ready" | "unavailable"
     rateLimitedRequestCount?: number
     registryMode?: "managed_only" | "permissive"
