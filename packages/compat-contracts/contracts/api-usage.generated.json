@@ -401,7 +401,7 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/queries/auth.ts",
-          "line": 93,
+          "line": 94,
           "target": "desktop"
         },
         {
@@ -2265,7 +2265,7 @@
       "callsites": [
         {
           "file": "apps/desktop/layer/renderer/src/queries/auth.ts",
-          "line": 68,
+          "line": 69,
           "target": "desktop"
         },
         {
@@ -2689,17 +2689,17 @@
         },
         {
           "file": "apps/desktop/layer/renderer/src/queries/auth.ts",
-          "line": 195,
+          "line": 205,
           "target": "desktop"
         },
         {
           "file": "apps/desktop/layer/renderer/src/queries/auth.ts",
-          "line": 199,
+          "line": 209,
           "target": "desktop"
         },
         {
           "file": "apps/desktop/layer/renderer/src/queries/auth.ts",
-          "line": 226,
+          "line": 236,
           "target": "desktop"
         },
         { "file": "apps/mobile/src/lib/auth.ts", "line": 308, "target": "mobile" },
