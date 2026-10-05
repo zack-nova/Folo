@@ -41,3 +41,15 @@ export const DEFAULT_VALUES = {
     INBOXES_EMAIL: "@follow.re",
   },
 }
+
+const OFFICIAL_API_URLS = new Set(
+  [DEFAULT_VALUES.PROD, DEFAULT_VALUES.DEV, DEFAULT_VALUES.STAGING].map((values) => values.API_URL),
+)
+
+/**
+ * Whether a build talks to an official Folo server. Builds for any other server, such as a
+ * self-hosted instance, must not use official analytics or reCAPTCHA: their keys belong to the
+ * official service and would report the instance's usage to it.
+ */
+export const isOfficialAPIURL = (apiURL: string) =>
+  OFFICIAL_API_URLS.has(apiURL.replace(/\/+$/, ""))

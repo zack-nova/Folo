@@ -1,4 +1,4 @@
-import { env } from "@follow/shared/env.desktop"
+import { connectsToOfficialServer, env } from "@follow/shared/env.desktop"
 import {
   createPostHogBeforeSend,
   setFirebaseTracker,
@@ -14,6 +14,9 @@ import { QUERY_PERSIST_KEY } from "~/constants/app"
 import { ga4 } from "../lib/ga4"
 
 export const initAnalytics = async () => {
+  // Self-hosted builds keep usage on their own server instead of official analytics.
+  if (!connectsToOfficialServer) return
+
   // Capture attribution data from URL (preserves first attribution)
   captureAttributionFromURL()
 

@@ -4,7 +4,7 @@ import { EventProvider } from "@follow/components/providers/event-provider.js"
 import { StableRouterProvider } from "@follow/components/providers/stable-router-provider.js"
 import { Toaster } from "@follow/components/ui/toast/index.jsx"
 import { IN_ELECTRON } from "@follow/shared/constants"
-import { env } from "@follow/shared/env.desktop"
+import { connectsToOfficialServer, env } from "@follow/shared/env.desktop"
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client"
 import { Provider } from "jotai"
@@ -93,7 +93,8 @@ const Devtools = () =>
 const RecaptchaProvider: FC<PropsWithChildren> = ({ children }) => {
   const siteKey = env.VITE_RECAPTCHA_V3_SITE_KEY
 
-  if (!siteKey) {
+  // The official site key only works for official origins; self-hosted servers do not verify it.
+  if (!siteKey || !connectsToOfficialServer) {
     return children
   }
 
