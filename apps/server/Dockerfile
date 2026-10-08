@@ -34,8 +34,12 @@ FROM node:22-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
 
-# The owner's Codex CLI as an optional low-volume AI provider (AI_CODEX_COMMAND); pinned.
-RUN npm install -g --no-audit --no-fund @openai/codex@0.161.0 \
+# The owner's Codex CLI as an optional low-volume AI provider (AI_CODEX_COMMAND); pinned. The
+# CLI is a native binary that validates TLS against the system store, which the slim image lacks.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && npm install -g --no-audit --no-fund @openai/codex@0.161.0 \
   && npm cache clean --force
 
 RUN mkdir -p /app /data/uploads /data/codex \
