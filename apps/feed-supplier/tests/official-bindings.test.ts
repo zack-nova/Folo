@@ -3,6 +3,7 @@ import type {
   OfficialSubscriptionSummary,
   SourceAuditEvent,
 } from "@follow/feed-source-contracts"
+import { XMLParser } from "fast-xml-parser"
 import { describe, expect, it, vi } from "vitest"
 
 import { loadFeedSupplierConfig } from "../src/config"
@@ -37,6 +38,42 @@ const json = (status: number, body: unknown): OfficialHTTPResponse => ({
 const fakeOfficialAPI = () => {
   const state = {
     authorized: true,
+    entriesStatus: 200,
+    entryRequests: [] as Array<{ feedId: string; limit: number; withContent?: boolean }>,
+    entries: [
+      {
+        attachments: null,
+        author: `Anthropic ${"and colleagues ".repeat(120)}`,
+        categories: ["research"],
+        content: "<p>Full <b>body</b> & more</p>",
+        description: "Summary one",
+        guid: "https://www.anthropic.com/research/one",
+        id: "9001",
+        media: [{ type: "photo", url: "https://example.com/one.png" }],
+        publishedAt: "2026-10-07T10:00:00.000Z",
+        title: "Paper <one>",
+        url: "https://www.anthropic.com/research/one",
+      },
+      {
+        attachments: [
+          { mime_type: "audio/mpeg", size_in_bytes: 12, url: "https://example.com/a.mp3" },
+          // Bilibili players come as text/html attachments with a duration.
+          { duration_in_seconds: 6748, mime_type: "text/html", url: "https://example.com/player" },
+          // Huge data: URIs are skipped rather than failing the feed.
+          { mime_type: "image/png", url: `data:image/png;base64,${"A".repeat(20_000)}` },
+        ],
+        author: null,
+        categories: null,
+        content: null,
+        description: null,
+        guid: "two",
+        id: "9002",
+        media: [{ height: 566, type: "image", url: "https://example.com/cover.jpg", width: 1007 }],
+        publishedAt: "2026-10-06T10:00:00.000Z",
+        title: null,
+        url: null,
+      },
+    ],
     subscriptions: [
       {
         category: "AI",
@@ -75,6 +112,26 @@ const fakeOfficialAPI = () => {
     }
     if (request.url.pathname === "/subscriptions")
       return json(200, { code: 0, data: state.subscriptions })
+    if (request.url.pathname === "/entries" && request.method === "POST") {
+      const body = JSON.parse(request.body ?? "{}") as { feedId: string; limit: number }
+      state.entryRequests.push(body)
+      if (state.entriesStatus !== 200) return json(state.entriesStatus, { message: "later" })
+      return json(200, {
+        code: 0,
+        data: state.entries.slice(0, body.limit).map((entry) => ({
+          entries: entry,
+          feeds: {
+            description: "Research from Anthropic",
+            id: body.feedId,
+            image: "https://example.com/logo.png",
+            siteUrl: "https://www.anthropic.com/research",
+            title: "Anthropic Research",
+            url: "rsshub://anthropic/research",
+          },
+          read: false,
+        })),
+      })
+    }
     return json(404, { code: 404 })
   }
   return { calls, state, transport }
@@ -100,6 +157,13 @@ const repositories: Array<[string, () => Promise<SupplierRepository>]> = [
 ]
 
 const rssHubFetch = vi.fn<typeof fetch>(async () => new Response("ok"))
+
+const feedURL = (sourceURL: string) => `/v1/feeds/rsshub?url=${encodeURIComponent(sourceURL)}`
+const xml = new XMLParser({
+  attributeNamePrefix: "",
+  ignoreAttributes: false,
+  parseTagValue: false,
+})
 
 describe.each(repositories)("official acquisition bindings (%s)", (_name, createRepository) => {
   const start = async () => {
@@ -330,6 +394,145 @@ describe.each(repositories)("official acquisition bindings (%s)", (_name, create
     expect(again.statusCode).toBe(404)
     expect(await providerCounts(server)).toMatchObject({ activeBindingCount: 0 })
     expect((await bind(server, "rsshub://anthropic/research")).statusCode).toBe(201)
+    await server.close()
+  })
+
+  it("serves a bound source from the official account as RSS, cached with an ETag", async () => {
+    const { official, server } = await start()
+    const binding = (await bind(server, "rsshub://anthropic/research")).json<{
+      binding: OfficialAcquisitionBinding
+    }>().binding
+
+    const first = await server.inject({
+      headers: internal,
+      method: "GET",
+      url: feedURL("rsshub://anthropic/research"),
+    })
+    expect(first.statusCode).toBe(200)
+    expect(first.headers["content-type"]).toContain("application/rss+xml")
+    expect(first.headers["x-folo-acquisition-provider"]).toBe("folo_official")
+    expect(first.headers["x-folo-upstream-url"]).toBe(
+      "https://api.folo.test/entries?feedId=feed-anthropic",
+    )
+    expect(first.headers["x-folo-cache"]).toBe("MISS")
+    expect(official.state.entryRequests).toEqual([
+      { feedId: "feed-anthropic", limit: 50, withContent: true },
+    ])
+
+    const parsed = xml.parse(first.body) as {
+      rss: { channel: { title: string; link: string; item: Array<Record<string, unknown>> } }
+    }
+    expect(parsed.rss.channel.title).toBe("Anthropic Research")
+    expect(parsed.rss.channel.link).toBe("https://www.anthropic.com/research")
+    const [one, two] = parsed.rss.channel.item
+    expect(one).toMatchObject({
+      category: "research",
+      "content:encoded": "<p>Full <b>body</b> & more</p>",
+      "dc:creator": expect.stringMatching(/^Anthropic and colleagues/),
+      description: "Summary one",
+      guid: { "#text": "https://www.anthropic.com/research/one", isPermaLink: "false" },
+      link: "https://www.anthropic.com/research/one",
+      title: "Paper <one>",
+    })
+    expect(two).toMatchObject({
+      enclosure: [
+        { length: "12", type: "audio/mpeg", url: "https://example.com/a.mp3" },
+        { type: "text/html", url: "https://example.com/player" },
+      ],
+      guid: { "#text": "two", isPermaLink: "false" },
+    })
+    expect(two).not.toHaveProperty("link")
+
+    const etag = first.headers.etag as string
+    const notModified = await server.inject({
+      headers: { ...internal, "if-none-match": etag },
+      method: "GET",
+      url: feedURL("rsshub://anthropic/research"),
+    })
+    expect(notModified.statusCode).toBe(304)
+    expect(notModified.headers["x-folo-cache"]).toBe("HIT")
+    expect(official.state.entryRequests).toHaveLength(1)
+
+    const bindings = await server.inject({
+      headers: admin,
+      method: "GET",
+      url: "/v1/admin/official/bindings",
+    })
+    expect(
+      bindings
+        .json<{ bindings: OfficialAcquisitionBinding[] }>()
+        .bindings.find((item) => item.id === binding.id),
+    ).toMatchObject({ consecutiveFailureCount: 0, lastSuccessAt: expect.any(String) })
+    await server.close()
+  })
+
+  it("reports official failures without falling back to self-hosted RSSHub", async () => {
+    const { official, server } = await start()
+    const binding = (await bind(server, "rsshub://anthropic/research")).json<{
+      binding: OfficialAcquisitionBinding
+    }>().binding
+    const rssHubCallsBefore = rssHubFetch.mock.calls.length
+    official.state.entriesStatus = 503
+    const failed = await server.inject({
+      headers: internal,
+      method: "GET",
+      url: feedURL("rsshub://anthropic/research"),
+    })
+    expect(failed.statusCode).toBe(502)
+    expect(failed.json()).toMatchObject({ code: "official_unavailable" })
+    expect(rssHubFetch.mock.calls.length).toBe(rssHubCallsBefore)
+    const after = await server.inject({
+      headers: admin,
+      method: "GET",
+      url: "/v1/admin/official/bindings",
+    })
+    expect(
+      after
+        .json<{ bindings: OfficialAcquisitionBinding[] }>()
+        .bindings.find((item) => item.id === binding.id),
+    ).toMatchObject({
+      consecutiveFailureCount: 1,
+      lastErrorCode: "official_unavailable",
+      status: "active",
+    })
+
+    official.state.entriesStatus = 200
+    official.state.authorized = false
+    const rejected = await server.inject({
+      headers: internal,
+      method: "GET",
+      url: feedURL("rsshub://anthropic/research"),
+    })
+    expect(rejected.statusCode).toBe(503)
+    expect(rejected.json()).toMatchObject({ code: "official_auth_invalid" })
+    const callsBefore = official.calls.length
+    const again = await server.inject({
+      headers: internal,
+      method: "GET",
+      url: feedURL("rsshub://anthropic/research"),
+    })
+    expect(again.statusCode).toBe(503)
+    expect(official.calls.length).toBe(callsBefore)
+
+    // Unbinding returns the address to self-hosted RSSHub.
+    await server.inject({
+      headers: admin,
+      method: "DELETE",
+      url: `/v1/admin/official/bindings/${binding.id}`,
+    })
+    rssHubFetch.mockResolvedValueOnce(
+      new Response("<rss><channel><title>self-hosted</title></channel></rss>", {
+        headers: { "content-type": "application/rss+xml" },
+      }),
+    )
+    const selfHosted = await server.inject({
+      headers: internal,
+      method: "GET",
+      url: feedURL("rsshub://anthropic/research"),
+    })
+    expect(selfHosted.statusCode).toBe(200)
+    expect(selfHosted.headers["x-folo-acquisition-provider"]).toBeUndefined()
+    expect(selfHosted.body).toContain("self-hosted")
     await server.close()
   })
 

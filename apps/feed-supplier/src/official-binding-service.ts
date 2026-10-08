@@ -11,6 +11,8 @@ import { z } from "zod"
 import { createAuditDraft } from "./audit"
 import type { FoloOfficialClient } from "./folo-official-client"
 import { OfficialAPIError } from "./folo-official-client"
+import type { OfficialFeedDocument } from "./folo-official-feed"
+import { fetchOfficialFeed } from "./folo-official-feed"
 import type { OfficialAccountService } from "./official-account-service"
 import { OfficialAccountError } from "./official-account-service"
 import type { OfficialBindingRepository } from "./official-binding-repository"
@@ -158,6 +160,43 @@ export class OfficialBindingService {
     )
     if (!deleted) {
       throw new OfficialAccountError("official_binding_not_found", "Binding was not found", 404)
+    }
+  }
+
+  /**
+   * The newest entries of a bound source, rendered as RSS. Read failures are recorded on the
+   * binding; a rejected session also disables the account.
+   */
+  async readFeed(
+    binding: OfficialAcquisitionBinding,
+    limit: number,
+    actor = "feed-supplier-read",
+  ): Promise<OfficialFeedDocument> {
+    const session = await this.requireSession()
+    if (!binding.externalFeedId) {
+      throw new OfficialAccountError(
+        "official_binding_inactive",
+        "The binding has no official feed id",
+        503,
+      )
+    }
+    try {
+      const document = await this.officialCall(session, actor, () =>
+        fetchOfficialFeed(
+          this.client,
+          session.token,
+          binding.externalFeedId!,
+          binding.sourceURL,
+          limit,
+        ),
+      )
+      await this.recordRead(binding.id, null)
+      return document
+    } catch (error) {
+      if (error instanceof OfficialAccountError) {
+        await this.recordRead(binding.id, { code: error.code, summary: error.message })
+      }
+      throw error
     }
   }
 
