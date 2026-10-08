@@ -240,6 +240,17 @@ jq -r .token ~/.folo/config.json | pnpm --filter @follow/feed-supplier sources:o
 pnpm --filter @follow/feed-supplier sources:official status
 ```
 
+绑定来源（第一刀只接管官方账号里已有的订阅，不会替你订阅或退订）：
+
+```bash
+pnpm --filter @follow/feed-supplier sources:official subscriptions      # 官方账号里的 rsshub:// 订阅
+pnpm --filter @follow/feed-supplier sources:official bind rsshub://nasa/apod
+pnpm --filter @follow/feed-supplier sources:official bindings
+pnpm --filter @follow/feed-supplier sources:official unbind <binding-id>
+```
+
+已绑定的来源不能再签发公开链接，有公开链接的来源也不能绑定。绑定后的读取路径（经官方取回条目）由 5B.4 提供。
+
 `link` 只从标准输入读取令牌。会话约 30 天过期；`verify` 重新校验并刷新套餐和额度，官方拒绝会话时
 账号转为 `auth_invalid`，此后不再发出官方请求，需要重新登录并再次 `link`。`unlink` 解除关联。凭据密钥
 轮换会同时重新加密官方会话（响应中的 `officialAccountRotatedCount`）。

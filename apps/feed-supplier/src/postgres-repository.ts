@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 
 import type {
+  OfficialAcquisitionBinding,
   PageChangeEvent,
   RssHubCredentialRequirement,
   SourceAuditAction,
@@ -20,6 +21,7 @@ import type {
   OfficialAccountVerification,
   StoredOfficialAccount,
 } from "./official-account-repository"
+import type { OfficialBindingPatch } from "./official-binding-repository"
 import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
 import type {
   PublicFeedAccess,
@@ -382,6 +384,49 @@ const officialAccountFromRow = (row: OfficialAccountRow): StoredOfficialAccount 
   unlinkedAt: row.unlinked_at?.toISOString() ?? null,
 })
 
+interface OfficialBindingRow {
+  id: string
+  source_url: string
+  account_id: string
+  external_feed_id: string | null
+  origin: OfficialAcquisitionBinding["origin"]
+  status: OfficialAcquisitionBinding["status"]
+  created_at: Date
+  activated_at: Date | null
+  deleted_at: Date | null
+  last_error_code: string | null
+  last_error_summary: string | null
+  last_success_at: Date | null
+  consecutive_failure_count: number
+}
+
+const officialBindingFromRow = (row: OfficialBindingRow): OfficialAcquisitionBinding => ({
+  id: row.id,
+  sourceURL: row.source_url,
+  accountId: row.account_id,
+  externalFeedId: row.external_feed_id,
+  origin: row.origin,
+  status: row.status,
+  createdAt: row.created_at.toISOString(),
+  activatedAt: row.activated_at?.toISOString() ?? null,
+  deletedAt: row.deleted_at?.toISOString() ?? null,
+  lastErrorCode: row.last_error_code,
+  lastErrorSummary: row.last_error_summary,
+  lastSuccessAt: row.last_success_at?.toISOString() ?? null,
+  consecutiveFailureCount: row.consecutive_failure_count,
+})
+
+const officialBindingColumns: Record<keyof OfficialBindingPatch, string> = {
+  activatedAt: "activated_at",
+  consecutiveFailureCount: "consecutive_failure_count",
+  externalFeedId: "external_feed_id",
+  lastErrorCode: "last_error_code",
+  lastErrorSummary: "last_error_summary",
+  lastSuccessAt: "last_success_at",
+  origin: "origin",
+  status: "status",
+}
+
 export class PostgresSupplierRepository implements SupplierRepository {
   private readonly auditKey: Buffer
   private readonly pool: Pool
@@ -405,6 +450,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
         "005_public_feeds.sql",
         "006_link_metadata_and_credentials.sql",
         "007_official_accounts.sql",
+        "008_official_bindings.sql",
       ].map(async (filename, index) => ({
         sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
         version: index + 1,
@@ -1265,6 +1311,128 @@ export class PostgresSupplierRepository implements SupplierRepository {
       return result.rowCount ? true : null
     })
     return updated === true
+  }
+
+  async createOfficialBinding(
+    binding: OfficialAcquisitionBinding,
+    audit: AuditEventDraft,
+  ): Promise<OfficialAcquisitionBinding> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        await client.query(
+          `insert into official_acquisition_bindings
+            (id, source_url, account_id, external_feed_id, origin, status, created_at, activated_at,
+             deleted_at, last_error_code, last_error_summary, last_success_at, consecutive_failure_count)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [
+            binding.id,
+            binding.sourceURL,
+            binding.accountId,
+            binding.externalFeedId,
+            binding.origin,
+            binding.status,
+            binding.createdAt,
+            binding.activatedAt,
+            binding.deletedAt,
+            binding.lastErrorCode,
+            binding.lastErrorSummary,
+            binding.lastSuccessAt,
+            binding.consecutiveFailureCount,
+          ],
+        )
+        return binding
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new RepositoryConflictError("This source already has an official binding")
+      }
+      throw error
+    }
+  }
+
+  async findOfficialBinding(id: string): Promise<OfficialAcquisitionBinding | null> {
+    const result = await this.pool.query<OfficialBindingRow>(
+      "select * from official_acquisition_bindings where id = $1",
+      [id],
+    )
+    return result.rows[0] ? officialBindingFromRow(result.rows[0]) : null
+  }
+
+  async findLiveOfficialBindingBySourceURL(
+    sourceURL: string,
+  ): Promise<OfficialAcquisitionBinding | null> {
+    const result = await this.pool.query<OfficialBindingRow>(
+      "select * from official_acquisition_bindings where source_url = $1 and status <> 'deleted'",
+      [sourceURL],
+    )
+    return result.rows[0] ? officialBindingFromRow(result.rows[0]) : null
+  }
+
+  async listOfficialBindings(): Promise<OfficialAcquisitionBinding[]> {
+    const result = await this.pool.query<OfficialBindingRow>(
+      "select * from official_acquisition_bindings where status <> 'deleted' order by created_at, id",
+    )
+    return result.rows.map(officialBindingFromRow)
+  }
+
+  async countOfficialBindings(): Promise<{ active: number; failed: number }> {
+    const result = await this.pool.query<{ active: string; failed: string }>(
+      `select count(*) filter (where status = 'active') as active,
+              count(*) filter (where status = 'failed') as failed
+         from official_acquisition_bindings`,
+    )
+    return {
+      active: Number(result.rows[0]?.active ?? 0),
+      failed: Number(result.rows[0]?.failed ?? 0),
+    }
+  }
+
+  async updateOfficialBinding(
+    id: string,
+    patch: OfficialBindingPatch,
+    audit: AuditEventDraft | null,
+  ): Promise<OfficialAcquisitionBinding | null> {
+    const entries = Object.entries(patch).filter(([, value]) => value !== undefined)
+    if (entries.length === 0) return this.findOfficialBinding(id)
+    const assignments = entries.map(
+      ([key], index) =>
+        `${officialBindingColumns[key as keyof OfficialBindingPatch]} = $${index + 2}`,
+    )
+    const run = async (client: PoolClient) => {
+      const result = await client.query<OfficialBindingRow>(
+        `update official_acquisition_bindings set ${assignments.join(", ")}
+         where id = $1 and status <> 'deleted' returning *`,
+        [id, ...entries.map(([, value]) => value)],
+      )
+      return result.rows[0] ? officialBindingFromRow(result.rows[0]) : null
+    }
+    return audit ? this.withMutation(audit, run) : this.withTransaction(run)
+  }
+
+  async deleteOfficialBinding(
+    id: string,
+    deletedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<OfficialAcquisitionBinding | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<OfficialBindingRow>(
+        `update official_acquisition_bindings set status = 'deleted', deleted_at = $2
+         where id = $1 and status <> 'deleted' returning *`,
+        [id, deletedAt],
+      )
+      return result.rows[0] ? officialBindingFromRow(result.rows[0]) : null
+    })
+  }
+
+  async hasActivePublicFeedLinkForSource(sourceURL: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `select 1 from public_feed_links link
+        join public_feed_grants grant_record on grant_record.id = link.grant_id
+        where link.source_url = $1 and link.revoked_at is null and grant_record.revoked_at is null
+        limit 1`,
+      [sourceURL],
+    )
+    return (result.rowCount ?? 0) > 0
   }
 
   async createPublicFeedGrant(

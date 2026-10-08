@@ -78,4 +78,6 @@ export interface PublicFeedRepository {
   /** The active link with this token hash, provided its grant is active too. */
   findActivePublicFeedLinkByTokenHash(tokenHash: Buffer): Promise<StoredPublicFeedLink | null>
   recordPublicFeedAccess(id: string, access: PublicFeedAccess): Promise<void>
+  /** Whether any active grant still exposes this source through a link */
+  hasActivePublicFeedLinkForSource(sourceURL: string): Promise<boolean>
 }

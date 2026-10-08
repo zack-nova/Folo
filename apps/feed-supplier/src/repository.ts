@@ -9,6 +9,7 @@ import type {
 import type { AuditEventDraft } from "./audit"
 import type { EncryptedCredentialValue } from "./credential-cipher"
 import type { OfficialAccountRepository } from "./official-account-repository"
+import type { OfficialBindingRepository } from "./official-binding-repository"
 import type { PageChangeRepository } from "./page-change-repository"
 import type { PublicFeedRepository } from "./public-feed-repository"
 import type { WebListRepository } from "./web-list-repository"
@@ -18,7 +19,12 @@ export interface StoredCredential extends SourceCredentialSummary, EncryptedCred
 export class RepositoryConflictError extends Error {}
 
 export interface SupplierRepository
-  extends OfficialAccountRepository, PageChangeRepository, PublicFeedRepository, WebListRepository {
+  extends
+    OfficialAccountRepository,
+    OfficialBindingRepository,
+    PageChangeRepository,
+    PublicFeedRepository,
+    WebListRepository {
   close(): Promise<void>
   countManagedRoutes(): Promise<number>
   createCredential(record: StoredCredential, audit: AuditEventDraft): Promise<StoredCredential>

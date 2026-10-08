@@ -1,6 +1,6 @@
 # 阶段 5B：官方托管获取（第一刀）
 
-- 状态：5B.0 探查完成；5B.1、5B.2 已实现（见各切片的“实现说明”）；5B.3 起尚未开始
+- 状态：5B.0 探查完成；5B.1–5B.3 已实现（5B.3 只含接管，见“实现说明”）；5B.4 起尚未开始
 - 决策：[ADR-0034](./adr/0034-acquire-selected-sources-through-the-official-folo-account.md)（`proposed`）
 - 已核对的官方 SDK 版本：`@follow-app/client-sdk` `0.3.96`
 
@@ -152,6 +152,21 @@
   会被订阅到所关联的官方账号、占用一个订阅额度。
 - 测试：状态机每条迁移；`adopted` 的订阅永不被删除；七天内复用；额度拒绝转 `failed`；与公开链接互斥的
   两个方向；清理失败后的重试。
+
+实现说明（5B.3，与上文的差异）：
+
+- 迁移 `008_official_bindings.sql`，表 `official_acquisition_bindings`。第一刀只实现**接管**：绑定时查询官方账号的
+  订阅列表，匹配到同一逻辑地址即记为 `adopted` 并转 `active`；未订阅则转 `failed`（`official_not_subscribed`），
+  所有者在官方 Folo 订阅后 `retry`。供给端对官方账号没有任何写操作，因此解绑直接转 `deleted`，没有
+  `pending_deletion`、七天清理和额度预检；这些随“创建影子订阅”一起推迟。
+- 状态只有 `pending`、`active`、`failed`、`deleted`；`delete_after`、`last_cleanup_error`、
+  `next_cleanup_retry_at` 等字段未建。
+- 绑定校验：`rsshub://`、无秘密查询参数、路由实例或目录模板没有绑定供给端凭据（RSSHub 部署凭据不算，它们
+  不会发给官方）、没有有效公开链接、官方账号 `active`。公开链接签发侧对称拒绝已绑定的来源。
+- 官方订阅列表经 `parseRssHubSource` 规范化后再比较，与核心保存的逻辑地址一致。
+- 官方拒绝会话时账号转 `auth_invalid`，绑定记为 `failed`（`official_auth_invalid`），此后不再向官方发请求。
+- provider 健康字段增加 `activeBindingCount`、`failedBindingCount`。
+- 命令行：`sources:official subscriptions|bindings|bind <地址>|retry <id>|unbind <id>`。
 
 ### 5B.4 读取路径
 
