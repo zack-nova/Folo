@@ -8,35 +8,15 @@ import { OfficialAPIError } from "./folo-official-client"
 /** Official entry fields the renderer uses; everything else the API returns is ignored. */
 const officialEntrySchema = z.object({
   entries: z.object({
-    attachments: z
-      .array(
-        z
-          .object({
-            mime_type: z.string().max(256).optional(),
-            size_in_bytes: z.number().int().nonnegative().optional(),
-            url: z.string().max(8_192),
-          })
-          .passthrough(),
-      )
-      .nullable()
-      .optional(),
+    // Attachment URLs can be data: URIs of any size; invalid items are dropped, not fatal.
+    attachments: z.array(z.unknown()).nullable().optional(),
     author: z.string().max(16_384).nullable().optional(),
     categories: z.array(z.string().max(1_024)).nullable().optional(),
     content: z.string().nullable().optional(),
     description: z.string().nullable().optional(),
     guid: z.string().min(1).max(8_192),
     id: z.string().min(1).max(64),
-    media: z
-      .array(
-        z
-          .object({
-            type: z.string().max(64).optional(),
-            url: z.string().max(8_192),
-          })
-          .passthrough(),
-      )
-      .nullable()
-      .optional(),
+    media: z.array(z.unknown()).nullable().optional(),
     publishedAt: z.string().max(64),
     title: z.string().nullable().optional(),
     url: z.string().max(8_192).nullable().optional(),
@@ -53,6 +33,21 @@ const officialEntrySchema = z.object({
     .optional(),
 })
 const officialEntryList = z.object({ data: z.array(z.unknown()) })
+
+/** Attachments the feed can carry as enclosures; others (such as data: URIs) are skipped. */
+const attachmentSchema = z
+  .object({
+    mime_type: z.string().max(256).optional(),
+    size_in_bytes: z.number().int().nonnegative().optional(),
+    url: z.string().url().max(8_192),
+  })
+  .passthrough()
+
+const enclosures = (attachments: unknown[] | null | undefined) =>
+  (attachments ?? []).flatMap((attachment) => {
+    const parsed = attachmentSchema.safeParse(attachment)
+    return parsed.success && /^https?:/.test(parsed.data.url) ? [parsed.data] : []
+  })
 
 export type OfficialEntry = z.infer<typeof officialEntrySchema>
 
@@ -96,7 +91,7 @@ export const renderOfficialFeed = (
       ...(entry.description ? [`<description>${escapeXML(entry.description)}</description>`] : []),
       ...(entry.content ? [`<content:encoded>${escapeXML(entry.content)}</content:encoded>`] : []),
       ...(entry.categories ?? []).map((category) => `<category>${escapeXML(category)}</category>`),
-      ...(entry.attachments ?? []).map(
+      ...enclosures(entry.attachments).map(
         (attachment) =>
           `<enclosure url="${escapeXML(attachment.url)}"${
             attachment.mime_type ? ` type="${escapeXML(attachment.mime_type)}"` : ""

@@ -59,6 +59,8 @@ const fakeOfficialAPI = () => {
           { mime_type: "audio/mpeg", size_in_bytes: 12, url: "https://example.com/a.mp3" },
           // Bilibili players come as text/html attachments with a duration.
           { duration_in_seconds: 6748, mime_type: "text/html", url: "https://example.com/player" },
+          // Huge data: URIs are skipped rather than failing the feed.
+          { mime_type: "image/png", url: `data:image/png;base64,${"A".repeat(20_000)}` },
         ],
         author: null,
         categories: null,
@@ -433,7 +435,10 @@ describe.each(repositories)("official acquisition bindings (%s)", (_name, create
       title: "Paper <one>",
     })
     expect(two).toMatchObject({
-      enclosure: { length: "12", type: "audio/mpeg", url: "https://example.com/a.mp3" },
+      enclosure: [
+        { length: "12", type: "audio/mpeg", url: "https://example.com/a.mp3" },
+        { type: "text/html", url: "https://example.com/player" },
+      ],
       guid: { "#text": "two", isPermaLink: "false" },
     })
     expect(two).not.toHaveProperty("link")
