@@ -1,7 +1,8 @@
 import { timingSafeEqual } from "node:crypto"
 
+import type { OfficialAcquisitionBinding } from "@follow/feed-source-contracts"
 import { parseRssHubSource } from "@follow/feed-source-contracts"
-import type { FastifyReply } from "fastify"
+import type { FastifyReply, FastifyRequest } from "fastify"
 import Fastify from "fastify"
 import { z } from "zod"
 
@@ -13,7 +14,11 @@ import type { OfficialTransport } from "./folo-official-client"
 import { fetchTransport, FoloOfficialClient, proxyTransport } from "./folo-official-client"
 import { MemorySupplierRepository } from "./memory-repository"
 import { registerOfficialAccountRoutes } from "./official-account-routes"
-import { OfficialAccountService, reencryptOfficialAccountToken } from "./official-account-service"
+import {
+  OfficialAccountError,
+  OfficialAccountService,
+  reencryptOfficialAccountToken,
+} from "./official-account-service"
 import { registerOfficialBindingRoutes } from "./official-binding-routes"
 import { OfficialBindingService } from "./official-binding-service"
 import { PageChangeError, PageChangeService, startPageChangeScheduler } from "./page-change-service"
@@ -604,10 +609,128 @@ export const buildFeedSupplier = async ({
     },
   )
 
+  /** Read path for official bindings: cached and rate limited separately from self-hosted RSSHub. */
+  const serveOfficialFeed = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    binding: OfficialAcquisitionBinding,
+  ) => {
+    if (!officialBindings || !officialConfig) throw new Error("Official acquisition is disabled")
+    const cacheKey = `official:${binding.sourceURL}`
+    const upstreamDiagnostic = `${officialConfig.apiURL}/entries?feedId=${encodeURIComponent(binding.externalFeedId ?? "")}`
+    const send = (document: { body: string; etag: string }, cacheStatus: "HIT" | "MISS") => {
+      reply
+        .header("x-folo-cache", cacheStatus)
+        .header("x-folo-acquisition-provider", "folo_official")
+        .header("x-folo-upstream-url", upstreamDiagnostic)
+        .header("content-type", "application/rss+xml; charset=utf-8")
+        .header("etag", document.etag)
+      if (request.headers["if-none-match"] === document.etag) return reply.status(304).send()
+      return reply.status(200).send(document.body)
+    }
+    try {
+      const cached = await scalingOperation(() => responseCache.getResponse(cacheKey))
+      if (cached?.etag) {
+        scalingTelemetry.recordCacheHit()
+        return send({ body: cached.body, etag: cached.etag }, "HIT")
+      }
+      scalingTelemetry.recordCacheMiss()
+      const { coalesced, value: document } = await requestCoalescer.run(cacheKey, async () => {
+        const rateLimit = await scalingOperation(() =>
+          responseCache.consumeRateLimit(
+            "official",
+            officialConfig.rateLimitMax,
+            officialConfig.rateLimitWindowSeconds,
+          ),
+        )
+        if (!rateLimit.allowed) {
+          scalingTelemetry.recordRateLimit()
+          throw new SourceScalingError(
+            "source_rate_limited",
+            "Official API request limit exceeded",
+            429,
+            rateLimit.retryAfterSeconds,
+          )
+        }
+        const lease = await scalingOperation(() =>
+          responseCache.acquireLease(
+            "official",
+            officialConfig.concurrency,
+            officialConfig.fetchTimeoutMs + 1_000,
+          ),
+        )
+        if (!lease) {
+          scalingTelemetry.recordConcurrencyRejection()
+          throw new SourceScalingError(
+            "source_route_busy",
+            "Official API concurrency limit exceeded",
+            503,
+            1,
+          )
+        }
+        const endRequest = scalingTelemetry.beginRequest()
+        try {
+          return await officialBindings.readFeed(binding, officialConfig.entryLimit)
+        } finally {
+          endRequest()
+          await scalingOperation(() => responseCache.releaseLease("official", lease))
+        }
+      })
+      if (coalesced) {
+        scalingTelemetry.recordCoalescedRequest()
+        reply.header("x-folo-coalesced", "true")
+      }
+      await scalingOperation(() =>
+        responseCache.setResponse(
+          cacheKey,
+          {
+            body: document.body,
+            contentType: "application/rss+xml; charset=utf-8",
+            etag: document.etag,
+            lastModified: null,
+            upstreamURL: upstreamDiagnostic,
+          },
+          officialConfig.cacheTTLSeconds,
+        ),
+      )
+      return send(document, "MISS")
+    } catch (error) {
+      if (error instanceof SourceScalingError) {
+        if (error.retryAfterSeconds) reply.header("retry-after", error.retryAfterSeconds)
+        return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+      }
+      if (error instanceof OfficialAccountError) {
+        // The core sees a clear code and backs off; a rejected session needs the owner.
+        const status =
+          error.code === "official_rate_limited"
+            ? 429
+            : error.code === "official_account_not_linked" || error.code === "official_auth_invalid"
+              ? 503
+              : 502
+        const code =
+          error.code === "official_account_not_linked" ? "official_auth_invalid" : error.code
+        return reply.status(status).send({ code, message: error.message })
+      }
+      throw error
+    }
+  }
+
   server.get("/v1/feeds/rsshub", async (request, reply) => {
     const query = request.query as Record<string, unknown>
     if (typeof query.url !== "string") {
       return reply.status(400).send({ code: "invalid_source", message: "url is required" })
+    }
+
+    // Sources bound to the official account are served from it (ADR-0034); nothing else changes.
+    if (officialBindings && officialConfig) {
+      let logicalURL: string | null = null
+      try {
+        logicalURL = parseRssHubSource(query.url).logicalURL
+      } catch {
+        // Invalid addresses are reported by the regular path below.
+      }
+      const binding = logicalURL ? await officialBindings.activeBindingFor(logicalURL) : null
+      if (binding) return serveOfficialFeed(request, reply, binding)
     }
 
     let sourceRequest: ReturnType<typeof upstreamURL>

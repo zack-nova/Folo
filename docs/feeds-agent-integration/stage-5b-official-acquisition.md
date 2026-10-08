@@ -1,6 +1,6 @@
 # 阶段 5B：官方托管获取（第一刀）
 
-- 状态：5B.0 探查完成；5B.1–5B.3 已实现（5B.3 只含接管，见“实现说明”）；5B.4 起尚未开始
+- 状态：5B.0 探查完成；5B.1–5B.4 已实现（5B.3 只含接管）；5B.5 可见性部分完成，5B.6 灰度进行中
 - 决策：[ADR-0034](./adr/0034-acquire-selected-sources-through-the-official-folo-account.md)（`proposed`）
 - 已核对的官方 SDK 版本：`@follow-app/client-sdk` `0.3.96`
 
@@ -180,6 +180,18 @@
   `Retry-After`；其余 → 502 `official_unavailable`。每次结果更新绑定的成功时间或失败计数。
 - 测试：用 5B.0 的样本驱动的渲染快照；304；缓存命中不调用官方；`auth_invalid` 后不再发出请求；
   核心侧 `FeedSupplierFetcher` 加 `parseFeed` 对渲染结果的端到端单测。
+
+实现说明（5B.4，与上文的差异）：
+
+- 没有新建文件 `folo-official-feed.ts` 之外的读取服务：`GET /v1/feeds/rsshub` 先查有效绑定，有则由
+  `OfficialBindingService.readFeed` 经官方 `POST /entries`（`withContent: true`，`FOLO_OFFICIAL_ENTRY_LIMIT` 条）
+  取回并渲染为 RSS 2.0；`guid` 用官方记录的源 GUID。
+- 缓存键为 `official:<逻辑地址>`，与自建路径分开；请求合并复用现有协调器；限流与并发用 `official` 策略键和
+  5B.1 的独立配置；`ETag` 为渲染结果摘要，`If-None-Match` 命中返回 304。
+- 响应头 `x-folo-acquisition-provider: folo_official`、`x-folo-upstream-url` 为官方接口地址（不含凭据）。
+- 错误：官方拒绝会话 → 账号 `auth_invalid`，503 `official_auth_invalid`，之后不再请求官方；限流 → 429 并透传
+  `Retry-After`；其余 → 502 `official_unavailable`。每次读取在绑定上记录成功时间或连续失败次数。
+- 绑定非 `active`（`pending` / `failed`）时不走官方，也不回退自建；核心按原有退避处理。
 
 ### 5B.5 可见性与运维
 
