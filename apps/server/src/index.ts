@@ -37,6 +37,7 @@ const feedFetcher = feedSupplierFetcher
   ? new RoutingFeedFetcher(standardFeedFetcher, feedSupplierFetcher)
   : standardFeedFetcher
 const server = await buildServer({
+  aiCodexConfig: config.aiCodexConfig,
   aiEncryptionSecret: config.aiEncryptionSecret,
   aiProviderConfig: config.aiProviderConfig,
   apiRateLimitMax: config.apiRateLimitMax,

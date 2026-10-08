@@ -144,7 +144,7 @@ export interface ProcessingServiceOptions {
   onError?: (error: unknown) => void
   onCleanup?: (report: MaintenanceCleanupReport) => void
   pollIntervalMs?: number
-  resolveProvider: (userId: string) => Promise<AIProvider>
+  resolveProvider: (userId: string, job: ProcessingJobRecord) => Promise<AIProvider>
   retryBaseDelayMs?: number
 }
 
@@ -308,7 +308,7 @@ export class ProcessingService {
         this.options.dataStore.getEntry(job.userId, job.entryId),
         this.options.dataStore.getProcessingProfileSnapshot(job.userId, job.profileSnapshotId),
         this.options.dataStore.getProcessingTaxonomySnapshot(job.userId, job.taxonomySnapshotId),
-        this.options.resolveProvider(job.userId),
+        this.options.resolveProvider(job.userId, job),
       ])
       if (!entry) throw new ProcessingError("entry_not_found", "Entry not found")
       // The owner's subscription supplies the category and title they gave this source.

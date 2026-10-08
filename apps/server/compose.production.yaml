@@ -13,6 +13,9 @@ services:
       HOST: 0.0.0.0
       NODE_ENV: production
       UPLOADS_DIRECTORY: /data/uploads
+      # Codex CLI provider; set AI_CODEX_COMMAND=/usr/local/bin/codex in the env file to enable.
+      AI_CODEX_HOME: /data/codex
+      AI_CODEX_WORKDIR: /tmp/codex-work
     init: true
     healthcheck:
       test:
@@ -40,6 +43,8 @@ services:
       - /tmp:rw,noexec,nosuid,size=64m
     volumes:
       - folo-uploads:/data/uploads
+      # Codex login (auth.json) and CLI state; copy the owner's auth.json here to enable Codex.
+      - folo-codex:/data/codex
     logging:
       driver: json-file
       options:
@@ -78,5 +83,6 @@ networks:
   core:
 
 volumes:
+  folo-codex:
   folo-postgres:
   folo-uploads:

@@ -125,6 +125,24 @@ export const AutonomousAISettings = () => {
               {t("autonomous.provider.description")}
             </p>
           </div>
+          {configuration.data?.provider.codex && (
+            <p
+              className="rounded-lg bg-fill-quinary px-3 py-2 text-xs text-text-secondary"
+              data-testid="autonomous-ai-codex"
+            >
+              {configuration.data.provider.codex.scope === "all"
+                ? t("autonomous.provider.codex_all", {
+                    limit: configuration.data.provider.codex.daily_limit,
+                    model: configuration.data.provider.codex.model ?? "codex",
+                    used: configuration.data.provider.codex.used_today,
+                  })
+                : t("autonomous.provider.codex_manual", {
+                    limit: configuration.data.provider.codex.daily_limit,
+                    model: configuration.data.provider.codex.model ?? "codex",
+                    used: configuration.data.provider.codex.used_today,
+                  })}
+            </p>
+          )}
           {configuration.data?.provider.configured && (
             <span className="shrink-0 rounded-full bg-green/10 px-2 py-1 text-xs font-medium text-green">
               {configuration.data.provider.key_source === "stored"

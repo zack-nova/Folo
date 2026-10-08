@@ -73,6 +73,7 @@ describe("self-hosted AI provider configuration", () => {
       payload: {
         api_key: "sk-self-hosted-secret-value",
         base_url: "https://ai.example.com/v1/",
+        codex: null,
         model: "reader-model",
       },
     })
@@ -81,6 +82,7 @@ describe("self-hosted AI provider configuration", () => {
       code: 0,
       data: {
         base_url: "https://ai.example.com/v1",
+        codex: null,
         configured: true,
         key_hint: "…alue",
         key_source: "stored",
@@ -144,6 +146,7 @@ describe("self-hosted AI provider configuration", () => {
       code: 0,
       data: {
         base_url: "https://environment-ai.example.com/v1",
+        codex: null,
         configured: true,
         key_hint: null,
         key_source: "environment",

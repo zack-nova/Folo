@@ -67,6 +67,14 @@ const trustedProxies = z
 const serverEnvironment = z
   .object({
     AI_API_KEY: z.string().min(1).optional(),
+    // Owner's Codex CLI as a low-volume provider; the command path enables it.
+    AI_CODEX_COMMAND: z.string().min(1).optional(),
+    AI_CODEX_DAILY_LIMIT: integer(200, 1).pipe(z.number().max(10_000)),
+    AI_CODEX_HOME: z.string().min(1).default("/data/codex"),
+    AI_CODEX_MODEL: z.string().min(1).optional(),
+    AI_CODEX_SCOPE: z.enum(["all", "manual"]).default("manual"),
+    AI_CODEX_TIMEOUT_MS: integer(180_000, 10_000).pipe(z.number().max(900_000)),
+    AI_CODEX_WORKDIR: z.string().min(1).default("/tmp/codex-work"),
     AI_ENCRYPTION_SECRET: z.string().min(32).optional(),
     AI_PROVIDER_BASE_URL: z.url().default("https://api.openai.com/v1"),
     AI_PROVIDER_MODEL: z.string().min(1).default("gpt-4o-mini"),
@@ -256,6 +264,17 @@ const serverEnvironment = z
 export const loadServerConfig = (environment: NodeJS.ProcessEnv) => {
   const parsed = serverEnvironment.parse(environment)
   return {
+    aiCodexConfig: parsed.AI_CODEX_COMMAND
+      ? {
+          codexHome: parsed.AI_CODEX_HOME,
+          command: parsed.AI_CODEX_COMMAND,
+          dailyLimit: parsed.AI_CODEX_DAILY_LIMIT,
+          model: parsed.AI_CODEX_MODEL ?? null,
+          scope: parsed.AI_CODEX_SCOPE,
+          timeoutMs: parsed.AI_CODEX_TIMEOUT_MS,
+          workDirectory: parsed.AI_CODEX_WORKDIR,
+        }
+      : undefined,
     aiEncryptionSecret: parsed.AI_ENCRYPTION_SECRET ?? parsed.BETTER_AUTH_SECRET,
     aiProviderConfig: parsed.AI_API_KEY
       ? {
