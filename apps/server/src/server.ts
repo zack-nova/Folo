@@ -70,6 +70,7 @@ export interface BuildServerOptions {
     command: string
     dailyLimit: number
     model: string | null
+    reasoningEffort: string | null
     scope: CodexScope
     timeoutMs: number
     workDirectory: string
