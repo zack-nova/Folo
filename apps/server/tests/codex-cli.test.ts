@@ -28,6 +28,7 @@ describe("CodexCliProvider", () => {
       codexHome: join(directory, "home"),
       command: fakeCodex,
       model: "gpt-5-codex",
+      reasoningEffort: "low",
       timeoutMs,
       workDirectory: join(directory, "work"),
     })
@@ -51,6 +52,8 @@ describe("CodexCliProvider", () => {
         "read-only",
         "--model",
         "gpt-5-codex",
+        "--config",
+        'model_reasoning_effort="low"',
         "-",
       ]),
     )
