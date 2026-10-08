@@ -173,6 +173,8 @@ export const buildFeedSupplier = async ({
   const officialClient = officialConfig
     ? new FoloOfficialClient({
         apiURL: officialConfig.apiURL,
+        // A page of entries with bodies can exceed 10 MB (Nature's feed does).
+        maxBytes: 32 * 1024 * 1024,
         timeoutMs: officialConfig.fetchTimeoutMs,
         transport:
           providedOfficialTransport ??

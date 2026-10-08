@@ -14,24 +14,24 @@ const officialEntrySchema = z.object({
           .object({
             mime_type: z.string().max(256).optional(),
             size_in_bytes: z.number().int().nonnegative().optional(),
-            url: z.string().max(4_096),
+            url: z.string().max(8_192),
           })
           .passthrough(),
       )
       .nullable()
       .optional(),
-    author: z.string().max(1_024).nullable().optional(),
-    categories: z.array(z.string().max(256)).nullable().optional(),
+    author: z.string().max(16_384).nullable().optional(),
+    categories: z.array(z.string().max(1_024)).nullable().optional(),
     content: z.string().nullable().optional(),
     description: z.string().nullable().optional(),
-    guid: z.string().min(1).max(4_096),
+    guid: z.string().min(1).max(8_192),
     id: z.string().min(1).max(64),
     media: z
       .array(
         z
           .object({
-            type: z.enum(["photo", "video"]).optional(),
-            url: z.string().max(4_096),
+            type: z.string().max(64).optional(),
+            url: z.string().max(8_192),
           })
           .passthrough(),
       )
@@ -39,7 +39,7 @@ const officialEntrySchema = z.object({
       .optional(),
     publishedAt: z.string().max(64),
     title: z.string().nullable().optional(),
-    url: z.string().max(4_096).nullable().optional(),
+    url: z.string().max(8_192).nullable().optional(),
   }),
   feeds: z
     .object({
