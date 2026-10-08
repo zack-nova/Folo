@@ -43,7 +43,7 @@ const fakeOfficialAPI = () => {
     entries: [
       {
         attachments: null,
-        author: "Anthropic",
+        author: `Anthropic ${"and colleagues ".repeat(120)}`,
         categories: ["research"],
         content: "<p>Full <b>body</b> & more</p>",
         description: "Summary one",
@@ -57,6 +57,8 @@ const fakeOfficialAPI = () => {
       {
         attachments: [
           { mime_type: "audio/mpeg", size_in_bytes: 12, url: "https://example.com/a.mp3" },
+          // Bilibili players come as text/html attachments with a duration.
+          { duration_in_seconds: 6748, mime_type: "text/html", url: "https://example.com/player" },
         ],
         author: null,
         categories: null,
@@ -64,7 +66,7 @@ const fakeOfficialAPI = () => {
         description: null,
         guid: "two",
         id: "9002",
-        media: null,
+        media: [{ height: 566, type: "image", url: "https://example.com/cover.jpg", width: 1007 }],
         publishedAt: "2026-10-06T10:00:00.000Z",
         title: null,
         url: null,
@@ -424,7 +426,7 @@ describe.each(repositories)("official acquisition bindings (%s)", (_name, create
     expect(one).toMatchObject({
       category: "research",
       "content:encoded": "<p>Full <b>body</b> & more</p>",
-      "dc:creator": "Anthropic",
+      "dc:creator": expect.stringMatching(/^Anthropic and colleagues/),
       description: "Summary one",
       guid: { "#text": "https://www.anthropic.com/research/one", isPermaLink: "false" },
       link: "https://www.anthropic.com/research/one",
