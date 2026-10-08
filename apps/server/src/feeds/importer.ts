@@ -139,6 +139,8 @@ export class FeedImporter {
 
   async refresh(feed: FeedRecord, options: { now?: Date } = {}) {
     const startedAt = options.now ?? new Date()
+    // Timestamps follow the scheduler's clock; the duration is measured on the real one.
+    const clockStart = Date.now()
     try {
       const fetched = await this.feedFetcher.fetch(feed.url, {
         etag: feed.etag,
@@ -146,7 +148,7 @@ export class FeedImporter {
       })
       const finishedAt = options.now ?? new Date()
       const attemptBase = {
-        durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
+        durationMs: Math.max(0, Date.now() - clockStart),
         errorCode: null,
         errorSummary: null,
         feedId: feed.id,
@@ -210,7 +212,7 @@ export class FeedImporter {
         },
         [],
         {
-          durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
+          durationMs: Math.max(0, Date.now() - clockStart),
           entryCount: null,
           errorCode: failure.code,
           errorSummary: failure.summary,
