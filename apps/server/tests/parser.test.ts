@@ -70,3 +70,18 @@ describe("Atom content types", () => {
     ])
   })
 })
+
+describe("duplicate items", () => {
+  it("keeps the first of two items with the same guid", () => {
+    const { entries } = parseFeed(
+      `<rss version="2.0"><channel><title>Dup</title>
+        <item><guid>https://example.com/a</guid><title>First copy</title></item>
+        <item><guid>https://example.com/b</guid><title>Other</title></item>
+        <item><guid>https://example.com/a</guid><title>Second copy</title></item>
+      </channel></rss>`,
+      "https://example.com/feed",
+    )
+    expect(entries.map((entry) => entry.title)).toEqual(["First copy", "Other"])
+    expect(new Set(entries.map((entry) => entry.id)).size).toBe(2)
+  })
+})

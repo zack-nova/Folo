@@ -256,5 +256,15 @@ export const parseFeed = (
     atomFeed(root, sourceURL, identityURL, fetchedAt)
 
   if (!parsed) throw new Error("The response is not a supported RSS or Atom document")
-  return parsed
+  return { ...parsed, entries: dedupeEntries(parsed.entries) }
+}
+
+/**
+ * Some feeds repeat an item (the OpenAI news feed lists one article twice). The entries table
+ * upserts by id, and PostgreSQL rejects a statement that touches the same row twice, so the
+ * first occurrence wins before anything is written.
+ */
+const dedupeEntries = (entries: EntryRecord[]): EntryRecord[] => {
+  const seen = new Set<string>()
+  return entries.filter((entry) => !seen.has(entry.id) && seen.add(entry.id))
 }
