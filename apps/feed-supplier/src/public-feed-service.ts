@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import type {
   CredentialUsageReport,
   IssuedPublicFeedLink,
+  OfficialAcquisitionBinding,
   PublicFeedGrant,
   PublicFeedLink,
   SourceCredentialDependency,
@@ -100,6 +101,10 @@ export class PublicFeedService {
     private readonly baseURL: string,
     private readonly validateSource: PublicFeedSourceValidator,
     private readonly resolveDependency: CredentialDependencyResolver,
+    /** Live official bindings (ADR-0034); absent when official acquisition is off */
+    private readonly listOfficialBindings: () => Promise<
+      OfficialAcquisitionBinding[]
+    > = async () => [],
   ) {}
 
   async createGrant(name: string, actor: string): Promise<PublicFeedGrant> {
@@ -309,7 +314,15 @@ export class PublicFeedService {
         )
       }),
     )
-    return { links: links.flat() }
+    const officialBindings = grantId === undefined ? await this.listOfficialBindings() : []
+    return {
+      links: links.flat(),
+      officialBindings: officialBindings.map((binding) => ({
+        bindingId: binding.id,
+        sourceURL: binding.sourceURL,
+        status: binding.status,
+      })),
+    }
   }
 
   /** The active link a token opens, or null for any token that must not be served. */

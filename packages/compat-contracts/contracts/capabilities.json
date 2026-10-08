@@ -517,6 +517,16 @@
       ]
     },
     {
+      "id": "sources.folo_official_acquisition",
+      "title": "Selected sources fetched through the owner's official Folo account",
+      "targetStage": 5,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
       "id": "rsshub.hosted",
       "title": "Hosted RSSHub discovery and routes",
       "targetStage": 5,

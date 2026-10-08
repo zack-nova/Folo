@@ -286,12 +286,38 @@ const SourceProviders = ({ providers }: { providers: OperationsStatus["source_pr
             {provider.message ?? t(`operations.sources.${provider.id}.${provider.status}`)}
           </p>
           {(provider.activeRequestCount !== undefined ||
+            provider.officialAccountStatus !== undefined ||
             provider.cacheStatus !== undefined ||
             provider.catalogRouteCount !== undefined ||
             provider.managedRouteCount !== undefined ||
             provider.enabledSourceCount !== undefined ||
             provider.persistenceStatus !== undefined) && (
             <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-fill-secondary pt-3 text-xs text-text-secondary">
+              {provider.officialAccountStatus && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.official_account")}</dt>
+                  <dd
+                    className={cn(
+                      provider.officialAccountStatus === "auth_invalid" && "text-red",
+                      provider.officialAccountStatus === "active" && "text-green",
+                    )}
+                  >
+                    {t(`operations.sources.account_status.${provider.officialAccountStatus}`)}
+                  </dd>
+                </div>
+              )}
+              {provider.activeBindingCount !== undefined && (
+                <div className="flex gap-1.5">
+                  <dt>{t("operations.sources.active_bindings")}</dt>
+                  <dd className="font-mono tabular-nums">{provider.activeBindingCount}</dd>
+                </div>
+              )}
+              {provider.failedBindingCount !== undefined && provider.failedBindingCount > 0 && (
+                <div className="flex gap-1.5 text-red">
+                  <dt>{t("operations.sources.failed_bindings")}</dt>
+                  <dd className="font-mono tabular-nums">{provider.failedBindingCount}</dd>
+                </div>
+              )}
               {provider.managedRouteCount !== undefined && (
                 <div className="flex gap-1.5">
                   <dt>{t("operations.sources.managed_routes")}</dt>
@@ -515,6 +541,36 @@ export const SettingOperations = () => {
           </span>
         </div>
       </section>
+
+      {status.alerts.length > 0 && (
+        <section aria-labelledby="operations-alerts-title" className="space-y-3">
+          <SectionHeading
+            title={t("operations.alerts.title")}
+            description={t("operations.alerts.description")}
+          />
+          <ul className="space-y-2" data-testid="operations-alerts">
+            {status.alerts.map((alert) => (
+              <li
+                key={`${alert.code}:${alert.provider ?? ""}`}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl border p-3 text-sm",
+                  alert.severity === "critical"
+                    ? "border-red/40 bg-red/10 text-red"
+                    : "border-orange/40 bg-orange/10 text-orange",
+                )}
+              >
+                <i className="i-mgc-warning-cute-re size-4 shrink-0" aria-hidden />
+                <span>
+                  {t(`operations.alerts.${alert.code}`, {
+                    count: alert.count,
+                    provider: alert.provider ? t(`operations.sources.${alert.provider}.title`) : "",
+                  })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section aria-labelledby="operations-sources-title" className="space-y-3">
         <SectionHeading

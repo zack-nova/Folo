@@ -374,6 +374,23 @@ describe.each(repositories)("official acquisition bindings (%s)", (_name, create
     await server.close()
   })
 
+  it("lists bound sources in the credential usage overview", async () => {
+    const { server } = await start()
+    const binding = (await bind(server, "rsshub://anthropic/research")).json<{
+      binding: OfficialAcquisitionBinding
+    }>().binding
+    const usage = await server.inject({
+      headers: admin,
+      method: "GET",
+      url: "/v1/admin/credential-usage",
+    })
+    expect(usage.statusCode).toBe(200)
+    expect(usage.json<{ officialBindings: unknown[] }>().officialBindings).toEqual([
+      { bindingId: binding.id, sourceURL: "rsshub://anthropic/research", status: "active" },
+    ])
+    await server.close()
+  })
+
   it("unbinds without touching the official account and allows binding again", async () => {
     const { official, server } = await start()
     const binding = (await bind(server, "rsshub://anthropic/research")).json<{

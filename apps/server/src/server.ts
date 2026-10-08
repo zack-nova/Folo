@@ -9,6 +9,7 @@ import { createCapabilityNotImplementedContract } from "@follow/compat-contracts
 import capabilityManifest from "@follow/compat-contracts/capabilities" with { type: "json" }
 import type { AutonomousSourceProviderHealth } from "@follow/feed-source-contracts"
 import {
+  FOLO_OFFICIAL_ACQUISITION_CAPABILITY,
   PAGE_CHANGE_CAPABILITY,
   RSSHUB_SELF_HOSTED_CAPABILITY,
   SOURCE_ROUTE_CATALOG_CAPABILITY,
@@ -873,6 +874,7 @@ export const buildServer = async ({
     const pageChangeProvider = sourceProviders.find((provider) => provider.id === "page_change")
     const rssHubProvider = sourceProviders.find((provider) => provider.id === "rsshub")
     const webListProvider = sourceProviders.find((provider) => provider.id === "web_list")
+    const officialProvider = sourceProviders.find((provider) => provider.id === "folo_official")
     const tokenUsage = processingService.tokenUsage()
     const lines = [
       "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
@@ -900,6 +902,17 @@ export const buildServer = async ({
         (provider) =>
           `folo_source_provider_ready{provider="${provider.id}"} ${provider.status === "ready" ? 1 : 0}`,
       ),
+      ...(officialProvider
+        ? [
+            "# HELP folo_official_account_active Whether the linked official Folo account is accepted (0 when unlinked or rejected).",
+            "# TYPE folo_official_account_active gauge",
+            `folo_official_account_active ${officialProvider.officialAccountStatus === "active" ? 1 : 0}`,
+            "# HELP folo_official_bindings Sources bound to the official Folo account by binding status.",
+            "# TYPE folo_official_bindings gauge",
+            `folo_official_bindings{status="active"} ${officialProvider.activeBindingCount ?? 0}`,
+            `folo_official_bindings{status="failed"} ${officialProvider.failedBindingCount ?? 0}`,
+          ]
+        : []),
       "# HELP folo_source_cache_ready Whether the distributed source response cache is ready.",
       "# TYPE folo_source_cache_ready gauge",
       `folo_source_cache_ready ${rssHubProvider?.cacheStatus === "ready" ? 1 : 0}`,
@@ -1030,6 +1043,12 @@ export const buildServer = async ({
       feedFetcher?.supports?.("weblist://8bd44f7a-84d2-4b0c-b052-3cdacbfc3919") === true
     const sourceCatalogEnabled = sourceCatalogClient !== undefined
     const webListManagementEnabled = webListManagementClient !== undefined && webListSourcesEnabled
+    // Official acquisition exists only while the supplier reports a linked, accepted account.
+    const officialAcquisitionEnabled =
+      rssHubSourcesEnabled &&
+      (await sourceProviderStatuses()).some(
+        (provider) => provider.id === "folo_official" && provider.status === "ready",
+      )
     const autonomousSourcesEnabled =
       rssHubSourcesEnabled ||
       pageChangeSourcesEnabled ||
@@ -1044,6 +1063,8 @@ export const buildServer = async ({
             (capability.id === PAGE_CHANGE_CAPABILITY && pageChangeSourcesEnabled) ||
             (capability.id === WEB_LIST_CAPABILITY && webListSourcesEnabled) ||
             (capability.id === WEB_LIST_MANAGEMENT_CAPABILITY && webListManagementEnabled) ||
+            (capability.id === FOLO_OFFICIAL_ACQUISITION_CAPABILITY &&
+              officialAcquisitionEnabled) ||
             (capability.id === SOURCE_ROUTE_CATALOG_CAPABILITY && sourceCatalogEnabled)),
       )
       .map((capability) => ({ id: capability.id, provider: "local" as const }))
@@ -1279,10 +1300,34 @@ export const buildServer = async ({
           ]
         : []),
       ...sourceProviders
-        .filter((provider) => provider.status === "unavailable")
+        // An unlinked official account is a choice, not a failure.
+        .filter(
+          (provider) =>
+            provider.status === "unavailable" &&
+            !(provider.id === "folo_official" && provider.officialAccountStatus !== "auth_invalid"),
+        )
+        .map((provider) =>
+          provider.id === "folo_official"
+            ? {
+                code: "official_account_auth_invalid" as const,
+                count: 1,
+                provider: provider.id,
+                severity: "critical" as const,
+              }
+            : {
+                code: "source_provider_unavailable" as const,
+                count: 1,
+                provider: provider.id,
+                severity: "warning" as const,
+              },
+        ),
+      ...sourceProviders
+        .filter(
+          (provider) => provider.id === "folo_official" && (provider.failedBindingCount ?? 0) > 0,
+        )
         .map((provider) => ({
-          code: "source_provider_unavailable" as const,
-          count: 1,
+          code: "official_bindings_failed" as const,
+          count: provider.failedBindingCount ?? 0,
           provider: provider.id,
           severity: "warning" as const,
         })),

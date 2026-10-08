@@ -231,12 +231,25 @@ describe("stage four operations", () => {
             message: null,
             status: "ready" as const,
           },
+          {
+            activeBindingCount: 5,
+            configured: true,
+            failedBindingCount: 2,
+            id: "folo_official" as const,
+            message: "The official session was rejected; link the account again",
+            officialAccountStatus: "auth_invalid" as const,
+            status: "unavailable" as const,
+          },
         ],
       },
     })
     closeServer = () => server.close()
 
     const metrics = await server.inject({ method: "GET", url: "/metrics" })
+    expect(metrics.body).toContain("folo_official_account_active 0")
+    expect(metrics.body).toContain('folo_official_bindings{status="active"} 5')
+    expect(metrics.body).toContain('folo_official_bindings{status="failed"} 2')
+    expect(metrics.body).toContain('folo_source_provider_ready{provider="folo_official"} 0')
 
     expect(metrics.statusCode).toBe(200)
     expect(metrics.body).toContain("folo_source_cache_ready 1")
