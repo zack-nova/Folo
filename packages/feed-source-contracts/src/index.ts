@@ -535,9 +535,20 @@ export interface PublicFeedCredentialUsage {
   dependency: SourceCredentialDependency
 }
 
-/** Every active public link with its credential dependency, for the owner's overview. */
+/** A source read through the owner's official Folo account, listed with credential usage. */
+export interface OfficialBindingCredentialUsage {
+  bindingId: string
+  sourceURL: string
+  status: OfficialBindingStatus
+}
+
+/**
+ * Every active public link with its credential dependency, plus the sources that depend on the
+ * official account (ADR-0034), for the owner's overview.
+ */
 export interface CredentialUsageReport {
   links: PublicFeedCredentialUsage[]
+  officialBindings: OfficialBindingCredentialUsage[]
 }
 
 /** `auth_invalid` once the official API rejected the session; the owner must link again. */

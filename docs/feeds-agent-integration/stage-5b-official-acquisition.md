@@ -1,6 +1,6 @@
 # 阶段 5B：官方托管获取（第一刀）
 
-- 状态：5B.0 探查完成；5B.1–5B.4 已实现（5B.3 只含接管）；5B.5 可见性部分完成，5B.6 灰度进行中
+- 状态：5B.0 探查完成；5B.1–5B.5 已实现（5B.3 只含接管）；5B.6 灰度自 2026-10-08 起
 - 决策：[ADR-0034](./adr/0034-acquire-selected-sources-through-the-official-folo-account.md)（`proposed`）
 - 已核对的官方 SDK 版本：`@follow-app/client-sdk` `0.3.96`
 
@@ -202,6 +202,17 @@
 - 文档：`apps/feed-supplier/README.md` 的操作说明；本文件补“验收结果”；`README.md` 索引。
 - 测试：核心能力门控单测；运维页有与无该 provider 两种状态；`packages/compat-contracts` 契约检查不新增
   官方 SDK 调用。
+
+实现说明（5B.5）：
+
+- 核心在供给端报告 `folo_official` 为 `ready`（账号 `active`）时宣告 `sources.folo_official_acquisition`；账号
+  未关联或被拒时该能力进入 `unavailable`。能力清单的 provider 列表为此在能力发现时查询一次供给端。
+- `/metrics` 增加 `folo_official_account_active`、`folo_official_bindings{status="active|failed"}`。
+- 运维状态告警：账号被拒 → `official_account_auth_invalid`（`critical`）；有失败绑定 →
+  `official_bindings_failed`（`warning`，count 为数量）。未关联账号不告警。桌面端运维页新增“需要处理”列表
+  显示全部告警（此前告警只在接口里），provider 卡片显示官方账号状态和绑定计数。
+- 供给端 `GET /v1/admin/credential-usage` 增加 `officialBindings`：经官方账号读取的来源及绑定状态。
+- 获取诊断无需改动：绑定来源的上游地址已是官方接口地址。
 
 ### 5B.6 真实来源灰度
 

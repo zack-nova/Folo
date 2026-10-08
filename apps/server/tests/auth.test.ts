@@ -186,6 +186,51 @@ describe("capability discovery", () => {
       provider: "local",
     })
     expect(data.unavailable).toContain("rsshub.hosted")
+    expect(data.unavailable).toContain("sources.folo_official_acquisition")
+    await server.close()
+  })
+
+  it("advertises official acquisition only while the supplier reports an accepted account", async () => {
+    const auth = createAuth({
+      baseURL: "http://localhost:3000",
+      database: memoryAdapter({ account: [], session: [], user: [], verification: [] }),
+      secret: "stage-five-test-secret-that-is-at-least-32-characters",
+      trustedOrigins: ["http://localhost:2233"],
+    })
+    let accountStatus: "active" | "auth_invalid" = "active"
+    const server = await buildServer({
+      auth,
+      clientOrigins: ["http://localhost:2233"],
+      feedFetcher: {
+        fetch: async () => {
+          throw new Error("Not used by capability discovery")
+        },
+        getProviderStatuses: async () => [
+          { configured: true, id: "rsshub", message: null, status: "ready" },
+          {
+            activeBindingCount: 7,
+            configured: true,
+            failedBindingCount: 0,
+            id: "folo_official",
+            message: null,
+            officialAccountStatus: accountStatus,
+            status: accountStatus === "active" ? "ready" : "unavailable",
+          },
+        ],
+        supports: (url) => url.startsWith("rsshub://") || url.startsWith("https://"),
+      },
+    })
+    const capabilities = async () =>
+      (await server.inject({ method: "GET", url: "/api/extensions/capabilities" })).json().data as {
+        capabilities: Array<{ id: string }>
+        unavailable: string[]
+      }
+
+    expect((await capabilities()).capabilities.map((capability) => capability.id)).toContain(
+      "sources.folo_official_acquisition",
+    )
+    accountStatus = "auth_invalid"
+    expect((await capabilities()).unavailable).toContain("sources.folo_official_acquisition")
     await server.close()
   })
 })

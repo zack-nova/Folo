@@ -249,7 +249,10 @@ pnpm --filter @follow/feed-supplier sources:official bindings
 pnpm --filter @follow/feed-supplier sources:official unbind <binding-id>
 ```
 
-已绑定的来源不能再签发公开链接，有公开链接的来源也不能绑定。绑定后的读取路径（经官方取回条目）由 5B.4 提供。
+已绑定的来源不能再签发公开链接，有公开链接的来源也不能绑定。核心读取绑定地址时，供给端经官方取回最新
+`FOLO_OFFICIAL_ENTRY_LIMIT` 条并渲染为 RSS（响应头 `x-folo-acquisition-provider: folo_official`），缓存
+`FOLO_OFFICIAL_CACHE_TTL_SECONDS` 秒，官方请求受 `FOLO_OFFICIAL_RATE_LIMIT_*` 与 `FOLO_OFFICIAL_CONCURRENCY`
+限制。`GET /v1/admin/credential-usage` 的 `officialBindings` 列出这些来源。
 
 `link` 只从标准输入读取令牌。会话约 30 天过期；`verify` 重新校验并刷新套餐和额度，官方拒绝会话时
 账号转为 `auth_invalid`，此后不再发出官方请求，需要重新登录并再次 `link`。`unlink` 解除关联。凭据密钥

@@ -78,6 +78,7 @@ const sourceCatalogTest = sourceCatalogRender
   .strict()
 const sourceProviderHealth = z
   .object({
+    activeBindingCount: z.number().int().min(0).optional(),
     activeRequestCount: z.number().int().min(0).optional(),
     cacheHitCount: z.number().int().min(0).optional(),
     cacheMissCount: z.number().int().min(0).optional(),
@@ -88,6 +89,7 @@ const sourceProviderHealth = z
     concurrencyRejectedRequestCount: z.number().int().min(0).optional(),
     dueSourceCount: z.number().int().min(0).optional(),
     enabledSourceCount: z.number().int().min(0).optional(),
+    failedBindingCount: z.number().int().min(0).optional(),
     id: z.enum(["folo_official", "page_change", "rsshub", "web_list"]),
     lastCycleAt: z.string().max(64).nullable().optional(),
     managedRouteCount: z.number().int().min(0).optional(),
@@ -98,7 +100,9 @@ const sourceProviderHealth = z
     rateLimitedRequestCount: z.number().int().min(0).optional(),
     status: z.enum(["ready", "unavailable"]),
   })
-  .strict()
+  // A newer supplier may report fields this core does not know yet; they are dropped rather
+  // than making every provider unavailable.
+  .strip()
 const sourceProviderList = z.object({ providers: z.array(sourceProviderHealth) }).strict()
 
 const boundedBody = async (response: Response, maximumBytes: number): Promise<string> => {

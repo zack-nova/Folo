@@ -169,7 +169,9 @@ describe("feed supplier fetcher", () => {
             { configured: true, id: "page_change", message: null, status: "ready" },
             { configured: true, id: "web_list", message: null, status: "ready" },
             {
+              activeBindingCount: 7,
               configured: true,
+              failedBindingCount: 1,
               id: "folo_official",
               message: "The official session was rejected; link the account again",
               officialAccountStatus: "auth_invalid",
@@ -190,7 +192,30 @@ describe("feed supplier fetcher", () => {
       { id: "web_list", status: "ready" },
       { id: "folo_official", status: "unavailable" },
     ])
-    expect(statuses[3]).toMatchObject({ officialAccountStatus: "auth_invalid" })
+    expect(statuses[3]).toMatchObject({
+      activeBindingCount: 7,
+      failedBindingCount: 1,
+      officialAccountStatus: "auth_invalid",
+    })
+  })
+
+  it("ignores provider fields a newer supplier adds", async () => {
+    const fetcher = new FeedSupplierFetcher({
+      baseURL: "http://feed-supplier:3001",
+      fetchImplementation: vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          providers: [
+            { configured: true, id: "rsshub", message: null, status: "ready", futureField: 1 },
+            { configured: true, id: "page_change", message: null, status: "ready" },
+            { configured: true, id: "web_list", message: null, status: "ready" },
+          ],
+        }),
+      ),
+      token: "internal-feed-supplier-token-000000000000",
+    })
+    const statuses = await fetcher.getProviderStatuses()
+    expect(statuses.map((status) => status.status)).toEqual(["ready", "ready", "ready"])
+    expect(statuses[0]).not.toHaveProperty("futureField")
   })
 
   it("reports every provider unavailable when the supplier omits web list status", async () => {

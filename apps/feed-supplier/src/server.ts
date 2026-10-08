@@ -954,6 +954,7 @@ export const buildFeedSupplier = async ({
         }
       },
       (sourceURL) => resolveCredentialDependency(sourceURL, repository, catalog),
+      () => officialBindings?.listBindings() ?? Promise.resolve([]),
     )
     registerPublicFeedAdminRoutes(server, publicFeeds)
     registerPublicFeedRoute(server, publicFeeds, async (sourceURL, conditional) => {

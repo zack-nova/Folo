@@ -25,10 +25,15 @@ export type FeedFetchDiagnostic = {
 
 export type OperationsStatus = {
   alerts: Array<{
-    code: "feed_acquisition_degraded" | "processing_jobs_failed" | "source_provider_unavailable"
+    code:
+      | "feed_acquisition_degraded"
+      | "official_account_auth_invalid"
+      | "official_bindings_failed"
+      | "processing_jobs_failed"
+      | "source_provider_unavailable"
     count: number
-    provider?: "rsshub"
-    severity: "warning"
+    provider?: "folo_official" | "page_change" | "rsshub" | "web_list"
+    severity: "critical" | "warning"
   }>
   failed_processing_jobs: ProcessingJob[]
   feed_failures: FeedFailure[]
@@ -67,6 +72,8 @@ export type OperationsStatus = {
     managedRouteCount?: number
     message: string | null
     officialAccountStatus?: "active" | "auth_invalid" | "unlinked"
+    activeBindingCount?: number
+    failedBindingCount?: number
     persistenceStatus?: "ready" | "unavailable"
     rateLimitedRequestCount?: number
     registryMode?: "managed_only" | "permissive"
