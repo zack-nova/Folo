@@ -1,4 +1,5 @@
 import type {
+  OfficialAcquisitionBinding,
   PageChangeEvent,
   SourceAuditEvent,
   SourceAuditVerification,
@@ -13,6 +14,7 @@ import type {
   OfficialAccountVerification,
   StoredOfficialAccount,
 } from "./official-account-repository"
+import type { OfficialBindingPatch } from "./official-binding-repository"
 import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
 import type {
   PublicFeedAccess,
@@ -80,6 +82,7 @@ const cloneOfficialAccount = (account: StoredOfficialAccount): StoredOfficialAcc
 
 export class MemorySupplierRepository implements SupplierRepository {
   private readonly officialAccounts = new Map<string, StoredOfficialAccount>()
+  private readonly officialBindings = new Map<string, OfficialAcquisitionBinding>()
   private readonly publicFeedGrants = new Map<string, StoredPublicFeedGrant>()
   private readonly publicFeedLinks = new Map<string, StoredPublicFeedLink>()
   private readonly webListSources = new Map<string, StoredWebListSource>()
@@ -568,6 +571,81 @@ export class MemorySupplierRepository implements SupplierRepository {
     account.token = cloneEncrypted(token)
     this.appendAudit(audit)
     return true
+  }
+
+  async createOfficialBinding(
+    binding: OfficialAcquisitionBinding,
+    audit: AuditEventDraft,
+  ): Promise<OfficialAcquisitionBinding> {
+    if (await this.findLiveOfficialBindingBySourceURL(binding.sourceURL)) {
+      throw new RepositoryConflictError("This source already has an official binding")
+    }
+    this.officialBindings.set(binding.id, { ...binding })
+    this.appendAudit(audit)
+    return { ...binding }
+  }
+
+  async findOfficialBinding(id: string): Promise<OfficialAcquisitionBinding | null> {
+    const binding = this.officialBindings.get(id)
+    return binding ? { ...binding } : null
+  }
+
+  async findLiveOfficialBindingBySourceURL(
+    sourceURL: string,
+  ): Promise<OfficialAcquisitionBinding | null> {
+    const binding = [...this.officialBindings.values()].find(
+      (item) => item.sourceURL === sourceURL && item.status !== "deleted",
+    )
+    return binding ? { ...binding } : null
+  }
+
+  async listOfficialBindings(): Promise<OfficialAcquisitionBinding[]> {
+    return [...this.officialBindings.values()]
+      .filter((binding) => binding.status !== "deleted")
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .map((binding) => ({ ...binding }))
+  }
+
+  async countOfficialBindings(): Promise<{ active: number; failed: number }> {
+    const live = await this.listOfficialBindings()
+    return {
+      active: live.filter((binding) => binding.status === "active").length,
+      failed: live.filter((binding) => binding.status === "failed").length,
+    }
+  }
+
+  async updateOfficialBinding(
+    id: string,
+    patch: OfficialBindingPatch,
+    audit: AuditEventDraft | null,
+  ): Promise<OfficialAcquisitionBinding | null> {
+    const binding = this.officialBindings.get(id)
+    if (!binding || binding.status === "deleted") return null
+    Object.assign(binding, patch)
+    if (audit) this.appendAudit(audit)
+    return { ...binding }
+  }
+
+  async deleteOfficialBinding(
+    id: string,
+    deletedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<OfficialAcquisitionBinding | null> {
+    const binding = this.officialBindings.get(id)
+    if (!binding || binding.status === "deleted") return null
+    binding.status = "deleted"
+    binding.deletedAt = deletedAt
+    this.appendAudit(audit)
+    return { ...binding }
+  }
+
+  async hasActivePublicFeedLinkForSource(sourceURL: string): Promise<boolean> {
+    return [...this.publicFeedLinks.values()].some(
+      (link) =>
+        link.sourceURL === sourceURL &&
+        !link.revokedAt &&
+        this.publicFeedGrants.get(link.grantId)?.revokedAt === null,
+    )
   }
 
   async createPublicFeedGrant(

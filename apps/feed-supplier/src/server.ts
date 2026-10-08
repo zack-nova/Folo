@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto"
 
+import { parseRssHubSource } from "@follow/feed-source-contracts"
 import type { FastifyReply } from "fastify"
 import Fastify from "fastify"
 import { z } from "zod"
@@ -13,6 +14,8 @@ import { fetchTransport, FoloOfficialClient, proxyTransport } from "./folo-offic
 import { MemorySupplierRepository } from "./memory-repository"
 import { registerOfficialAccountRoutes } from "./official-account-routes"
 import { OfficialAccountService, reencryptOfficialAccountToken } from "./official-account-service"
+import { registerOfficialBindingRoutes } from "./official-binding-routes"
+import { OfficialBindingService } from "./official-binding-service"
 import { PageChangeError, PageChangeService, startPageChangeScheduler } from "./page-change-service"
 import { PageFetcher } from "./page-fetcher"
 import { PostgresSupplierRepository } from "./postgres-repository"
@@ -162,21 +165,30 @@ export const buildFeedSupplier = async ({
   )
   const pageChanges = new PageChangeService(repository, pageFetcher)
   const officialConfig = config.officialAcquisition
-  const officialAccounts = officialConfig
+  const officialClient = officialConfig
+    ? new FoloOfficialClient({
+        apiURL: officialConfig.apiURL,
+        timeoutMs: officialConfig.fetchTimeoutMs,
+        transport:
+          providedOfficialTransport ??
+          (officialConfig.proxyURL
+            ? proxyTransport(officialConfig.proxyURL)
+            : fetchTransport(fetchImplementation)),
+      })
+    : null
+  const officialAccounts = officialClient
     ? new OfficialAccountService(
         repository,
         new CredentialCipher(config.credentialActiveKeyId, config.credentialKeys),
-        new FoloOfficialClient({
-          apiURL: officialConfig.apiURL,
-          timeoutMs: officialConfig.fetchTimeoutMs,
-          transport:
-            providedOfficialTransport ??
-            (officialConfig.proxyURL
-              ? proxyTransport(officialConfig.proxyURL)
-              : fetchTransport(fetchImplementation)),
-        }),
+        officialClient,
       )
     : null
+  const officialBindings =
+    officialAccounts && officialClient
+      ? new OfficialBindingService(repository, officialAccounts, officialClient, (sourceURL) =>
+          resolveCredentialDependency(sourceURL, repository, catalog),
+        )
+      : null
   const server = Fastify({
     bodyLimit: 16 * 1024,
     logger: logger
@@ -510,7 +522,20 @@ export const buildFeedSupplier = async ({
           status: persistenceReady ? ("ready" as const) : ("unavailable" as const),
         },
         // Only reported when configured: a core older than ADR-0034 rejects unknown providers.
-        ...(officialAccounts ? [await officialAccounts.providerHealth()] : []),
+        ...(officialAccounts
+          ? [
+              {
+                ...(await officialAccounts.providerHealth()),
+                ...(await repository
+                  .countOfficialBindings()
+                  .then((counts) => ({
+                    activeBindingCount: counts.active,
+                    failedBindingCount: counts.failed,
+                  }))
+                  .catch(() => ({}))),
+              },
+            ]
+          : []),
       ],
     }
   })
@@ -766,6 +791,7 @@ export const buildFeedSupplier = async ({
     testRoute,
   })
   if (officialAccounts) registerOfficialAccountRoutes(server, officialAccounts)
+  if (officialBindings) registerOfficialBindingRoutes(server, officialBindings)
 
   if (config.publicFeedBaseURL) {
     const internalFeedPaths: Record<string, string> = {
@@ -785,8 +811,13 @@ export const buildFeedSupplier = async ({
           // Secrets belong in bound credentials; a link must not store or report one.
           const secret = secretQueryParameter(url)
           if (secret) throw new Error(`Bind the secret query parameter ${secret} as a credential`)
-          if (protocol === "rsshub:") await registry.resolve(sourceURL)
-          else if (protocol === "pagechange:") await pageChanges.materializeFeed(sourceURL)
+          if (protocol === "rsshub:") {
+            await registry.resolve(sourceURL)
+            // Content fetched through the official account must not be re-published (ADR-0034).
+            if (await officialBindings?.hasLiveBinding(parseRssHubSource(sourceURL).logicalURL)) {
+              throw new Error("The source is fetched through the official account")
+            }
+          } else if (protocol === "pagechange:") await pageChanges.materializeFeed(sourceURL)
           else if (protocol === "weblist:") await webLists.materializeFeed(sourceURL)
           else throw new Error("Unsupported source address")
         } catch (error) {

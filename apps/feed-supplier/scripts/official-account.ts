@@ -1,6 +1,10 @@
 import { text } from "node:stream/consumers"
 
-import type { OfficialAccountSummary } from "@follow/feed-source-contracts"
+import type {
+  OfficialAccountSummary,
+  OfficialAcquisitionBinding,
+  OfficialSubscriptionSummary,
+} from "@follow/feed-source-contracts"
 
 import { SupplierAdminClient } from "../src/admin-client"
 
@@ -18,12 +22,32 @@ Commands:
   verify   Check the session again and refresh the plan and limits
   unlink   Unlink the account
 
+  subscriptions        List the rsshub:// subscriptions of the official account and whether
+                       each is bound (read-only)
+  bindings             List bindings
+  bind <rsshub://...>  Fetch this source through the official account. The account must already
+                       subscribe to it; the supplier never subscribes on your behalf.
+  retry <binding-id>   Try again to adopt a failed binding
+  unbind <binding-id>  Stop fetching through the official account; the self-hosted RSSHub
+                       serves the address again. The official subscription is left as is.
+
 Environment:
   FEED_SUPPLIER_ADMIN_URL    Supplier base URL (default http://127.0.0.1:3001)
   FEED_SUPPLIER_ADMIN_TOKEN  Supplier ADMIN_TOKEN (required)`
 
 const command = process.argv[2]
-if (!command || command === "--help" || !["link", "status", "verify", "unlink"].includes(command)) {
+const commands = [
+  "link",
+  "status",
+  "verify",
+  "unlink",
+  "subscriptions",
+  "bindings",
+  "bind",
+  "retry",
+  "unbind",
+]
+if (!command || command === "--help" || !commands.includes(command)) {
   console.info(usage)
   process.exit(command && command !== "--help" ? 2 : 0)
 }
@@ -37,6 +61,19 @@ const client = new SupplierAdminClient(
   adminToken,
 )
 const path = "v1/admin/official/account"
+const bindingsPath = "v1/admin/official/bindings"
+const argument = process.argv[3]
+
+const describeBinding = (binding: OfficialAcquisitionBinding) =>
+  [
+    `${binding.status.padEnd(8)} ${binding.sourceURL}`,
+    `         id ${binding.id}${
+      binding.externalFeedId ? ` | official feed ${binding.externalFeedId}` : ""
+    }${binding.origin ? ` | ${binding.origin}` : ""}`,
+    ...(binding.lastErrorCode
+      ? [`         last error ${binding.lastErrorCode}: ${binding.lastErrorSummary ?? ""}`]
+      : []),
+  ].join("\n")
 
 const describe = (account: OfficialAccountSummary | null) => {
   if (!account) return "No official account is linked."
@@ -77,9 +114,57 @@ try {
     )
     console.info(describe(account))
     if (account.status !== "active") process.exitCode = 1
-  } else {
+  } else if (command === "unlink") {
     await client.request("DELETE", path)
     console.info("Unlinked.")
+  } else if (command === "subscriptions") {
+    const { subscriptions } = await client.request<{
+      subscriptions: OfficialSubscriptionSummary[]
+    }>("GET", "v1/admin/official/subscriptions")
+    for (const item of subscriptions) {
+      console.info(
+        `${item.bound ? "bound  " : "       "} ${item.sourceURL}  ${item.title ?? ""}` +
+          `${item.category ? `  [${item.category}]` : ""}${item.isPrivate ? "  (private)" : ""}`,
+      )
+    }
+    console.info(`${subscriptions.length} rsshub:// subscriptions in the official account.`)
+  } else if (command === "bindings") {
+    const { bindings } = await client.request<{ bindings: OfficialAcquisitionBinding[] }>(
+      "GET",
+      bindingsPath,
+    )
+    for (const binding of bindings) console.info(describeBinding(binding))
+    console.info(`${bindings.length} bindings.`)
+  } else if (command === "bind") {
+    if (!argument) {
+      console.error("bind needs an rsshub:// address")
+      process.exit(2)
+    }
+    const { binding } = await client.request<{ binding: OfficialAcquisitionBinding }>(
+      "POST",
+      bindingsPath,
+      { sourceURL: argument },
+    )
+    console.info(describeBinding(binding))
+    if (binding.status !== "active") process.exitCode = 1
+  } else if (command === "retry") {
+    if (!argument) {
+      console.error("retry needs a binding id")
+      process.exit(2)
+    }
+    const { binding } = await client.request<{ binding: OfficialAcquisitionBinding }>(
+      "POST",
+      `${bindingsPath}/${encodeURIComponent(argument)}/retry`,
+    )
+    console.info(describeBinding(binding))
+    if (binding.status !== "active") process.exitCode = 1
+  } else {
+    if (!argument) {
+      console.error("unbind needs a binding id")
+      process.exit(2)
+    }
+    await client.request("DELETE", `${bindingsPath}/${encodeURIComponent(argument)}`)
+    console.info("Unbound; the self-hosted RSSHub serves the address again.")
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))

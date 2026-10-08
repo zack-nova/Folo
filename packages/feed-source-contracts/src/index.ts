@@ -27,6 +27,10 @@ export interface AutonomousSourceProviderHealth {
   message: string | null
   /** folo_official only: state of the linked official account, `unlinked` when there is none */
   officialAccountStatus?: OfficialAccountStatus
+  /** folo_official only: bindings currently served through the official account */
+  activeBindingCount?: number
+  /** folo_official only: bindings whose last attempt failed */
+  failedBindingCount?: number
   persistenceStatus?: "ready" | "unavailable"
   registryMode?: SourceRegistryMode
   rateLimitedRequestCount?: number
@@ -152,6 +156,10 @@ export type SourceAuditAction =
   | "official_account.reencrypted"
   | "official_account.unlinked"
   | "official_account.verified"
+  | "official_binding.activated"
+  | "official_binding.created"
+  | "official_binding.deleted"
+  | "official_binding.failed"
 
 export interface SourceAuditEvent {
   action: SourceAuditAction
@@ -166,6 +174,7 @@ export interface SourceAuditEvent {
     | "catalog_route"
     | "credential"
     | "official_account"
+    | "official_binding"
     | "page_source"
     | "public_feed_grant"
     | "public_feed_link"
@@ -557,3 +566,42 @@ export type OfficialAcquisitionErrorCode =
   | "official_binding_inactive"
   | "official_rate_limited"
   | "official_unavailable"
+
+/**
+ * How a source came to be served through the official account (ADR-0034): `adopted` means the
+ * owner's official account already subscribed to it; `created` means the supplier subscribed.
+ */
+export type OfficialBindingOrigin = "adopted" | "created"
+
+/** `failed` keeps the binding so the owner can retry; `deleted` is history only. */
+export type OfficialBindingStatus = "active" | "deleted" | "failed" | "pending"
+
+/** A source fetched through the owner's official Folo account instead of self-hosted RSSHub. */
+export interface OfficialAcquisitionBinding {
+  id: string
+  /** Logical `rsshub://` address, as the core stores it */
+  sourceURL: string
+  accountId: string
+  /** Official Feed ID, known once the binding is active */
+  externalFeedId: string | null
+  origin: OfficialBindingOrigin | null
+  status: OfficialBindingStatus
+  createdAt: string
+  activatedAt: string | null
+  deletedAt: string | null
+  lastErrorCode: string | null
+  lastErrorSummary: string | null
+  lastSuccessAt: string | null
+  consecutiveFailureCount: number
+}
+
+/** An `rsshub://` subscription in the owner's official account, for choosing what to bind. */
+export interface OfficialSubscriptionSummary {
+  externalFeedId: string
+  sourceURL: string
+  title: string | null
+  category: string | null
+  isPrivate: boolean
+  /** Whether this supplier already has a non-deleted binding for the address */
+  bound: boolean
+}
