@@ -453,6 +453,7 @@ export const buildServer = async ({
           codexHome: aiCodexConfig.codexHome,
           command: aiCodexConfig.command,
           model: aiCodexConfig.model ?? undefined,
+          reasoningEffort: aiCodexConfig.reasoningEffort ?? undefined,
           timeoutMs: aiCodexConfig.timeoutMs,
           workDirectory: aiCodexConfig.workDirectory,
         })

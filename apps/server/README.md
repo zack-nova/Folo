@@ -136,8 +136,8 @@ authorization:
 
 生产镜像已固定安装 `@openai/codex`。启用步骤：
 
-1. 在核心环境文件中设置 `AI_CODEX_COMMAND=/usr/local/bin/codex`（可选 `AI_CODEX_MODEL`、`AI_CODEX_SCOPE`、
-   `AI_CODEX_DAILY_LIMIT`、`AI_CODEX_TIMEOUT_MS`）。
+1. 在核心环境文件中设置 `AI_CODEX_COMMAND=/usr/local/bin/codex`（可选 `AI_CODEX_MODEL`、`AI_CODEX_REASONING_EFFORT`、
+   `AI_CODEX_SCOPE`、`AI_CODEX_DAILY_LIMIT`、`AI_CODEX_TIMEOUT_MS`）。
 2. 把所有者本机 `~/.codex/auth.json` 放到容器卷 `folo-codex`（挂载在 `/data/codex`，即 `CODEX_HOME`），
    权限 0600、属主 uid 1000。这个文件等同于 ChatGPT 账号登录态，只放在这台服务器上。
 3. 重启核心。设置页的“AI 提供方”会显示 Codex 的范围和今日用量；`GET /api/extensions/ai/provider` 的 `codex`
