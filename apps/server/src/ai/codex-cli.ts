@@ -14,6 +14,8 @@ export interface CodexCliProviderOptions {
   /** Directory the agent is pointed at; nothing in it is read by the prompts */
   workDirectory: string
   model?: string
+  /** `model_reasoning_effort` passed to the CLI; the model default when unset */
+  reasoningEffort?: string
   timeoutMs?: number
 }
 
@@ -79,6 +81,9 @@ export class CodexCliProvider implements AIProvider {
       "--output-last-message",
       lastMessageFile,
       ...(this.options.model ? ["--model", this.options.model] : []),
+      ...(this.options.reasoningEffort
+        ? ["--config", `model_reasoning_effort="${this.options.reasoningEffort}"`]
+        : []),
       "-",
     ]
     try {
