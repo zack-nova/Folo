@@ -22,6 +22,7 @@ import type { FastifyReply, FastifyRequest } from "fastify"
 import Fastify from "fastify"
 import { join } from "pathe"
 
+import { CodexCliProvider } from "./ai/codex-cli"
 import {
   credentialHint,
   decryptCredential,
@@ -30,6 +31,8 @@ import {
 } from "./ai/credentials"
 import type { AIProvider } from "./ai/provider"
 import { OpenAICompatibleProvider } from "./ai/provider"
+import type { CodexScope } from "./ai/router"
+import { AIProviderRouter } from "./ai/router"
 import { apiFeed, apiList, apiListSubscription, apiSubscription } from "./api-shapes"
 import type { AppAuth } from "./auth"
 import { MemoryDataStore } from "./data/memory-store"
@@ -61,6 +64,18 @@ import { saveProfileSnapshot, saveTaxonomySnapshot } from "./processing/snapshot
 export interface BuildServerOptions {
   aiEncryptionSecret?: string
   aiProvider?: AIProvider
+  /** The owner's Codex CLI as a low-volume provider (ADR-0034 era, see README) */
+  aiCodexConfig?: {
+    codexHome: string
+    command: string
+    dailyLimit: number
+    model: string | null
+    scope: CodexScope
+    timeoutMs: number
+    workDirectory: string
+  }
+  /** Replaces the Codex provider in tests */
+  aiCodexProvider?: AIProvider
   aiProviderFetch?: typeof globalThis.fetch
   aiProviderConfig?: {
     apiKey: string
@@ -351,6 +366,8 @@ const implementedCapabilities = new Set([
 export const buildServer = async ({
   aiEncryptionSecret,
   aiProvider,
+  aiCodexConfig,
+  aiCodexProvider,
   aiProviderFetch,
   aiProviderConfig,
   apiRateLimitMax = 600,
@@ -407,7 +424,7 @@ export const buildServer = async ({
     result: Awaited<ReturnType<typeof refreshSubscribedFeeds>>
   } | null = null
 
-  const resolveAIProvider = async (userId: string): Promise<AIProvider> => {
+  const resolveAPIProvider = async (userId: string): Promise<AIProvider | null> => {
     if (aiProvider) return aiProvider
     const stored = await dataStore.getAIProviderConfig(userId)
     if (stored) {
@@ -427,8 +444,35 @@ export const buildServer = async ({
     if (aiProviderConfig) {
       return new OpenAICompatibleProvider({ ...aiProviderConfig, fetch: aiProviderFetch })
     }
-    throw new ProcessingError("ai_provider_not_configured", "Configure an AI provider first")
+    return null
   }
+  const codexProvider =
+    aiCodexProvider ??
+    (aiCodexConfig
+      ? new CodexCliProvider({
+          codexHome: aiCodexConfig.codexHome,
+          command: aiCodexConfig.command,
+          model: aiCodexConfig.model ?? undefined,
+          timeoutMs: aiCodexConfig.timeoutMs,
+          workDirectory: aiCodexConfig.workDirectory,
+        })
+      : null)
+  const aiRouter = new AIProviderRouter(
+    resolveAPIProvider,
+    codexProvider
+      ? {
+          dailyLimit: aiCodexConfig?.dailyLimit ?? 200,
+          model: aiCodexConfig?.model ?? null,
+          provider: codexProvider,
+          scope: aiCodexConfig?.scope ?? "manual",
+        }
+      : null,
+  )
+  const resolveAIProvider = (userId: string, job: { forceRerun: boolean }) =>
+    aiRouter.resolve(userId, { ownerRequested: job.forceRerun })
+  // Summaries and translations are requested by the owner while reading.
+  const resolveOwnerAIProvider = (userId: string) =>
+    aiRouter.resolve(userId, { ownerRequested: true })
 
   const processingService = new ProcessingService({
     dataStore,
@@ -1472,10 +1516,12 @@ export const buildServer = async ({
     }
     const config = await dataStore.getAIProviderConfig(userId)
     const environmentConfig = !config && aiProviderConfig ? aiProviderConfig : null
+    const codex = aiRouter.status()
     return {
       code: 0,
       data: config
         ? {
+            codex,
             base_url: config.baseUrl,
             configured: true,
             key_hint: config.keyHint,
@@ -1486,6 +1532,7 @@ export const buildServer = async ({
         : environmentConfig
           ? {
               base_url: environmentConfig.baseUrl,
+              codex,
               configured: true,
               key_hint: null,
               key_source: "environment" as const,
@@ -1494,6 +1541,7 @@ export const buildServer = async ({
             }
           : {
               base_url: null,
+              codex,
               configured: false,
               key_hint: null,
               key_source: null,
@@ -1545,6 +1593,7 @@ export const buildServer = async ({
         code: 0,
         data: {
           base_url: config.baseUrl,
+          codex: aiRouter.status(),
           configured: true,
           key_hint: config.keyHint,
           key_source: "stored" as const,
@@ -2062,7 +2111,7 @@ export const buildServer = async ({
         if (!source)
           throw new ProcessingError("entry_content_missing", "Entry has no text to summarize")
         const completion = await (
-          await resolveAIProvider(userId)
+          await resolveOwnerAIProvider(userId)
         ).complete({
           system:
             "Summarize an RSS entry faithfully and concisely. Do not invent facts. Return only the summary text.",
@@ -2158,7 +2207,7 @@ export const buildServer = async ({
                 }),
               )
               const completion = await (
-                await resolveAIProvider(userId)
+                await resolveOwnerAIProvider(userId)
               ).complete({
                 json: true,
                 system:

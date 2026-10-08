@@ -32,6 +32,8 @@
   "autonomous.profile.title": "ユーザープロファイル",
   "autonomous.provider.api_key": "API キー",
   "autonomous.provider.base_url": "OpenAI 互換 Base URL",
+  "autonomous.provider.codex_all": "サーバー上の Codex（{{model}}）がすべての処理を担当します。本日 {{used}} / {{limit}} 回使用。上限に達すると下記の API プロバイダーが引き継ぎます。",
+  "autonomous.provider.codex_manual": "サーバー上の Codex（{{model}}）が手動の再評価を担当します。本日 {{used}} / {{limit}} 回使用。自動処理は下記の API プロバイダーを使います。",
   "autonomous.provider.deleted": "保存済み Provider を削除しました",
   "autonomous.provider.description": "キーはサーバーで暗号化され、保存後にこの画面へ平文で返されることはありません。",
   "autonomous.provider.environment": "環境変数の設定",

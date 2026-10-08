@@ -1,5 +1,14 @@
+export type CodexProviderStatus = {
+  daily_limit: number
+  model: string | null
+  scope: "all" | "manual"
+  used_today: number
+}
+
 export type AIProviderConfiguration = {
   base_url: string | null
+  /** The owner's Codex CLI on the server, when configured there */
+  codex: CodexProviderStatus | null
   configured: boolean
   key_hint: string | null
   key_source: "stored" | "environment" | null

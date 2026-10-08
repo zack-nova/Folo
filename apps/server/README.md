@@ -127,6 +127,26 @@ authorization:
   credentials: "${METRICS_TOKEN}"
 ```
 
+## 用 Codex CLI 做低量 AI 处理
+
+除了 OpenAI 兼容接口，核心可以把所有者在服务器上登录的 Codex CLI（ChatGPT 套餐）当作第二个提供方。它是
+按次运行的完整代理，套餐有速率限制，因此只适合低量工作：默认范围 `manual`，只处理所有者发起的重评、以及
+阅读时请求的摘要和翻译；新条目的自动处理仍走 API 提供方。设置 `AI_CODEX_SCOPE=all` 可让它处理全部作业，
+超过每日上限（`AI_CODEX_DAILY_LIMIT`，默认 200，进程内按 UTC 日计数）后自动回到 API 提供方。
+
+生产镜像已固定安装 `@openai/codex`。启用步骤：
+
+1. 在核心环境文件中设置 `AI_CODEX_COMMAND=/usr/local/bin/codex`（可选 `AI_CODEX_MODEL`、`AI_CODEX_SCOPE`、
+   `AI_CODEX_DAILY_LIMIT`、`AI_CODEX_TIMEOUT_MS`）。
+2. 把所有者本机 `~/.codex/auth.json` 放到容器卷 `folo-codex`（挂载在 `/data/codex`，即 `CODEX_HOME`），
+   权限 0600、属主 uid 1000。这个文件等同于 ChatGPT 账号登录态，只放在这台服务器上。
+3. 重启核心。设置页的“AI 提供方”会显示 Codex 的范围和今日用量；`GET /api/extensions/ai/provider` 的 `codex`
+   字段同样返回这些信息。
+
+每次调用以 `codex exec --json --ephemeral --sandbox read-only` 运行，提示词要求只返回 JSON、不执行任何命令；
+调用串行执行，超时默认 180 秒。用量以 Codex 报告的 token 计入现有的评估 token 指标。
+把订阅额度用于服务端自动化是否符合 OpenAI 的使用政策，由所有者自行判断。
+
 ## 生产镜像依赖锁
 
 生产镜像不使用 monorepo 的共享 hoisted 依赖闭包，而使用

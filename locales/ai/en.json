@@ -32,6 +32,8 @@
   "autonomous.profile.title": "User profile",
   "autonomous.provider.api_key": "API key",
   "autonomous.provider.base_url": "OpenAI-compatible base URL",
+  "autonomous.provider.codex_all": "Codex ({{model}}) on the server handles all processing; {{used}} of {{limit}} calls used today. The API provider below takes over when the limit is reached.",
+  "autonomous.provider.codex_manual": "Codex ({{model}}) on the server handles manual re-evaluations; {{used}} of {{limit}} calls used today. Automatic processing uses the API provider below.",
   "autonomous.provider.deleted": "Stored provider removed",
   "autonomous.provider.description": "The key is encrypted by your server and is never returned to this interface after saving.",
   "autonomous.provider.environment": "Environment configuration",
