@@ -58,6 +58,7 @@ import { startFeedScheduler } from "./feeds/scheduler"
 import type { WebListManagementClient } from "./feeds/web-list-management"
 import { WebListManagementError } from "./feeds/web-list-management"
 import { exportOpml, parseOpml } from "./opml"
+import { entryExcerpt } from "./processing/entry-text"
 import { entryContentFingerprint, ProcessingError, ProcessingService } from "./processing/service"
 import { saveProfileSnapshot, saveTaxonomySnapshot } from "./processing/snapshots"
 
@@ -136,7 +137,7 @@ const apiEntry = (entry: EntryRecord) => ({
   id: entry.id,
   title: entry.title,
   url: entry.url,
-  description: entry.description,
+  description: entryExcerpt(entry.description),
   summary: null,
   guid: entry.guid,
   author: entry.author,

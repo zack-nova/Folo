@@ -152,7 +152,8 @@ describe("self-hosted reading loop", () => {
     expect(entries.data[0]).toMatchObject({
       read: false,
       feeds: { id: created.feed!.id },
-      entries: { description: "Second description" },
+      // Descriptions reach clients as plain text; the feed carried <br>, a link and an image.
+      entries: { description: "Second description more" },
     })
     expect(entries.data[0]?.entries).not.toHaveProperty("content")
 
