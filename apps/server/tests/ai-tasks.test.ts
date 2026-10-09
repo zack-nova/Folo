@@ -5,7 +5,14 @@ import { taskPromptText } from "../src/ai-tasks/prompt-text"
 import { AITaskService } from "../src/ai-tasks/service"
 import { MemoryDataStore } from "../src/data/memory-store"
 import type { AITaskRecord } from "../src/data/types"
-import { evaluateEntry, seedSnapshots, testEntry, testFeed } from "./support/briefing"
+import {
+  completeEvaluation,
+  evaluateEntry,
+  queueEvaluation,
+  seedSnapshots,
+  testEntry,
+  testFeed,
+} from "./support/briefing"
 
 const userId = "owner"
 const timeZone = "Asia/Shanghai"
@@ -120,7 +127,7 @@ const setup = async (
       })),
     )
   }
-  return { addEntry, clock, dataStore, provider, reports, service, task }
+  return { addEntry, clock, dataStore, provider, reports, service, snapshots, task }
 }
 
 describe("scheduled briefings", () => {
@@ -154,7 +161,9 @@ describe("scheduled briefings", () => {
     expect(report!.session.updatedAt > report!.session.lastSeenAt).toBe(true)
     expect(report!.text).toContain("A calm day.")
     expect(report!.text).toContain("- About entry\\_high [Wire · Title entry\\_high](entry_high)")
-    expect(report!.text).toContain("2 条达到精选门槛，入选 2 条；另有 1 条尚未评估")
+    // entry_pending has no evaluation job (no rule covers it), so it is neither waited for nor
+    // reported as pending.
+    expect(report!.text).toContain("2 条达到精选门槛，入选 2 条。")
 
     const task = await dataStore.getAITask(userId, "task-1")
     expect(task).toMatchObject({ lastError: null, lastResult: "A calm day.", runCount: 1 })
@@ -264,6 +273,45 @@ describe("scheduled briefings", () => {
     expect(report!.text).not.toContain("Invented")
     expect(report!.text).not.toContain("entry_unknown")
     expect(report!.text.match(/\]\(entry_a\)/g)).toHaveLength(1)
+  })
+
+  it("waits for evaluations still queued at the slot, for at most 30 minutes", async () => {
+    const { addEntry, clock, dataStore, provider, reports, service, snapshots } = await setup()
+    await addEntry("entry_ready", hoursBefore(firstSlot, 2), 80)
+    await addEntry("entry_late", minutesAfter(firstSlot, -1), null)
+    const jobId = await queueEvaluation(dataStore, { entryId: "entry_late", snapshots, userId })
+
+    clock.now = minutesAfter(firstSlot, 1)
+    await service.tick()
+    expect((provider as FakeProvider).requests).toHaveLength(0)
+    await completeEvaluation(dataStore, jobId, {
+      category: "科技产业",
+      entryId: "entry_late",
+      score: 90,
+      snapshots,
+      userId,
+    })
+    clock.now = minutesAfter(firstSlot, 3)
+    await service.tick()
+    const sent = JSON.parse((provider as FakeProvider).requests[0]!.user) as {
+      entries: Array<{ entry_id: string }>
+    }
+    expect(sent.entries.map((entry) => entry.entry_id).sort()).toEqual([
+      "entry_late",
+      "entry_ready",
+    ])
+
+    // Waiting does not use up retry attempts, and it gives up after 30 minutes.
+    await addEntry("entry_next", hoursBefore(secondSlot, 2), 85)
+    await addEntry("entry_stuck", minutesAfter(secondSlot, -1), null)
+    await queueEvaluation(dataStore, { entryId: "entry_stuck", snapshots, userId })
+    for (let minute = 1; minute <= 31; minute += 2) {
+      clock.now = minutesAfter(secondSlot, minute)
+      await service.tick()
+    }
+    expect((provider as FakeProvider).requests).toHaveLength(2)
+    const latest = (await reports()).find((report) => report.session.title.endsWith("10月10日"))
+    expect(latest!.text).toContain("另有 1 条还在评估队列中，未计入")
   })
 
   it("reports an empty window without calling the model", async () => {

@@ -146,7 +146,7 @@ export interface BriefingFooter {
   candidateCount: number
   selectedCount: number
   timeZone: string
-  unevaluatedCount: number
+  pendingEvaluationCount: number
   windowEnd: Date
   windowStart: Date
 }
@@ -167,7 +167,9 @@ const footerLine = (footer: BriefingFooter) =>
   `*${formatPeriod(footer.windowStart, footer.windowEnd, footer.timeZone)} 新增条目中，${
     footer.candidateCount
   } 条达到精选门槛，入选 ${footer.selectedCount} 条${
-    footer.unevaluatedCount > 0 ? `；另有 ${footer.unevaluatedCount} 条尚未评估` : ""
+    footer.pendingEvaluationCount > 0
+      ? `；另有 ${footer.pendingEvaluationCount} 条还在评估队列中，未计入`
+      : ""
   }。*`
 
 /**

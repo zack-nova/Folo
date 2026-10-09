@@ -68,16 +68,22 @@ export const seedSnapshots = async (dataStore: DataStore, userId: string, at: Da
   return { profileSnapshotId: profile.id, taxonomySnapshotId: taxonomy.id }
 }
 
+interface EvaluationInput {
+  category: string
+  entryId: string
+  score: number
+  snapshots: { profileSnapshotId: string; taxonomySnapshotId: string }
+  userId: string
+}
+
 /** Gives an entry a current evaluation through the normal job lifecycle. */
-export const evaluateEntry = async (
+export const evaluateEntry = async (dataStore: DataStore, input: EvaluationInput) =>
+  completeEvaluation(dataStore, await queueEvaluation(dataStore, input), input)
+
+/** Queues an evaluation job, as an evaluate rule does for a new entry. */
+export const queueEvaluation = async (
   dataStore: DataStore,
-  input: {
-    category: string
-    entryId: string
-    score: number
-    snapshots: { profileSnapshotId: string; taxonomySnapshotId: string }
-    userId: string
-  },
+  input: Pick<EvaluationInput, "entryId" | "snapshots" | "userId">,
 ) => {
   const now = new Date()
   const jobId = randomUUID()
@@ -105,6 +111,16 @@ export const evaluateEntry = async (
     taxonomySnapshotId: input.snapshots.taxonomySnapshotId,
     userId: input.userId,
   })
+  return jobId
+}
+
+/** Runs the queued job; it must be the only one queued. */
+export const completeEvaluation = async (
+  dataStore: DataStore,
+  jobId: string,
+  input: EvaluationInput,
+) => {
+  const now = new Date()
   const claimed = await dataStore.claimNextProcessingJob(now)
   if (claimed?.id !== jobId) throw new Error("Expected to claim the seeded evaluation job")
   await dataStore.completeProcessingJob({

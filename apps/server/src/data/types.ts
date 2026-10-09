@@ -366,7 +366,8 @@ export interface AITaskRunRecord {
   finishedAt: Date | null
   candidateCount: number | null
   selectedCount: number | null
-  unevaluatedCount: number | null
+  /** Entries in the window whose evaluation was still queued or running */
+  pendingEvaluationCount: number | null
   errorCode: string | null
   errorSummary: string | null
   usage: Record<string, unknown> | null
@@ -584,8 +585,11 @@ export interface DataStore {
   completeAITaskRun(completion: AITaskRunCompletion): Promise<void>
   listBriefingCandidates(query: BriefingCandidateQuery): Promise<{
     candidates: BriefingCandidateRecord[]
-    /** Entries in the window that have no current evaluation yet */
-    unevaluatedCount: number
+    /**
+     * Entries in the window without a current evaluation whose evaluation job is queued or
+     * running. Entries no evaluation rule covers never get a job and are not counted.
+     */
+    pendingEvaluationCount: number
   }>
   /** Newest first by `updatedAt`, strictly before `before` when given */
   listAIChatSessions(

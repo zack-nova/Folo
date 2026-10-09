@@ -32,6 +32,13 @@ const MINUTE_MS = 60 * 1_000
 const DEFAULT_RETRY_DELAYS_MS = [5 * MINUTE_MS, 15 * MINUTE_MS, 45 * MINUTE_MS]
 /** A run still marked running after this long was interrupted, for example by a restart. */
 const DEFAULT_STALE_RUN_MS = 30 * MINUTE_MS
+/**
+ * Entries imported just before a slot may still be queued for evaluation. The next window starts
+ * at this slot, so a briefing that ran without them would never include them: a scheduled run
+ * waits for those evaluations, checking again every few minutes, for at most this long.
+ */
+const DEFAULT_EVALUATION_WAIT_MS = 30 * MINUTE_MS
+const EVALUATION_RECHECK_MS = 2 * MINUTE_MS
 const TICK_BATCH = 20
 const LAST_RESULT_CHARACTERS = 200
 
@@ -43,6 +50,7 @@ export interface AITaskServiceOptions {
   resolveProvider: (userId: string) => Promise<AIProvider>
   retryDelaysMs?: number[]
   staleRunMs?: number
+  evaluationWaitMs?: number
   timeZone: string
   now?: () => Date
 }
@@ -69,6 +77,13 @@ const publicError = (error: unknown): { code: string; summary: string } => {
   return {
     code: "ai_provider_error",
     summary: error instanceof Error ? error.message.slice(0, 1_000) : "Briefing generation failed",
+  }
+}
+
+/** Not a failure: the run goes back to the queue without using up an attempt. */
+class AITaskDeferred extends Error {
+  constructor(readonly until: Date) {
+    super("Waiting for pending evaluations")
   }
 }
 
@@ -165,7 +180,7 @@ export class AITaskService {
       startedAt: null,
       status: "queued",
       taskId: task.id,
-      unevaluatedCount: null,
+      pendingEvaluationCount: null,
       usage: null,
       userId: task.userId,
       windowEnd: window.end,
@@ -246,6 +261,16 @@ export class AITaskService {
     try {
       return { sessionId: await this.generate(task, run) }
     } catch (error) {
+      if (error instanceof AITaskDeferred) {
+        await dataStore.updateAITaskRun({
+          ...run,
+          attemptCount: run.attemptCount - 1,
+          nextAttemptAt: error.until,
+          startedAt: null,
+          status: "queued",
+        })
+        return { error: error.message }
+      }
       const failure = publicError(error)
       const delays = this.options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS
       const failed = { ...run, errorCode: failure.code, errorSummary: failure.summary }
@@ -281,7 +306,7 @@ export class AITaskService {
   private async generate(task: AITaskRecord, run: AITaskRunRecord): Promise<string> {
     const { dataStore, timeZone } = this.options
     const startedAt = this.now()
-    const [{ candidates, unevaluatedCount }, profiles, taxonomies] = await Promise.all([
+    const [{ candidates, pendingEvaluationCount }, profiles, taxonomies] = await Promise.all([
       dataStore.listBriefingCandidates({
         insertedAfter: run.windowStart,
         insertedBefore: run.windowEnd,
@@ -291,20 +316,31 @@ export class AITaskService {
       dataStore.listProcessingProfileSnapshots(task.userId),
       dataStore.listProcessingTaxonomySnapshots(task.userId),
     ])
+    const waitUntil =
+      run.scheduledFor.getTime() + (this.options.evaluationWaitMs ?? DEFAULT_EVALUATION_WAIT_MS)
+    if (
+      run.kind === "scheduled" &&
+      pendingEvaluationCount > 0 &&
+      this.now().getTime() < waitUntil
+    ) {
+      throw new AITaskDeferred(
+        new Date(Math.min(this.now().getTime() + EVALUATION_RECHECK_MS, waitUntil)),
+      )
+    }
     const entries = selectBriefingEntries(candidates, taxonomies, run.windowEnd)
     const footer: BriefingFooter = {
       candidateCount: candidates.length,
+      pendingEvaluationCount,
       selectedCount: entries.length,
       timeZone,
-      unevaluatedCount,
       windowEnd: run.windowEnd,
       windowStart: run.windowStart,
     }
     const counted = {
       ...run,
       candidateCount: candidates.length,
+      pendingEvaluationCount,
       selectedCount: entries.length,
-      unevaluatedCount,
     }
     const sessionId = aiTaskSessionId(task.id, run.id)
     if (entries.length === 0) {
