@@ -21,6 +21,7 @@ import {
 } from "~/components/ui/dropdown-menu/dropdown-menu"
 import { useFeature } from "~/hooks/biz/useFeature"
 import { UrlBuilder } from "~/lib/url-builder"
+import { useAIReportsOnly } from "~/modules/ai-chat/hooks/useAIReportsOnly"
 import { usePresentUserProfileModal } from "~/modules/profile/hooks"
 import { useSettingModal } from "~/modules/settings/modal/use-setting-modal-hack"
 import { signOut, useSession } from "~/queries/auth"
@@ -44,6 +45,7 @@ export const ProfileButton: FC<ProfileButtonProps> = memo((props) => {
   const presentUserProfile = usePresentUserProfileModal("dialog")
   const { t } = useTranslation()
   const aiEnabled = useFeature("ai")
+  const aiReportsOnly = useAIReportsOnly()
   const [dropdown, setDropdown] = useState(false)
   // The wallet only decides whether the menu lists the wallet entry, so it is not requested
   // before the menu is opened. The cached answer keeps the entry stable afterwards.
@@ -139,7 +141,7 @@ export const ProfileButton: FC<ProfileButtonProps> = memo((props) => {
           </DropdownMenuItem>
         )}
 
-        {aiEnabled && (
+        {(aiEnabled || aiReportsOnly) && (
           <DropdownMenuItem
             className="pl-3"
             onClick={() => {
@@ -147,7 +149,7 @@ export const ProfileButton: FC<ProfileButtonProps> = memo((props) => {
             }}
             icon={<i className="i-mgc-ai-cute-re" />}
           >
-            {t("user_button.ai")}
+            {aiReportsOnly ? t("tasks.reports.title", { ns: "ai" }) : t("user_button.ai")}
           </DropdownMenuItem>
         )}
 

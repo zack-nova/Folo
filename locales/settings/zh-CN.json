@@ -613,6 +613,8 @@
   "operations.activity.description": "当前服务进程最近完成的调度与数据保留维护活动。",
   "operations.activity.title": "运行活动",
   "operations.activity_empty": "本次服务启动后尚未记录已完成的周期。",
+  "operations.alerts.ai_task_runs_failed": "{{count}} 个 AI 任务最近一期运行失败，报告里写明了原因。",
+  "operations.alerts.ai_tasks_overdue": "{{count}} 个 AI 任务超过一小时仍未运行，任务调度可能已停止。",
   "operations.alerts.description": "需要所有者处理的问题；实例的其余部分照常运行。",
   "operations.alerts.feed_acquisition_degraded": "{{count}} 个订阅源抓取失败，正在退避重试。",
   "operations.alerts.official_account_auth_invalid": "官方 Folo 会话已被拒绝。请重新登录并在供给服务上重新关联账号；绑定到它的来源已停止更新。",

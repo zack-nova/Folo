@@ -613,6 +613,8 @@
   "operations.activity.description": "このサーバープロセスで最近完了したスケジューラーと保持メンテナンスの活動です。",
   "operations.activity.title": "実行状況",
   "operations.activity_empty": "このプロセスの起動後、完了したサイクルはまだ記録されていません。",
+  "operations.alerts.ai_task_runs_failed": "{{count}} 件の AI タスクで直近の実行が失敗しました。理由はレポートに記載されています。",
+  "operations.alerts.ai_tasks_overdue": "{{count}} 件の AI タスクが 1 時間以上実行されていません。タスクスケジューラーが停止している可能性があります。",
   "operations.alerts.description": "所有者の対応が必要な状態です。インスタンスの他の部分は通常どおり動作しています。",
   "operations.alerts.feed_acquisition_degraded": "{{count}} 件の購読フィードの取得に失敗し、再試行を待っています。",
   "operations.alerts.official_account_auth_invalid": "公式 Folo のセッションが拒否されました。再度サインインしてソース供給サービスでアカウントを連携し直してください。連携中のソースは更新されていません。",

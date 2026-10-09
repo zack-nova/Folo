@@ -27,6 +27,8 @@ export const SettingAI = () => {
   const { t } = useTranslation("ai")
   const capabilityManifest = useCapabilityManifest()
   const autonomousAI = capabilityManifest?.has("ai.provider_configuration") === true
+  // A self-hosted server that runs scheduled tasks itself (ADR-0036).
+  const scheduledTasks = capabilityManifest?.has("ai.scheduled_tasks") === true
 
   return (
     <div className="mt-4">
@@ -39,6 +41,16 @@ export const SettingAI = () => {
                   value: t("autonomous.title"),
                 },
                 AutonomousAISettings,
+                ...(scheduledTasks
+                  ? [
+                      {
+                        type: "title" as const,
+                        value: t("tasks.section.title"),
+                        id: AI_SETTING_SECTION_IDS.tasks,
+                      },
+                      TaskSchedulingSection,
+                    ]
+                  : []),
               ]
             : [
                 {

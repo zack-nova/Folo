@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { setAIPanelVisibility } from "~/atoms/settings/ai"
 import { useDialog, useModalStack } from "~/components/ui/modal/stacked/hooks"
 import { toastFetchError } from "~/lib/error-parser"
+import { openTaskReportPage, useAIReportsOnly } from "~/modules/ai-chat/hooks/useAIReportsOnly"
 import { AIPersistService } from "~/modules/ai-chat/services"
 import { ChatSliceActions } from "~/modules/ai-chat/store/chat-core/chat-actions"
 import { AIChatSessionService } from "~/modules/ai-chat-session"
@@ -111,7 +112,8 @@ const getStatusColor = (status: string) => {
 }
 
 export const TaskItem = memo(({ task }: { task: AITask }) => {
-  const { present } = useModalStack()
+  const { dismissAll, present } = useModalStack()
+  const reportsOnly = useAIReportsOnly()
   const deleteTaskMutation = useDeleteAITaskMutation()
   const updateTaskMutation = useUpdateAITaskMutation()
   const testRunMutation = useTestRunAITaskMutation()
@@ -142,6 +144,12 @@ export const TaskItem = memo(({ task }: { task: AITask }) => {
       toast.error(t("tasks.toast.no_report"))
       return
     }
+    if (reportsOnly) {
+      // Without the AI panel, reports open on the AI page.
+      dismissAll()
+      openTaskReportPage(taskSession.chatId)
+      return
+    }
     setOpeningReport(true)
     try {
       await AIChatSessionService.fetchAndPersistMessages(taskSession)
@@ -157,7 +165,7 @@ export const TaskItem = memo(({ task }: { task: AITask }) => {
     chatActions?.switchToChat(taskSession.chatId)
     setOpeningReport(false)
     toast(t("tasks.toast.switch_to_chat"))
-  }, [taskSession, t])
+  }, [dismissAll, reportsOnly, taskSession, t])
 
   const actions: ActionButton[] = [
     // Only show if the task has at least one run
@@ -184,6 +192,12 @@ export const TaskItem = memo(({ task }: { task: AITask }) => {
           const { sessionId } = testRunResult.data
           if (!sessionId) {
             throw new Error("No session ID returned from test run")
+          }
+          if (reportsOnly) {
+            toast.success(t("tasks.toast.test_success"), { id: loadingId })
+            dismissAll()
+            openTaskReportPage(sessionId)
+            return
           }
 
           // Ensure the session exists in local DB

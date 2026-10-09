@@ -613,6 +613,8 @@
   "operations.activity.description": "Recent scheduler and retention maintenance activity from this server process.",
   "operations.activity.title": "Runtime activity",
   "operations.activity_empty": "No completed cycle has been recorded since this process started.",
+  "operations.alerts.ai_task_runs_failed": "{{count}} scheduled AI tasks failed their latest run; the report explains why.",
+  "operations.alerts.ai_tasks_overdue": "{{count}} scheduled AI tasks are more than an hour overdue; the task scheduler may not be running.",
   "operations.alerts.description": "Conditions the owner should resolve; the rest of the instance keeps running.",
   "operations.alerts.feed_acquisition_degraded": "{{count}} subscribed feeds are failing to fetch and are backing off.",
   "operations.alerts.official_account_auth_invalid": "The official Folo session was rejected. Sign in again and link the account on the source supplier; sources bound to it are not updating.",
