@@ -18,7 +18,15 @@ import {
 } from "../sync/actions"
 import type {
   ActionRulesRecord,
+  AIChatMessageRecord,
+  AIChatSessionRecord,
   AIProviderConfigRecord,
+  AITaskPatch,
+  AITaskRecord,
+  AITaskRunCompletion,
+  AITaskRunRecord,
+  BriefingCandidateQuery,
+  BriefingCandidateRecord,
   DataStore,
   EnqueueProcessingJobResult,
   EntryEvaluationRecord,
@@ -57,6 +65,10 @@ const listSubscriptionKey = (userId: string, listId: string) => `${userId}:${lis
 
 export class MemoryDataStore implements DataStore {
   private readonly actionRules = new Map<string, ActionRulesRecord>()
+  private readonly aiChatMessages = new Map<string, AIChatMessageRecord>()
+  private readonly aiChatSessions = new Map<string, AIChatSessionRecord>()
+  private readonly aiTaskRuns = new Map<string, AITaskRunRecord>()
+  private readonly aiTasks = new Map<string, AITaskRecord>()
   private readonly aiProviderConfigs = new Map<string, AIProviderConfigRecord>()
   private readonly collections = new Map<string, Date>()
   private readonly entries = new Map<string, EntryRecord>()
@@ -982,5 +994,230 @@ export class MemoryDataStore implements DataStore {
       hasMore,
       reset: false,
     }
+  }
+
+  async listAITasks(userId: string): Promise<AITaskRecord[]> {
+    return [...this.aiTasks.values()]
+      .filter((task) => task.userId === userId)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .map((task) => structuredClone(task))
+  }
+
+  async getAITask(userId: string, taskId: string): Promise<AITaskRecord | null> {
+    const task = this.aiTasks.get(taskId)
+    return task?.userId === userId ? structuredClone(task) : null
+  }
+
+  async createAITask(task: AITaskRecord): Promise<void> {
+    this.aiTasks.set(task.id, structuredClone(task))
+  }
+
+  async updateAITask(
+    userId: string,
+    taskId: string,
+    patch: AITaskPatch,
+  ): Promise<AITaskRecord | null> {
+    const task = this.aiTasks.get(taskId)
+    if (task?.userId !== userId) return null
+    const updated = { ...task, ...structuredClone(patch) }
+    this.aiTasks.set(taskId, updated)
+    return structuredClone(updated)
+  }
+
+  async deleteAITask(userId: string, taskId: string): Promise<boolean> {
+    if (this.aiTasks.get(taskId)?.userId !== userId) return false
+    this.aiTasks.delete(taskId)
+    for (const [id, run] of this.aiTaskRuns) {
+      if (run.taskId === taskId) this.aiTaskRuns.delete(id)
+    }
+    return true
+  }
+
+  async listDueAITasks(now: Date, limit: number): Promise<AITaskRecord[]> {
+    return [...this.aiTasks.values()]
+      .filter((task) => task.isEnabled && task.nextRunAt && task.nextRunAt <= now)
+      .sort((left, right) => left.nextRunAt!.getTime() - right.nextRunAt!.getTime())
+      .slice(0, limit)
+      .map((task) => structuredClone(task))
+  }
+
+  async scheduleAITaskRun(run: AITaskRunRecord, nextRunAt: Date | null): Promise<boolean> {
+    const task = this.aiTasks.get(run.taskId)
+    if (!task?.isEnabled || task.nextRunAt?.getTime() !== run.scheduledFor.getTime()) return false
+    const taken = [...this.aiTaskRuns.values()].some(
+      (existing) =>
+        existing.taskId === run.taskId &&
+        existing.kind === "scheduled" &&
+        existing.scheduledFor.getTime() === run.scheduledFor.getTime(),
+    )
+    if (taken) return false
+    this.aiTaskRuns.set(run.id, structuredClone(run))
+    task.nextRunAt = nextRunAt ? new Date(nextRunAt) : null
+    return true
+  }
+
+  async createAITaskRun(run: AITaskRunRecord): Promise<void> {
+    this.aiTaskRuns.set(run.id, structuredClone(run))
+  }
+
+  private isRunnable(run: AITaskRunRecord, now: Date, staleBefore: Date): boolean {
+    return (
+      (run.status === "queued" && (!run.nextAttemptAt || run.nextAttemptAt <= now)) ||
+      (run.status === "running" && !!run.startedAt && run.startedAt < staleBefore)
+    )
+  }
+
+  async listRunnableAITaskRuns(
+    now: Date,
+    staleBefore: Date,
+    limit: number,
+  ): Promise<AITaskRunRecord[]> {
+    return [...this.aiTaskRuns.values()]
+      .filter((run) => this.isRunnable(run, now, staleBefore))
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .slice(0, limit)
+      .map((run) => structuredClone(run))
+  }
+
+  async claimAITaskRun(
+    runId: string,
+    now: Date,
+    staleBefore: Date,
+  ): Promise<AITaskRunRecord | null> {
+    const run = this.aiTaskRuns.get(runId)
+    if (!run || !this.isRunnable(run, now, staleBefore)) return null
+    run.status = "running"
+    run.attemptCount += 1
+    run.startedAt = new Date(now)
+    run.nextAttemptAt = null
+    return structuredClone(run)
+  }
+
+  async getPreviousAITaskRun(taskId: string, before: Date): Promise<AITaskRunRecord | null> {
+    const previous = [...this.aiTaskRuns.values()]
+      .filter(
+        (run) => run.taskId === taskId && run.kind === "scheduled" && run.scheduledFor < before,
+      )
+      .sort((left, right) => right.scheduledFor.getTime() - left.scheduledFor.getTime())
+      .at(0)
+    return previous ? structuredClone(previous) : null
+  }
+
+  async updateAITaskRun(run: AITaskRunRecord): Promise<void> {
+    if (this.aiTaskRuns.has(run.id)) this.aiTaskRuns.set(run.id, structuredClone(run))
+  }
+
+  async completeAITaskRun({ message, run, session, task }: AITaskRunCompletion): Promise<void> {
+    this.aiChatSessions.set(session.chatId, structuredClone(session))
+    this.aiChatMessages.set(message.id, structuredClone(message))
+    if (this.aiTaskRuns.has(run.id)) this.aiTaskRuns.set(run.id, structuredClone(run))
+    const stored = this.aiTasks.get(task.id)
+    if (stored) {
+      stored.lastRunAt = new Date(task.lastRunAt)
+      stored.lastResult = task.lastResult
+      stored.lastError = task.lastError
+      if (task.countRun) stored.runCount += 1
+    }
+  }
+
+  async listBriefingCandidates({
+    insertedAfter,
+    insertedBefore,
+    minimumScore,
+    userId,
+  }: BriefingCandidateQuery): Promise<{
+    candidates: BriefingCandidateRecord[]
+    unevaluatedCount: number
+  }> {
+    const candidates: BriefingCandidateRecord[] = []
+    let unevaluatedCount = 0
+    for (const entry of this.entries.values()) {
+      if (entry.insertedAt < insertedAfter || entry.insertedAt >= insertedBefore) continue
+      const subscription = this.subscriptions.get(subscriptionKey(userId, entry.feedId))
+      if (!subscription) continue
+      const evaluationId = this.entryCurrentEvaluations.get(entry.id)
+      const evaluation = evaluationId ? this.entryEvaluations.get(evaluationId) : undefined
+      if (!evaluation) {
+        unevaluatedCount += 1
+        continue
+      }
+      if (evaluation.overallScore < minimumScore) continue
+      const summary = [...this.entrySummaries.values()]
+        .filter((item) => item.entryId === entry.id && item.target === "content")
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+        .at(0)
+      candidates.push(
+        structuredClone({
+          entry,
+          evaluation,
+          feedTitle: this.feeds.get(entry.feedId)?.title ?? null,
+          subscription,
+          summary: summary?.summary ?? null,
+        }),
+      )
+    }
+    return { candidates, unevaluatedCount }
+  }
+
+  async listAIChatSessions(
+    userId: string,
+    { before, limit }: { before?: Date; limit: number },
+  ): Promise<{ sessions: AIChatSessionRecord[]; total: number }> {
+    const owned = [...this.aiChatSessions.values()].filter((session) => session.userId === userId)
+    return {
+      sessions: owned
+        .filter((session) => !before || session.updatedAt < before)
+        .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
+        .slice(0, limit)
+        .map((session) => structuredClone(session)),
+      total: owned.length,
+    }
+  }
+
+  async getAIChatSession(userId: string, chatId: string): Promise<AIChatSessionRecord | null> {
+    const session = this.aiChatSessions.get(chatId)
+    return session?.userId === userId ? structuredClone(session) : null
+  }
+
+  async listAIChatMessages(
+    userId: string,
+    chatId: string,
+    { before, limit }: { before?: Date; limit: number },
+  ): Promise<AIChatMessageRecord[]> {
+    if (this.aiChatSessions.get(chatId)?.userId !== userId) return []
+    return [...this.aiChatMessages.values()]
+      .filter((message) => message.chatId === chatId && (!before || message.createdAt < before))
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(0, limit)
+      .map((message) => structuredClone(message))
+  }
+
+  async updateAIChatSession(
+    userId: string,
+    chatId: string,
+    patch: Partial<Pick<AIChatSessionRecord, "lastSeenAt" | "title">>,
+  ): Promise<AIChatSessionRecord | null> {
+    const session = this.aiChatSessions.get(chatId)
+    if (session?.userId !== userId) return null
+    const updated = { ...session, ...structuredClone(patch) }
+    this.aiChatSessions.set(chatId, updated)
+    return structuredClone(updated)
+  }
+
+  async deleteAIChatSession(userId: string, chatId: string): Promise<boolean> {
+    if (this.aiChatSessions.get(chatId)?.userId !== userId) return false
+    this.aiChatSessions.delete(chatId)
+    for (const [id, message] of this.aiChatMessages) {
+      if (message.chatId === chatId) this.aiChatMessages.delete(id)
+    }
+    return true
+  }
+
+  async listUnreadAIChatSessionIds(userId: string, limit: number): Promise<string[]> {
+    return [...this.aiChatSessions.values()]
+      .filter((session) => session.userId === userId && session.updatedAt > session.lastSeenAt)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
+      .slice(0, limit)
+      .map((session) => session.chatId)
   }
 }

@@ -314,6 +314,116 @@ export type EnqueueProcessingJobResult =
   | { outcome: "failed_requires_retry"; job: ProcessingJobRecord }
   | { outcome: "already_satisfied"; evaluation: EntryEvaluationRecord }
 
+/** The Folo client's task schedule; times are ISO instants whose wall-clock part is the owner's. */
+export type AITaskSchedule =
+  | { type: "once"; date: string }
+  | { type: "daily"; timeOfDay: string }
+  | { type: "weekly"; dayOfWeek: number; timeOfDay: string }
+  | { type: "monthly"; dayOfMonth: number; timeOfDay: string }
+
+export interface AITaskRecord {
+  id: string
+  userId: string
+  name: string
+  /** Serialized editor state from the client, or plain text */
+  prompt: string
+  isEnabled: boolean
+  schedule: AITaskSchedule
+  options: { notifyChannels: string[] }
+  /** null once a one-off task has run or when the schedule has no further slot */
+  nextRunAt: Date | null
+  lastRunAt: Date | null
+  runCount: number
+  lastResult: string | null
+  lastError: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type AITaskPatch = Partial<
+  Pick<
+    AITaskRecord,
+    "isEnabled" | "name" | "nextRunAt" | "options" | "prompt" | "schedule" | "updatedAt"
+  >
+>
+
+export type AITaskRunKind = "scheduled" | "test"
+export type AITaskRunStatus = "failed" | "queued" | "running" | "skipped" | "succeeded"
+
+export interface AITaskRunRecord {
+  id: string
+  taskId: string
+  userId: string
+  kind: AITaskRunKind
+  /** The schedule slot; the start time for test runs */
+  scheduledFor: Date
+  windowStart: Date
+  windowEnd: Date
+  status: AITaskRunStatus
+  attemptCount: number
+  nextAttemptAt: Date | null
+  startedAt: Date | null
+  finishedAt: Date | null
+  candidateCount: number | null
+  selectedCount: number | null
+  unevaluatedCount: number | null
+  errorCode: string | null
+  errorSummary: string | null
+  usage: Record<string, unknown> | null
+  sessionId: string | null
+  createdAt: Date
+}
+
+export interface AIChatSessionRecord {
+  chatId: string
+  userId: string
+  title: string
+  createdAt: Date
+  updatedAt: Date
+  lastSeenAt: Date
+}
+
+export interface AIChatMessageRecord {
+  id: string
+  chatId: string
+  role: "assistant" | "system" | "user"
+  messageParts: Array<Record<string, unknown>>
+  metadata: Record<string, unknown> | null
+  status: "completed" | "error" | "pending"
+  createdAt: Date
+  finishedAt: Date | null
+}
+
+/** A report written by a finished run, stored with the run in one transaction. */
+export interface AITaskRunCompletion {
+  run: AITaskRunRecord
+  session: AIChatSessionRecord
+  message: AIChatMessageRecord
+  task: {
+    id: string
+    lastRunAt: Date
+    lastResult: string | null
+    lastError: string | null
+    /** Scheduled runs count towards `runCount`; test runs do not. */
+    countRun: boolean
+  }
+}
+
+export interface BriefingCandidateRecord {
+  entry: EntryRecord
+  evaluation: EntryEvaluationRecord
+  feedTitle: string | null
+  subscription: SubscriptionRecord
+  summary: string | null
+}
+
+export interface BriefingCandidateQuery {
+  userId: string
+  insertedAfter: Date
+  insertedBefore: Date
+  minimumScore: number
+}
+
 export type SettingsTab = "ai" | "appearance" | "general" | "integration"
 export interface SettingsRecord {
   payload: Record<string, unknown>
@@ -450,6 +560,52 @@ export interface DataStore {
   listFeedFetchAttempts(feedId: string, limit: number): Promise<FeedFetchAttemptRecord[]>
   checkHealth(): Promise<void>
   getOperationalStats(now: Date): Promise<OperationalStats>
+  listAITasks(userId: string): Promise<AITaskRecord[]>
+  getAITask(userId: string, taskId: string): Promise<AITaskRecord | null>
+  createAITask(task: AITaskRecord): Promise<void>
+  updateAITask(userId: string, taskId: string, patch: AITaskPatch): Promise<AITaskRecord | null>
+  deleteAITask(userId: string, taskId: string): Promise<boolean>
+  listDueAITasks(now: Date, limit: number): Promise<AITaskRecord[]>
+  /**
+   * Records the run for the slot the task is due at (`run.scheduledFor`) and moves the task to
+   * `nextRunAt`. Returns false without writing when the task is no longer due at that slot or the
+   * slot already has a run, so concurrent workers schedule each slot once.
+   */
+  scheduleAITaskRun(run: AITaskRunRecord, nextRunAt: Date | null): Promise<boolean>
+  createAITaskRun(run: AITaskRunRecord): Promise<void>
+  /** Queued runs whose attempt is due and running runs started before `staleBefore`. */
+  listRunnableAITaskRuns(now: Date, staleBefore: Date, limit: number): Promise<AITaskRunRecord[]>
+  /** Marks a runnable run as running and counts the attempt; null when it is not runnable. */
+  claimAITaskRun(runId: string, now: Date, staleBefore: Date): Promise<AITaskRunRecord | null>
+  /** The latest scheduled run of the task for a slot before `before`. */
+  getPreviousAITaskRun(taskId: string, before: Date): Promise<AITaskRunRecord | null>
+  updateAITaskRun(run: AITaskRunRecord): Promise<void>
+  /** Stores the run's final state, its report session and the task's last result together. */
+  completeAITaskRun(completion: AITaskRunCompletion): Promise<void>
+  listBriefingCandidates(query: BriefingCandidateQuery): Promise<{
+    candidates: BriefingCandidateRecord[]
+    /** Entries in the window that have no current evaluation yet */
+    unevaluatedCount: number
+  }>
+  /** Newest first by `updatedAt`, strictly before `before` when given */
+  listAIChatSessions(
+    userId: string,
+    page: { before?: Date; limit: number },
+  ): Promise<{ sessions: AIChatSessionRecord[]; total: number }>
+  getAIChatSession(userId: string, chatId: string): Promise<AIChatSessionRecord | null>
+  /** Newest first by `createdAt`, strictly before `before` when given */
+  listAIChatMessages(
+    userId: string,
+    chatId: string,
+    page: { before?: Date; limit: number },
+  ): Promise<AIChatMessageRecord[]>
+  updateAIChatSession(
+    userId: string,
+    chatId: string,
+    patch: Partial<Pick<AIChatSessionRecord, "lastSeenAt" | "title">>,
+  ): Promise<AIChatSessionRecord | null>
+  deleteAIChatSession(userId: string, chatId: string): Promise<boolean>
+  listUnreadAIChatSessionIds(userId: string, limit: number): Promise<string[]>
   getSettings(userId: string): Promise<Partial<Record<SettingsTab, SettingsRecord>>>
   /** Merges the given keys into the stored tab; clients send only the keys that changed. */
   setSettings(userId: string, tab: SettingsTab, payload: Record<string, unknown>): Promise<void>

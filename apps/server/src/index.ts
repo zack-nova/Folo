@@ -40,6 +40,7 @@ const server = await buildServer({
   aiCodexConfig: config.aiCodexConfig,
   aiEncryptionSecret: config.aiEncryptionSecret,
   aiProviderConfig: config.aiProviderConfig,
+  aiTaskTimeZone: config.aiTaskTimeZone,
   apiRateLimitMax: config.apiRateLimitMax,
   allowPublicRegistration: config.allowPublicRegistration,
   auth,

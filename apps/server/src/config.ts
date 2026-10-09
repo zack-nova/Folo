@@ -2,6 +2,8 @@ import { isIP } from "node:net"
 
 import { z } from "zod"
 
+import { isValidTimeZone } from "./ai-tasks/schedule"
+
 const integer = (defaultValue: number, minimum: number) =>
   z.preprocess(
     (value) => (value === undefined || value === "" ? defaultValue : Number(value)),
@@ -77,6 +79,11 @@ const serverEnvironment = z
     AI_CODEX_TIMEOUT_MS: integer(180_000, 10_000).pipe(z.number().max(900_000)),
     AI_CODEX_WORKDIR: z.string().min(1).default("/tmp/codex-work"),
     AI_ENCRYPTION_SECRET: z.string().min(32).optional(),
+    // The client builds task schedules from the owner's local clock (ADR-0036).
+    AI_TASK_TIME_ZONE: z
+      .string()
+      .default("UTC")
+      .refine(isValidTimeZone, { message: "AI_TASK_TIME_ZONE must be an IANA time zone" }),
     AI_PROVIDER_BASE_URL: z.url().default("https://api.openai.com/v1"),
     AI_PROVIDER_MODEL: z.string().min(1).default("gpt-4o-mini"),
     AI_PROVIDER_TIMEOUT_MS: integer(60_000, 1_000),
@@ -280,6 +287,7 @@ export const loadServerConfig = (environment: NodeJS.ProcessEnv) => {
         }
       : undefined,
     aiEncryptionSecret: parsed.AI_ENCRYPTION_SECRET ?? parsed.BETTER_AUTH_SECRET,
+    aiTaskTimeZone: parsed.AI_TASK_TIME_ZONE,
     aiProviderConfig: parsed.AI_API_KEY
       ? {
           apiKey: parsed.AI_API_KEY,
