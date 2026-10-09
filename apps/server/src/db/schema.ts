@@ -473,7 +473,8 @@ export const aiTaskRuns = pgTable(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     candidateCount: integer("candidate_count"),
     selectedCount: integer("selected_count"),
-    unevaluatedCount: integer("unevaluated_count"),
+    // Named before it counted only pending evaluations; see AITaskRunRecord.
+    pendingEvaluationCount: integer("unevaluated_count"),
     errorCode: text("error_code"),
     errorSummary: text("error_summary"),
     usage: jsonb("usage").$type<Record<string, unknown>>(),

@@ -1738,13 +1738,13 @@ export class PostgresDataStore implements DataStore {
     userId,
   }: BriefingCandidateQuery): Promise<{
     candidates: BriefingCandidateRecord[]
-    unevaluatedCount: number
+    pendingEvaluationCount: number
   }> {
     const inWindow = and(
       gte(entries.insertedAt, insertedAfter),
       lt(entries.insertedAt, insertedBefore),
     )
-    const [rows, [unevaluated]] = await Promise.all([
+    const [rows, [pending]] = await Promise.all([
       this.database
         .select({
           entry: entries,
@@ -1769,7 +1769,17 @@ export class PostgresDataStore implements DataStore {
           and(eq(subscriptions.feedId, entries.feedId), eq(subscriptions.userId, userId)),
         )
         .leftJoin(entryCurrentEvaluations, eq(entryCurrentEvaluations.entryId, entries.id))
-        .where(and(inWindow, isNull(entryCurrentEvaluations.entryId))),
+        .where(
+          and(
+            inWindow,
+            isNull(entryCurrentEvaluations.entryId),
+            sql`exists (
+              select 1 from ${processingJobs}
+              where ${processingJobs.entryId} = ${entries.id}
+                and ${processingJobs.status} in ('queued', 'running')
+            )`,
+          ),
+        ),
     ])
     const summaries =
       rows.length === 0
@@ -1799,7 +1809,7 @@ export class PostgresDataStore implements DataStore {
         subscription: row.subscription,
         summary: summaryByEntry.get(row.entry.id) ?? null,
       })),
-      unevaluatedCount: unevaluated?.count ?? 0,
+      pendingEvaluationCount: pending?.count ?? 0,
     }
   }
 

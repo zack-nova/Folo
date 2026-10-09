@@ -1127,10 +1127,15 @@ export class MemoryDataStore implements DataStore {
     userId,
   }: BriefingCandidateQuery): Promise<{
     candidates: BriefingCandidateRecord[]
-    unevaluatedCount: number
+    pendingEvaluationCount: number
   }> {
     const candidates: BriefingCandidateRecord[] = []
-    let unevaluatedCount = 0
+    const pendingEntries = new Set(
+      [...this.processingJobs.values()]
+        .filter((job) => job.status === "queued" || job.status === "running")
+        .map((job) => job.entryId),
+    )
+    let pendingEvaluationCount = 0
     for (const entry of this.entries.values()) {
       if (entry.insertedAt < insertedAfter || entry.insertedAt >= insertedBefore) continue
       const subscription = this.subscriptions.get(subscriptionKey(userId, entry.feedId))
@@ -1138,7 +1143,7 @@ export class MemoryDataStore implements DataStore {
       const evaluationId = this.entryCurrentEvaluations.get(entry.id)
       const evaluation = evaluationId ? this.entryEvaluations.get(evaluationId) : undefined
       if (!evaluation) {
-        unevaluatedCount += 1
+        if (pendingEntries.has(entry.id)) pendingEvaluationCount += 1
         continue
       }
       if (evaluation.overallScore < minimumScore) continue
@@ -1156,7 +1161,7 @@ export class MemoryDataStore implements DataStore {
         }),
       )
     }
-    return { candidates, unevaluatedCount }
+    return { candidates, pendingEvaluationCount }
   }
 
   async listAIChatSessions(

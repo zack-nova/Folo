@@ -4,7 +4,14 @@ import type { AIProvider } from "../src/ai/provider"
 import { AITaskService } from "../src/ai-tasks/service"
 import { PostgresDataStore } from "../src/data/postgres-store"
 import type { AITaskRecord, AITaskRunRecord } from "../src/data/types"
-import { evaluateEntry, seedSnapshots, testEntry, testFeed } from "./support/briefing"
+import {
+  completeEvaluation,
+  evaluateEntry,
+  queueEvaluation,
+  seedSnapshots,
+  testEntry,
+  testFeed,
+} from "./support/briefing"
 import type { TestDatabase } from "./support/postgres"
 import { createTestDatabase, POSTGRES_TEST_TIMEOUT_MS } from "./support/postgres"
 
@@ -77,7 +84,7 @@ describe.runIf(databaseURL)("AI tasks in PostgreSQL", { timeout: POSTGRES_TEST_T
     startedAt: null,
     status: "queued",
     taskId,
-    unevaluatedCount: null,
+    pendingEvaluationCount: null,
     usage: null,
     userId,
     windowEnd: slot,
@@ -157,7 +164,7 @@ describe.runIf(databaseURL)("AI tasks in PostgreSQL", { timeout: POSTGRES_TEST_T
       target: "content",
     })
 
-    const { candidates, unevaluatedCount } = await dataStore.listBriefingCandidates({
+    const { candidates, pendingEvaluationCount } = await dataStore.listBriefingCandidates({
       insertedAfter: hoursBefore(24),
       insertedBefore: slot,
       minimumScore: 70,
@@ -166,7 +173,32 @@ describe.runIf(databaseURL)("AI tasks in PostgreSQL", { timeout: POSTGRES_TEST_T
     expect(candidates.map((candidate) => candidate.entry.id)).toEqual(["entry_pg_high"])
     expect(candidates[0]).toMatchObject({ feedTitle: "Wire", summary: "Stored summary" })
     expect(candidates[0]!.subscription.title).toBe("My Wire")
-    expect(unevaluatedCount).toBe(1)
+    // entry_pg_pending has no evaluation job: no rule covers it, so it is not waited for.
+    expect(pendingEvaluationCount).toBe(0)
+    await add("entry_pg_queued", hoursBefore(5), null)
+    const queuedJobId = await queueEvaluation(dataStore, {
+      entryId: "entry_pg_queued",
+      snapshots,
+      userId,
+    })
+    expect(
+      (
+        await dataStore.listBriefingCandidates({
+          insertedAfter: hoursBefore(24),
+          insertedBefore: slot,
+          minimumScore: 70,
+          userId,
+        })
+      ).pendingEvaluationCount,
+    ).toBe(1)
+    // Finished (below the threshold) so the scheduled run below does not wait for it.
+    await completeEvaluation(dataStore, queuedJobId, {
+      category: "科技产业",
+      entryId: "entry_pg_queued",
+      score: 10,
+      snapshots,
+      userId,
+    })
 
     await dataStore.createAITask(task("brief"))
     const clock = { now: new Date(slot.getTime() + 60_000) }
