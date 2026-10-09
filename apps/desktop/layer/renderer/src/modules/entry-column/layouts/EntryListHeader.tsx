@@ -19,6 +19,7 @@ import { useNavigate } from "react-router"
 import { useAdvertisedCapability } from "~/atoms/capabilities"
 import { previewBackPath } from "~/atoms/preview"
 import { setGeneralSetting, useGeneralSettingKey } from "~/atoms/settings/general"
+import { setUISetting, useUISettingKey } from "~/atoms/settings/ui"
 import { useSubscriptionColumnShow } from "~/atoms/sidebar"
 import { ROUTE_ENTRY_PENDING } from "~/constants"
 import { useFeature } from "~/hooks/biz/useFeature"
@@ -80,6 +81,10 @@ export const EntryListHeader: FC<{
   const effectiveAiTimelineEnabled = aiTimelineEnabled && effectiveSortOrder === "desc"
   const showSortOrderButton = unreadOnly && isTimelineSource
   const isWideMode = !!getView(view)?.wideMode
+  const compactEntryList = useUISettingKey("compactEntryList")
+  // Only list-style views have a description line to hide.
+  const showCompactToggle =
+    view === FeedViewType.Articles || view === FeedViewType.All || view === FeedViewType.Audios
 
   const headerTitle = useFeedHeaderTitle()
   const feedIcon = useFeedHeaderIcon()
@@ -252,6 +257,25 @@ export const EntryListHeader: FC<{
                   <RotatingRefreshIcon isRefreshing={isRefreshing} />
                 </ActionButton>
               ))}
+            {showCompactToggle && (
+              <ActionButton
+                tooltip={
+                  compactEntryList
+                    ? t("entry_list_header.show_descriptions")
+                    : t("entry_list_header.titles_only")
+                }
+                active={compactEntryList}
+                onClick={() => setUISetting("compactEntryList", !compactEntryList)}
+              >
+                <i
+                  className={
+                    compactEntryList
+                      ? "i-mgc-list-expansion-cute-re"
+                      : "i-mgc-list-collapse-cute-re"
+                  }
+                />
+              </ActionButton>
+            )}
             {showSortOrderButton && (
               <ActionButton
                 tooltip={

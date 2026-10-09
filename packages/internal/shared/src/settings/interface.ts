@@ -73,6 +73,8 @@ export interface UISettings {
   // view
   pictureViewMasonry: boolean
   pictureViewImageOnly: boolean
+  /** Entry lists show titles only, without the description line or thumbnail */
+  compactEntryList: boolean
   wideMode: boolean
   contentFontSize: number
   dateFormat: string

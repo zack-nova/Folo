@@ -20,6 +20,7 @@ import { useMemo } from "react"
 import { AudioPlayer, useAudioPlayerAtomSelector } from "~/atoms/player"
 import { useActionLanguage, useGeneralSettingKey } from "~/atoms/settings/general"
 import { useSpotlightSettingKey } from "~/atoms/settings/spotlight"
+import { useUISettingKey } from "~/atoms/settings/ui"
 import { RelativeTime } from "~/components/ui/datetime"
 import { FEED_COLLECTION_LIST } from "~/constants"
 import { useEntryIsRead } from "~/hooks/biz/useAsRead"
@@ -82,6 +83,7 @@ const entrySelector = (state: EntryModel) => {
 export function AllItem({ entryId, translation, currentFeedTitle }: UniversalItemProps) {
   const entry = useEntry(entryId, entrySelector)
   const simple = true
+  const compactEntryList = useUISettingKey("compactEntryList")
 
   const isInCollection = useIsEntryStarred(entryId)
   const collectionCreatedAt = useCollectionEntry(entryId)?.createdAt
@@ -197,19 +199,21 @@ export function AllItem({ entryId, translation, currentFeedTitle }: UniversalIte
           </EllipsisHorizontalTextWithTooltip>
           {!!isInCollection && <StarIcon className="absolute right-0 top-0" />}
         </div>
-        <div
-          className={cn(
-            "ml-4 truncate text-[13px]",
-            "text-text-secondary",
-            isRead && dimRead && "text-text-tertiary",
-          )}
-        >
-          <EntryTranslation
-            className={cn("hyphens-auto", lineClamp.description)}
-            source={entry?.description}
-            target={translation?.description}
-          />
-        </div>
+        {!compactEntryList && (
+          <div
+            className={cn(
+              "ml-4 truncate text-[13px]",
+              "text-text-secondary",
+              isRead && dimRead && "text-text-tertiary",
+            )}
+          >
+            <EntryTranslation
+              className={cn("hyphens-auto", lineClamp.description)}
+              source={entry?.description}
+              target={translation?.description}
+            />
+          </div>
+        )}
       </div>
 
       <div className="ml-4 shrink-0 text-xs text-text-secondary">
