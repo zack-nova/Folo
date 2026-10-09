@@ -95,6 +95,10 @@ POST /api/extensions/entries/{entryId}/evaluation/{evaluationId}/select
 - 评估请求分两段：system 消息依次是固定指令、输出 schema、画像与 Taxonomy（按键排序序列化），同一配置下逐字节
   相同；user 消息只有 `entry` 与 `source`。这样连续评估共享同一前缀，支持自动前缀缓存的 Provider（OpenAI、
   DeepSeek 等）可以对画像部分按缓存价计费。指令把 user 消息整体声明为不可信的第三方数据，不执行其中的指令。
+- 自动入队的 Job 第一次尝试时按所有者、画像和 Taxonomy 分组，一次调用评估最多 `PROCESSING_BATCH_SIZE`（默认 10）条、
+  正文合计不超过 `PROCESSING_BATCH_MAX_CHARS`（默认 40000 字符）；回复按 `entry_id` 对应，缺失的条目单独失败并在重试时
+  单条执行；`force_rerun` 的手动重评始终单条（ADR-0035）。`/metrics` 的 `folo_ai_evaluation_calls_total{kind="single|batch|batched"}`
+  给出单条调用数、合批调用数和经合批评估的条目数。
 - `/metrics` 提供本进程启动以来评估消耗的 token：`folo_ai_evaluation_tokens_total{kind="input|cached_input|output"}`，
   `cached_input` 来自 Provider 返回的缓存命中数（`prompt_tokens_details.cached_tokens` 或 DeepSeek 的
   `prompt_cache_hit_tokens`），用于确认缓存是否生效。

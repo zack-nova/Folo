@@ -107,6 +107,8 @@ describe("AI intake of subscribed sources", () => {
         }),
       },
       metricsToken: "metrics-token",
+      // This test inspects the per-entry prompt; batching is covered in processing.test.ts.
+      processingBatchSize: 1,
       processingMaxAttempts: 1,
       processingMaxContentCharacters: 1_000,
       processingWorkerPollIntervalMs: 5,

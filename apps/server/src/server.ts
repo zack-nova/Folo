@@ -97,6 +97,8 @@ export interface BuildServerOptions {
   readabilityFetcher?: FeedFetcher
   logger?: boolean
   metricsToken?: string
+  processingBatchMaxCharacters?: number
+  processingBatchSize?: number
   processingMaxAttempts?: number
   processingMaxContentCharacters?: number
   processingRetryBaseDelayMs?: number
@@ -384,6 +386,8 @@ export const buildServer = async ({
   readabilityFetcher = feedFetcher,
   logger = false,
   metricsToken,
+  processingBatchMaxCharacters,
+  processingBatchSize,
   processingMaxAttempts,
   processingMaxContentCharacters,
   processingRetryBaseDelayMs,
@@ -477,6 +481,8 @@ export const buildServer = async ({
     aiRouter.resolve(userId, { ownerRequested: true })
 
   const processingService = new ProcessingService({
+    batchMaxCharacters: processingBatchMaxCharacters,
+    batchSize: processingBatchSize,
     dataStore,
     maxAttempts: processingMaxAttempts,
     maxContentCharacters: processingMaxContentCharacters,
@@ -922,6 +928,7 @@ export const buildServer = async ({
     const webListProvider = sourceProviders.find((provider) => provider.id === "web_list")
     const officialProvider = sourceProviders.find((provider) => provider.id === "folo_official")
     const tokenUsage = processingService.tokenUsage()
+    const callCounts = processingService.callCounts()
     const lines = [
       "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
       "# TYPE folo_subscribed_feeds gauge",
@@ -942,6 +949,11 @@ export const buildServer = async ({
       `folo_ai_evaluation_tokens_total{kind="input"} ${tokenUsage.input}`,
       `folo_ai_evaluation_tokens_total{kind="cached_input"} ${tokenUsage.cachedInput}`,
       `folo_ai_evaluation_tokens_total{kind="output"} ${tokenUsage.output}`,
+      "# HELP folo_ai_evaluation_calls_total Provider calls made by the evaluation worker since start; batched counts the entries evaluated through batch calls.",
+      "# TYPE folo_ai_evaluation_calls_total counter",
+      `folo_ai_evaluation_calls_total{kind="single"} ${callCounts.single}`,
+      `folo_ai_evaluation_calls_total{kind="batch"} ${callCounts.batch}`,
+      `folo_ai_evaluation_calls_total{kind="batched"} ${callCounts.batched}`,
       "# HELP folo_source_provider_ready Whether an autonomous source provider is ready.",
       "# TYPE folo_source_provider_ready gauge",
       ...sourceProviders.map(
