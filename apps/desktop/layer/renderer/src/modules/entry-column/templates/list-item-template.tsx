@@ -66,11 +66,14 @@ const entrySelector = (state: EntryModel) => {
 export function ListItem({
   entryId,
   translation,
-  simple,
+  simple: simpleProp,
 }: UniversalItemProps & {
   simple?: boolean
 }) {
   const isMobile = useMobile()
+  // The owner's titles-only toggle renders every list the way notifications already do.
+  const compactEntryList = useUISettingKey("compactEntryList")
+  const simple = simpleProp || compactEntryList
   const entry = useEntry(entryId, entrySelector)
 
   const isInCollection = useIsEntryStarred(entryId)
