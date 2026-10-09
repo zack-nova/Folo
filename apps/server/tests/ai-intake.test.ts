@@ -9,7 +9,7 @@ import type { AIProvider } from "../src/ai/provider"
 import { createAuth } from "../src/auth"
 import { MemoryDataStore } from "../src/data/memory-store"
 import { importAIPreset, parseAIPreset } from "../src/processing/ai-preset"
-import { entryPromptText } from "../src/processing/entry-text"
+import { entryExcerpt, entryPromptText } from "../src/processing/entry-text"
 import { evaluationSystemPrompt } from "../src/processing/service"
 import { buildServer } from "../src/server"
 
@@ -54,6 +54,18 @@ describe("entry prompt text", () => {
       `${"通".repeat(10)}\n[Content truncated]`,
     )
     expect(entryPromptText("<img src=x>", 10)).toBeNull()
+  })
+
+  it("renders list excerpts as one plain line with an ellipsis when truncated", () => {
+    expect(
+      entryExcerpt(
+        'Man shot in New York.<br><br>“NYPD said” <a href="https://u.afp.com/x">https://u.afp.com/x</a><br><img src="https://pbs.twimg.com/media/a.jpg">',
+      ),
+    ).toBe("Man shot in New York. “NYPD said” https://u.afp.com/x")
+    expect(entryExcerpt(`<p>${"通".repeat(50)}</p><p>尾</p>`, 10)).toBe(`${"通".repeat(10)}…`)
+    expect(entryExcerpt("<img src=x>")).toBeNull()
+    expect(entryExcerpt(null)).toBeNull()
+    expect(entryExcerpt("plain &amp; simple")).toBe("plain & simple")
   })
 })
 

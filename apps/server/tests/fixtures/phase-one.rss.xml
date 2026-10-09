@@ -8,7 +8,7 @@
       <guid isPermaLink="false">phase-one-entry-2</guid>
       <title>Second entry</title>
       <link>https://feeds.example.com/second</link>
-      <description>Second description</description>
+      <description><![CDATA[Second description<br><a href="https://example.com/more">more</a><img src="https://example.com/a.jpg">]]></description>
       <content:encoded><![CDATA[<p>Second full content</p>]]></content:encoded>
       <author>author@example.com</author>
       <pubDate>Sat, 16 Aug 2026 02:00:00 GMT</pubDate>

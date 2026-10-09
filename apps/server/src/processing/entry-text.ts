@@ -129,3 +129,24 @@ export const entryPromptText = (content: string | null, maximum: number): string
     ? text
     : `${characters.slice(0, maximum).join("").trimEnd()}\n[Content truncated]`
 }
+
+/** Characters of description shown under a title in entry lists. */
+export const DEFAULT_EXCERPT_CHARACTERS = 400
+
+/**
+ * Plain-text excerpt of an entry description for list views. Clients print `description` as
+ * text, the way the official service stores it, so feeds whose description is HTML (X posts with
+ * `<br>` and links, image markup) would otherwise show the tags. Lines collapse to one and a
+ * truncated excerpt ends with an ellipsis.
+ */
+export const entryExcerpt = (
+  description: string | null,
+  maximum = DEFAULT_EXCERPT_CHARACTERS,
+): string | null => {
+  const text = entryPromptText(description, maximum)
+  if (!text) return null
+  const truncated = text.endsWith("\n[Content truncated]")
+  const body = truncated ? text.slice(0, -"\n[Content truncated]".length) : text
+  const line = body.replaceAll(/\s*\n\s*/g, " ").trim()
+  return line ? (truncated ? `${line}…` : line) : null
+}
