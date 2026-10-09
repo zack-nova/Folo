@@ -6,9 +6,11 @@ import { useTranslation } from "react-i18next"
 
 import { AISpline } from "~/modules/ai-chat/components/3d-models/AISpline"
 
+import { useAIReportsOnly } from "../../hooks/useAIReportsOnly"
 import { useAttachScrollBeyond } from "../../hooks/useAttachScrollBeyond"
 import { useMainEntryId } from "../../hooks/useMainEntryId"
 import { DefaultWelcomeContent, EntryWelcomeContent } from "../welcome"
+import { TaskReportList } from "./TaskReportList"
 
 interface WelcomeScreenProps {
   centerInputOnEmpty?: boolean
@@ -18,6 +20,7 @@ export const WelcomeScreen = ({ centerInputOnEmpty }: WelcomeScreenProps) => {
   const { t } = useTranslation("ai")
   const mainEntryId = useMainEntryId()
   const hasEntryContext = Boolean(mainEntryId)
+  const reportsOnly = useAIReportsOnly()
 
   const { handleScroll } = useAttachScrollBeyond()
 
@@ -31,9 +34,13 @@ export const WelcomeScreen = ({ centerInputOnEmpty }: WelcomeScreenProps) => {
     >
       <div className="mx-auto flex w-full flex-1 flex-col justify-center space-y-8 pb-52">
         <DefaultWelcomeHeader
-          title={t("user_button.ai", { ns: "app" })}
+          title={reportsOnly ? t("tasks.reports.title") : t("user_button.ai", { ns: "app" })}
           description={
-            hasEntryContext ? t("welcome_description_contextual") : t("welcome_description")
+            reportsOnly
+              ? t("tasks.reports.description")
+              : hasEntryContext
+                ? t("welcome_description_contextual")
+                : t("welcome_description")
           }
         />
 
@@ -41,11 +48,13 @@ export const WelcomeScreen = ({ centerInputOnEmpty }: WelcomeScreenProps) => {
         <div
           className={clsx(
             "relative flex items-start justify-center",
-            centerInputOnEmpty && "absolute bottom-0 translate-y-40",
+            centerInputOnEmpty && !reportsOnly && "absolute bottom-0 translate-y-40",
           )}
         >
           <AnimatePresence mode="wait">
-            {hasEntryContext && mainEntryId ? (
+            {reportsOnly ? (
+              <TaskReportList key="task-reports" />
+            ) : hasEntryContext && mainEntryId ? (
               <EntryWelcomeContent key="entry-welcome" entryId={mainEntryId} />
             ) : (
               <DefaultWelcomeContent key="default-welcome" />

@@ -39,6 +39,7 @@ import {
 
 import { LexicalAIEditorNodes } from "../../editor"
 import { useAIConfiguration } from "../../hooks/useAIConfiguration"
+import { useAIReportsOnly } from "../../hooks/useAIReportsOnly"
 import { useAttachScrollBeyond } from "../../hooks/useAttachScrollBeyond"
 import { AIPanelRefsContext } from "../../store/AIChatContext"
 import type { AIChatContextBlock, BizUIMessage, SendingUIMessage } from "../../store/types"
@@ -239,6 +240,8 @@ const ChatInterfaceContent = ({ centerInputOnEmpty, visualOffsetY }: ChatInterfa
   const { handleDraftChange, initialDraft, clearDraft } = useChatDraft(currentChatId)
 
   const [bottomPanelHeight, setBottomPanelHeight] = useState<number>(0)
+  // Reports are read only: there is no composer to send from (ADR-0036).
+  const reportsOnly = useAIReportsOnly()
 
   useEffect(() => {
     if (status === "submitted") {
@@ -285,19 +288,21 @@ const ChatInterfaceContent = ({ centerInputOnEmpty, visualOffsetY }: ChatInterfa
           />
         </div>
 
-        <ChatBottomPanel
-          hasMessages={hasMessages}
-          centerInputOnEmpty={centerInputOnEmpty}
-          visualOffsetY={visualOffsetY}
-          shouldShowInterruptionNotice={shouldShowInterruptionNotice}
-          rateLimitMessage={rateLimitMessage}
-          isRateLimited={isRateLimited}
-          onRetryLastMessage={handleRetryLastMessage}
-          onSendMessage={handleSendMessage}
-          initialDraftState={initialDraft}
-          onDraftChange={handleDraftChange}
-          onHeightChange={setBottomPanelHeight}
-        />
+        {!reportsOnly && (
+          <ChatBottomPanel
+            hasMessages={hasMessages}
+            centerInputOnEmpty={centerInputOnEmpty}
+            visualOffsetY={visualOffsetY}
+            shouldShowInterruptionNotice={shouldShowInterruptionNotice}
+            rateLimitMessage={rateLimitMessage}
+            isRateLimited={isRateLimited}
+            onRetryLastMessage={handleRetryLastMessage}
+            onSendMessage={handleSendMessage}
+            initialDraftState={initialDraft}
+            onDraftChange={handleDraftChange}
+            onHeightChange={setBottomPanelHeight}
+          />
+        )}
       </GlobalFileDropZone>
     </div>
   )

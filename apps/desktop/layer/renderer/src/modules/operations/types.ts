@@ -26,6 +26,8 @@ export type FeedFetchDiagnostic = {
 export type OperationsStatus = {
   alerts: Array<{
     code:
+      | "ai_task_runs_failed"
+      | "ai_tasks_overdue"
       | "feed_acquisition_degraded"
       | "official_account_auth_invalid"
       | "official_bindings_failed"

@@ -19,6 +19,7 @@ import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { useAdvertisedCapability } from "~/atoms/capabilities"
 import { useCurrentModal } from "~/components/ui/modal/stacked/hooks"
 import { MentionPlugin, ShortcutPlugin } from "~/modules/ai-chat/editor"
 import { AIPersistService } from "~/modules/ai-chat/services"
@@ -40,9 +41,16 @@ interface AITaskModalProps {
 }
 
 // Convert existing task data to form format or use defaults
-const getDefaultFormData = (task?: AITask, prompt?: string): TaskFormData => {
+const getDefaultFormData = (
+  task: AITask | undefined,
+  prompt: string | undefined,
+  emailAvailable: boolean,
+): TaskFormData => {
   // Get current date/time for default values
   const now = dayjs()
+  const defaultNotifyChannels: TaskFormData["options"]["notifyChannels"] = emailAvailable
+    ? ["email"]
+    : []
 
   if (!task) {
     // Default values for creating new task
@@ -53,7 +61,7 @@ const getDefaultFormData = (task?: AITask, prompt?: string): TaskFormData => {
         type: "once",
         date: now.add(1, "hour").toISOString(),
       },
-      options: { notifyChannels: ["email"] },
+      options: { notifyChannels: defaultNotifyChannels },
     }
   }
   if (prompt) {
@@ -107,7 +115,7 @@ const getDefaultFormData = (task?: AITask, prompt?: string): TaskFormData => {
     name: task.name,
     prompt: task.prompt,
     schedule: formSchedule,
-    options: { notifyChannels: ["email"], ...task.options },
+    options: { notifyChannels: defaultNotifyChannels, ...task.options },
   }
 }
 
@@ -119,11 +127,13 @@ export const AITaskModal = ({ task, prompt, showSettingsTip = false }: AITaskMod
   const settingModalPresent = useSettingModal()
 
   const isEditing = !!task
+  // A self-hosted server shows reports in the app only and cannot send email (ADR-0036).
+  const emailAvailable = !useAdvertisedCapability("ai.task_reports")
 
   const taskSchema = useMemo(() => createTaskSchema(t), [t])
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskSchema),
-    defaultValues: getDefaultFormData(task, prompt),
+    defaultValues: getDefaultFormData(task, prompt, emailAvailable),
   })
 
   const scheduleValue = form.watch("schedule")
@@ -265,16 +275,20 @@ export const AITaskModal = ({ task, prompt, showSettingsTip = false }: AITaskMod
           </div>
 
           {/* Notification Channels Section */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <i className="i-mgc-notification-cute-re size-4 text-text-secondary" />
-              <h3 className="text-sm font-medium text-text">{t("tasks.section.notifications")}</h3>
+          {emailAvailable && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <i className="i-mgc-notification-cute-re size-4 text-text-secondary" />
+                <h3 className="text-sm font-medium text-text">
+                  {t("tasks.section.notifications")}
+                </h3>
+              </div>
+              <NotifyChannelsConfig
+                value={notifyChannelsValue}
+                onChange={(channels) => form.setValue("options.notifyChannels", channels)}
+              />
             </div>
-            <NotifyChannelsConfig
-              value={notifyChannelsValue}
-              onChange={(channels) => form.setValue("options.notifyChannels", channels)}
-            />
-          </div>
+          )}
 
           {/* Form Actions */}
 

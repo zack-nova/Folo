@@ -1,6 +1,7 @@
 import { AIChatRoot } from "~/modules/ai-chat/components/layouts/AIChatRoot"
 import { ChatPageHeader } from "~/modules/ai-chat/components/layouts/ChatHeader"
 import { ChatInterface } from "~/modules/ai-chat/components/layouts/ChatInterface"
+import { OpenChatFromSearchParams } from "~/modules/ai-chat/components/layouts/OpenChatFromSearchParams"
 
 export const Component = () => {
   return (
@@ -9,6 +10,7 @@ export const Component = () => {
       style={{ "--ai-chat-layout-width": "65rem" } as React.CSSProperties}
     >
       <AIChatRoot>
+        <OpenChatFromSearchParams />
         <ChatPageHeader />
         <ChatInterface centerInputOnEmpty visualOffsetY="clamp(-10vh, -8vh, -6vh)" />
       </AIChatRoot>

@@ -22,6 +22,7 @@ import {
 } from "~/modules/ai-chat/store/hooks"
 import { useSettingModal } from "~/modules/settings/modal/use-setting-modal-hack"
 
+import { useAIReportsOnly } from "../../hooks/useAIReportsOnly"
 import { useAIRootState } from "../../store/AIChatContext"
 import { AISpline } from "../3d-models/AISpline"
 import { ChatHistoryDropdown } from "./ChatHistoryDropdown"
@@ -51,6 +52,7 @@ const ChatHeaderLayout = ({
   const shouldDisableTimelineSummary = useTimelineSummaryAutoContext()
   const settingModalPresent = useSettingModal()
   const panelStyle = useAIChatPanelStyle()
+  const reportsOnly = useAIReportsOnly()
 
   const displayTitle = currentTitle
 
@@ -102,11 +104,19 @@ const ChatHeaderLayout = ({
                 <AISpline className="no-drag-region -mx-1 -mb-1 mr-1 size-9" />
               </div>
             )}
-            <ChatHistoryDropdown
-              triggerElement={
-                <AIHeaderTitle title={displayTitle} placeholder={t("common.new_chat")} />
-              }
-            />
+            {reportsOnly ? (
+              <TaskReportDropdown
+                triggerElement={
+                  <AIHeaderTitle title={displayTitle} placeholder={t("tasks.reports.title")} />
+                }
+              />
+            ) : (
+              <ChatHistoryDropdown
+                triggerElement={
+                  <AIHeaderTitle title={displayTitle} placeholder={t("common.new_chat")} />
+                }
+              />
+            )}
           </div>
 
           {/* Right side - Actions */}
@@ -183,6 +193,23 @@ export const ChatHeader: FC<{ isFloating: boolean }> = ({ isFloating }) => {
 
 export const ChatPageHeader = () => {
   const { t } = useTranslation("ai")
+  const reportsOnly = useAIReportsOnly()
+
+  if (reportsOnly) {
+    return (
+      <ChatHeaderLayout
+        isFloating={false}
+        renderActions={({ onNewChatClick }) => (
+          <>
+            <ActionButton tooltip={t("tasks.reports.all")} onClick={onNewChatClick}>
+              <i className="i-mgc-list-check-cute-re size-5 text-text-secondary" />
+            </ActionButton>
+            <TaskReportDropdown />
+          </>
+        )}
+      />
+    )
+  }
 
   return (
     <ChatHeaderLayout
