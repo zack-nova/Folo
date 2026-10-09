@@ -4,6 +4,7 @@ import type { X2jOptions } from "fast-xml-parser"
 import { XMLParser } from "fast-xml-parser"
 
 import type { EntryRecord, FeedRecord } from "../data/types"
+import { decodeEntities } from "../processing/entry-text"
 
 type XMLValue = null | string | number | boolean | XMLNode | XMLValue[]
 interface XMLNode {
@@ -27,6 +28,15 @@ const text = (value: XMLValue | undefined): string | null => {
   }
   const node = object(value)
   return node ? text(node["#text"]) : null
+}
+
+/**
+ * Text shown as is (titles, names, categories). Feeds often escape it as HTML on top of XML, as in
+ * `&amp;#39;` or `&#39;` inside CDATA, and clients print it without decoding.
+ */
+const plainText = (value: XMLValue | undefined): string | null => {
+  const raw = text(value)
+  return raw ? decodeEntities(raw).trim() || null : null
 }
 
 const absoluteURL = (value: string | null, baseURL: string): string | null => {
@@ -60,7 +70,7 @@ const rssFeed = (
   const feed: FeedRecord = {
     id: feedId,
     url: identityURL,
-    title: text(channel.title),
+    title: plainText(channel.title),
     description: text(channel.description),
     siteUrl: absoluteURL(text(channel.link), sourceURL),
     image: absoluteURL(text(object(channel.image)?.url), sourceURL),
@@ -92,16 +102,16 @@ const rssFeed = (
         id: stableId("entry", `${feedId}:${guid}`),
         feedId,
         guid,
-        title: text(item.title),
+        title: plainText(item.title),
         description: text(item.description),
         content: text(item["content:encoded"]) ?? text(item.description),
         url: entryURL,
-        author: text(item.author) ?? text(item["dc:creator"]),
+        author: plainText(item.author) ?? plainText(item["dc:creator"]),
         authorUrl: null,
         authorAvatar: null,
         language: text(item.language) ?? text(channel.language),
         categories: array(item.category)
-          .map(text)
+          .map(plainText)
           .filter((value): value is string => value !== null),
         attachments: enclosureURL
           ? [
@@ -150,7 +160,7 @@ const atomFeed = (
   const feed: FeedRecord = {
     id: feedId,
     url: identityURL,
-    title: text(atom.title),
+    title: plainText(atom.title),
     description: text(atom.subtitle),
     siteUrl: atomLink(atom.link, "alternate", sourceURL),
     image: absoluteURL(text(atom.logo) ?? text(atom.icon), sourceURL),
@@ -179,17 +189,17 @@ const atomFeed = (
         id: stableId("entry", `${feedId}:${guid}`),
         feedId,
         guid,
-        title: text(item.title),
+        title: plainText(item.title),
         description: text(item.summary),
         content: text(item.content) ?? text(item.summary),
         url: entryURL,
-        author: text(author?.name),
+        author: plainText(author?.name),
         authorUrl: absoluteURL(text(author?.uri), sourceURL),
         authorAvatar: null,
         language: null,
         categories: array(item.category)
           .map(object)
-          .map((category) => text(category?.term))
+          .map((category) => plainText(category?.term))
           .filter((value): value is string => value !== null),
         attachments: null,
         media: null,
@@ -247,6 +257,8 @@ export const parseFeed = (
     parseAttributeValue: false,
     parseTagValue: false,
     processEntities: true,
+    // Character references such as `&#39;` are plain XML, but the parser only decodes them here.
+    htmlEntities: true,
     trimValues: true,
   }
   const root = new XMLParser(options).parse(xml) as XMLNode
