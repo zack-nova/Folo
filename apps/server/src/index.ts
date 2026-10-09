@@ -52,6 +52,8 @@ const server = await buildServer({
   feedRetryBaseDelayMs: config.feedRetryBaseDelayMs,
   logger: true,
   metricsToken: config.metricsToken,
+  processingBatchMaxCharacters: config.processingBatchMaxCharacters,
+  processingBatchSize: config.processingBatchSize,
   processingMaxAttempts: config.processingMaxAttempts,
   processingMaxContentCharacters: config.processingMaxContentCharacters,
   processingRetryBaseDelayMs: config.processingRetryBaseDelayMs,

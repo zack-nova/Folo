@@ -145,6 +145,8 @@ authorization:
 
 每次调用以 `codex exec --json --ephemeral --sandbox read-only` 运行，提示词要求只返回 JSON、不执行任何命令；
 调用串行执行，超时默认 180 秒。用量以 Codex 报告的 token 计入现有的评估 token 指标。
+自动评估默认按批调用（`PROCESSING_BATCH_SIZE`，默认 10 条一次；`PROCESSING_BATCH_MAX_CHARS` 限制一批的正文总量，
+ADR-0035），所以 `AI_CODEX_SCOPE=all` 时每天的调用次数是条目数的十分之一左右；每日上限按调用计数。
 把订阅额度用于服务端自动化是否符合 OpenAI 的使用政策，由所有者自行判断。
 
 ## 生产镜像依赖锁
