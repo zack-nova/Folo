@@ -85,3 +85,49 @@ describe("duplicate items", () => {
     expect(new Set(entries.map((entry) => entry.id)).size).toBe(2)
   })
 })
+
+describe("character references in text", () => {
+  it("decodes titles, authors and categories, also when they are escaped twice or in CDATA", () => {
+    const { feed, entries } = parseFeed(
+      `<rss version="2.0"><channel><title>Tom&#39;s &amp;amp; Jerry&#8217;s</title>
+        <item>
+          <guid>https://example.com/a</guid>
+          <title>It&#39;s &#x201C;here&#x201D; &amp;#39;now&amp;#39; &amp;mdash; AT&amp;amp;T</title>
+          <author>O&#39;Brien</author>
+          <category>Q&amp;amp;A</category>
+          <description>&lt;p&gt;Don&amp;#39;t&lt;/p&gt;</description>
+        </item>
+        <item>
+          <guid>https://example.com/b</guid>
+          <title><![CDATA[Don&#39;t stop &amp; go]]></title>
+        </item>
+      </channel></rss>`,
+      "https://example.com/feed",
+    )
+
+    expect(feed.title).toBe("Tom's & Jerry’s")
+    expect(entries.map((entry) => entry.title)).toEqual([
+      "It's “here” 'now' — AT&T",
+      "Don't stop & go",
+    ])
+    expect(entries[0]!.author).toBe("O'Brien")
+    expect(entries[0]!.categories).toEqual(["Q&A"])
+    // Markup fields stay HTML, decoded once by the XML parser.
+    expect(entries[0]!.description).toBe("<p>Don&#39;t</p>")
+  })
+
+  it("decodes Atom titles and author names", () => {
+    const { entries } = parseFeed(
+      atom(`
+        <entry>
+          <id>https://example.com/a</id>
+          <title type="html">What&amp;#39;s new &#8211; today</title>
+          <author><name>Zo&#235;</name></author>
+        </entry>`),
+      "https://example.com/feed",
+    )
+
+    expect(entries[0]!.title).toBe("What's new – today")
+    expect(entries[0]!.author).toBe("Zoë")
+  })
+})

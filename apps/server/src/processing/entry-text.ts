@@ -34,7 +34,8 @@ const namedEntities = new Map<string, string>([
   ["uarr", "↑"],
 ])
 
-const decodeEntities = (value: string): string =>
+/** Decodes HTML character references; unknown names are kept as written. */
+export const decodeEntities = (value: string): string =>
   value.replaceAll(
     /&(?:#(\d{1,7})|#x([\da-f]{1,6})|([a-z][a-z\d]{1,9}));/gi,
     (match, decimal, hex, name) => {
