@@ -5,6 +5,7 @@ import {
   desc,
   eq,
   gt,
+  gte,
   inArray,
   isNotNull,
   isNull,
@@ -18,7 +19,11 @@ import {
 import type { ApplicationDatabase } from "../db/database"
 import {
   actionRules,
+  aiChatMessages,
+  aiChatSessions,
   aiProviderConfigs,
+  aiTaskRuns,
+  aiTasks,
   collections,
   entries,
   entryCurrentEvaluations,
@@ -61,7 +66,15 @@ import {
 } from "../sync/actions"
 import type {
   ActionRulesRecord,
+  AIChatMessageRecord,
+  AIChatSessionRecord,
   AIProviderConfigRecord,
+  AITaskPatch,
+  AITaskRecord,
+  AITaskRunCompletion,
+  AITaskRunRecord,
+  BriefingCandidateQuery,
+  BriefingCandidateRecord,
   DataStore,
   EnqueueProcessingJobResult,
   EntryEvaluationRecord,
@@ -260,6 +273,9 @@ const flipReadStates = async (
     .map((row) => ({ entryId: row.entryId, feedId: feedIdByEntry.get(row.entryId)! }))
     .sort((left, right) => position.get(left.entryId)! - position.get(right.entryId)!)
 }
+
+/** Another worker recorded the slot or moved the task; the transaction rolls back. */
+class AITaskSlotTaken extends Error {}
 
 export class PostgresDataStore implements DataStore {
   constructor(private readonly database: ApplicationDatabase) {}
@@ -1546,5 +1562,336 @@ export class PostgresDataStore implements DataStore {
         settingsUpdated(userId, tab, saved?.payload ?? payload, updatedAt),
       ])
     })
+  }
+
+  async listAITasks(userId: string): Promise<AITaskRecord[]> {
+    const rows = await this.database
+      .select()
+      .from(aiTasks)
+      .where(eq(aiTasks.userId, userId))
+      .orderBy(asc(aiTasks.createdAt))
+    return rows as AITaskRecord[]
+  }
+
+  async getAITask(userId: string, taskId: string): Promise<AITaskRecord | null> {
+    const [task] = await this.database
+      .select()
+      .from(aiTasks)
+      .where(and(eq(aiTasks.userId, userId), eq(aiTasks.id, taskId)))
+      .limit(1)
+    return (task as AITaskRecord | undefined) ?? null
+  }
+
+  async createAITask(task: AITaskRecord): Promise<void> {
+    await this.database.insert(aiTasks).values(task)
+  }
+
+  async updateAITask(
+    userId: string,
+    taskId: string,
+    patch: AITaskPatch,
+  ): Promise<AITaskRecord | null> {
+    const [task] = await this.database
+      .update(aiTasks)
+      .set(patch)
+      .where(and(eq(aiTasks.userId, userId), eq(aiTasks.id, taskId)))
+      .returning()
+    return (task as AITaskRecord | undefined) ?? null
+  }
+
+  async deleteAITask(userId: string, taskId: string): Promise<boolean> {
+    const deleted = await this.database
+      .delete(aiTasks)
+      .where(and(eq(aiTasks.userId, userId), eq(aiTasks.id, taskId)))
+      .returning({ id: aiTasks.id })
+    return deleted.length > 0
+  }
+
+  async listDueAITasks(now: Date, limit: number): Promise<AITaskRecord[]> {
+    const rows = await this.database
+      .select()
+      .from(aiTasks)
+      .where(and(eq(aiTasks.isEnabled, true), lte(aiTasks.nextRunAt, now)))
+      .orderBy(asc(aiTasks.nextRunAt))
+      .limit(limit)
+    return rows as AITaskRecord[]
+  }
+
+  async scheduleAITaskRun(run: AITaskRunRecord, nextRunAt: Date | null): Promise<boolean> {
+    try {
+      await this.database.transaction(async (transaction) => {
+        const inserted = await transaction
+          .insert(aiTaskRuns)
+          .values(run)
+          .onConflictDoNothing()
+          .returning({ id: aiTaskRuns.id })
+        if (inserted.length === 0) throw new AITaskSlotTaken()
+        const moved = await transaction
+          .update(aiTasks)
+          .set({ nextRunAt })
+          .where(
+            and(
+              eq(aiTasks.id, run.taskId),
+              eq(aiTasks.isEnabled, true),
+              eq(aiTasks.nextRunAt, run.scheduledFor),
+            ),
+          )
+          .returning({ id: aiTasks.id })
+        if (moved.length === 0) throw new AITaskSlotTaken()
+      })
+      return true
+    } catch (error) {
+      if (error instanceof AITaskSlotTaken) return false
+      throw error
+    }
+  }
+
+  async createAITaskRun(run: AITaskRunRecord): Promise<void> {
+    await this.database.insert(aiTaskRuns).values(run)
+  }
+
+  private runnableAITaskRun(now: Date, staleBefore: Date) {
+    return or(
+      and(
+        eq(aiTaskRuns.status, "queued"),
+        or(isNull(aiTaskRuns.nextAttemptAt), lte(aiTaskRuns.nextAttemptAt, now)),
+      ),
+      and(eq(aiTaskRuns.status, "running"), lt(aiTaskRuns.startedAt, staleBefore)),
+    )
+  }
+
+  async listRunnableAITaskRuns(
+    now: Date,
+    staleBefore: Date,
+    limit: number,
+  ): Promise<AITaskRunRecord[]> {
+    const rows = await this.database
+      .select()
+      .from(aiTaskRuns)
+      .where(this.runnableAITaskRun(now, staleBefore))
+      .orderBy(asc(aiTaskRuns.createdAt))
+      .limit(limit)
+    return rows as AITaskRunRecord[]
+  }
+
+  async claimAITaskRun(
+    runId: string,
+    now: Date,
+    staleBefore: Date,
+  ): Promise<AITaskRunRecord | null> {
+    const [claimed] = await this.database
+      .update(aiTaskRuns)
+      .set({
+        attemptCount: sql`${aiTaskRuns.attemptCount} + 1`,
+        nextAttemptAt: null,
+        startedAt: now,
+        status: "running",
+      })
+      .where(and(eq(aiTaskRuns.id, runId), this.runnableAITaskRun(now, staleBefore)))
+      .returning()
+    return (claimed as AITaskRunRecord | undefined) ?? null
+  }
+
+  async getPreviousAITaskRun(taskId: string, before: Date): Promise<AITaskRunRecord | null> {
+    const [run] = await this.database
+      .select()
+      .from(aiTaskRuns)
+      .where(
+        and(
+          eq(aiTaskRuns.taskId, taskId),
+          eq(aiTaskRuns.kind, "scheduled"),
+          lt(aiTaskRuns.scheduledFor, before),
+        ),
+      )
+      .orderBy(desc(aiTaskRuns.scheduledFor))
+      .limit(1)
+    return (run as AITaskRunRecord | undefined) ?? null
+  }
+
+  async updateAITaskRun(run: AITaskRunRecord): Promise<void> {
+    const { id, ...fields } = run
+    await this.database.update(aiTaskRuns).set(fields).where(eq(aiTaskRuns.id, id))
+  }
+
+  async completeAITaskRun({ message, run, session, task }: AITaskRunCompletion): Promise<void> {
+    await this.database.transaction(async (transaction) => {
+      await transaction.insert(aiChatSessions).values(session)
+      await transaction.insert(aiChatMessages).values(message)
+      const { id, ...fields } = run
+      await transaction.update(aiTaskRuns).set(fields).where(eq(aiTaskRuns.id, id))
+      await transaction
+        .update(aiTasks)
+        .set({
+          lastError: task.lastError,
+          lastResult: task.lastResult,
+          lastRunAt: task.lastRunAt,
+          ...(task.countRun ? { runCount: sql`${aiTasks.runCount} + 1` } : {}),
+        })
+        .where(eq(aiTasks.id, task.id))
+    })
+  }
+
+  async listBriefingCandidates({
+    insertedAfter,
+    insertedBefore,
+    minimumScore,
+    userId,
+  }: BriefingCandidateQuery): Promise<{
+    candidates: BriefingCandidateRecord[]
+    unevaluatedCount: number
+  }> {
+    const inWindow = and(
+      gte(entries.insertedAt, insertedAfter),
+      lt(entries.insertedAt, insertedBefore),
+    )
+    const [rows, [unevaluated]] = await Promise.all([
+      this.database
+        .select({
+          entry: entries,
+          evaluation: entryEvaluations,
+          feedTitle: feeds.title,
+          subscription: subscriptions,
+        })
+        .from(entries)
+        .innerJoin(
+          subscriptions,
+          and(eq(subscriptions.feedId, entries.feedId), eq(subscriptions.userId, userId)),
+        )
+        .innerJoin(entryCurrentEvaluations, eq(entryCurrentEvaluations.entryId, entries.id))
+        .innerJoin(entryEvaluations, eq(entryEvaluations.id, entryCurrentEvaluations.evaluationId))
+        .leftJoin(feeds, eq(feeds.id, entries.feedId))
+        .where(and(inWindow, gte(entryEvaluations.overallScore, minimumScore))),
+      this.database
+        .select({ count: sql<number>`count(*)::int` })
+        .from(entries)
+        .innerJoin(
+          subscriptions,
+          and(eq(subscriptions.feedId, entries.feedId), eq(subscriptions.userId, userId)),
+        )
+        .leftJoin(entryCurrentEvaluations, eq(entryCurrentEvaluations.entryId, entries.id))
+        .where(and(inWindow, isNull(entryCurrentEvaluations.entryId))),
+    ])
+    const summaries =
+      rows.length === 0
+        ? []
+        : await this.database
+            .select({ entryId: entrySummaries.entryId, summary: entrySummaries.summary })
+            .from(entrySummaries)
+            .where(
+              and(
+                inArray(
+                  entrySummaries.entryId,
+                  rows.map((row) => row.entry.id),
+                ),
+                eq(entrySummaries.target, "content"),
+              ),
+            )
+            .orderBy(desc(entrySummaries.createdAt))
+    const summaryByEntry = new Map<string, string>()
+    for (const row of summaries) {
+      if (!summaryByEntry.has(row.entryId)) summaryByEntry.set(row.entryId, row.summary)
+    }
+    return {
+      candidates: rows.map((row) => ({
+        entry: row.entry,
+        evaluation: row.evaluation as EntryEvaluationRecord,
+        feedTitle: row.feedTitle,
+        subscription: row.subscription,
+        summary: summaryByEntry.get(row.entry.id) ?? null,
+      })),
+      unevaluatedCount: unevaluated?.count ?? 0,
+    }
+  }
+
+  async listAIChatSessions(
+    userId: string,
+    { before, limit }: { before?: Date; limit: number },
+  ): Promise<{ sessions: AIChatSessionRecord[]; total: number }> {
+    const [sessions, [total]] = await Promise.all([
+      this.database
+        .select()
+        .from(aiChatSessions)
+        .where(
+          and(
+            eq(aiChatSessions.userId, userId),
+            before ? lt(aiChatSessions.updatedAt, before) : undefined,
+          ),
+        )
+        .orderBy(desc(aiChatSessions.updatedAt))
+        .limit(limit),
+      this.database
+        .select({ count: sql<number>`count(*)::int` })
+        .from(aiChatSessions)
+        .where(eq(aiChatSessions.userId, userId)),
+    ])
+    return { sessions, total: total?.count ?? 0 }
+  }
+
+  async getAIChatSession(userId: string, chatId: string): Promise<AIChatSessionRecord | null> {
+    const [session] = await this.database
+      .select()
+      .from(aiChatSessions)
+      .where(and(eq(aiChatSessions.userId, userId), eq(aiChatSessions.chatId, chatId)))
+      .limit(1)
+    return session ?? null
+  }
+
+  async listAIChatMessages(
+    userId: string,
+    chatId: string,
+    { before, limit }: { before?: Date; limit: number },
+  ): Promise<AIChatMessageRecord[]> {
+    const rows = await this.database
+      .select({ message: aiChatMessages })
+      .from(aiChatMessages)
+      .innerJoin(
+        aiChatSessions,
+        and(eq(aiChatSessions.chatId, aiChatMessages.chatId), eq(aiChatSessions.userId, userId)),
+      )
+      .where(
+        and(
+          eq(aiChatMessages.chatId, chatId),
+          before ? lt(aiChatMessages.createdAt, before) : undefined,
+        ),
+      )
+      .orderBy(desc(aiChatMessages.createdAt))
+      .limit(limit)
+    return rows.map((row) => row.message as AIChatMessageRecord)
+  }
+
+  async updateAIChatSession(
+    userId: string,
+    chatId: string,
+    patch: Partial<Pick<AIChatSessionRecord, "lastSeenAt" | "title">>,
+  ): Promise<AIChatSessionRecord | null> {
+    const [session] = await this.database
+      .update(aiChatSessions)
+      .set(patch)
+      .where(and(eq(aiChatSessions.userId, userId), eq(aiChatSessions.chatId, chatId)))
+      .returning()
+    return session ?? null
+  }
+
+  async deleteAIChatSession(userId: string, chatId: string): Promise<boolean> {
+    const deleted = await this.database
+      .delete(aiChatSessions)
+      .where(and(eq(aiChatSessions.userId, userId), eq(aiChatSessions.chatId, chatId)))
+      .returning({ chatId: aiChatSessions.chatId })
+    return deleted.length > 0
+  }
+
+  async listUnreadAIChatSessionIds(userId: string, limit: number): Promise<string[]> {
+    const rows = await this.database
+      .select({ chatId: aiChatSessions.chatId })
+      .from(aiChatSessions)
+      .where(
+        and(
+          eq(aiChatSessions.userId, userId),
+          gt(aiChatSessions.updatedAt, aiChatSessions.lastSeenAt),
+        ),
+      )
+      .orderBy(desc(aiChatSessions.updatedAt))
+      .limit(limit)
+    return rows.map((row) => row.chatId)
   }
 }

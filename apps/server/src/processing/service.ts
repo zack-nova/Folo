@@ -35,7 +35,7 @@ const batchEvaluationSchema = z.object({
 
 type KeyOrder = (left: string, right: string) => number
 
-const canonicalize = (
+export const canonicalize = (
   value: unknown,
   compare: KeyOrder = (left, right) => left.localeCompare(right),
 ): unknown => {
@@ -52,7 +52,7 @@ const canonicalize = (
 
 // Code unit order, independent of the server locale. Content hashes keep the locale order above
 // because stored idempotency keys were computed with it.
-const codeUnitOrder: KeyOrder = (left, right) => (left < right ? -1 : left > right ? 1 : 0)
+export const codeUnitOrder: KeyOrder = (left, right) => (left < right ? -1 : left > right ? 1 : 0)
 
 export const contentHash = (value: unknown): string =>
   createHash("sha256")
@@ -68,7 +68,7 @@ export const entryContentFingerprint = (entry: EntryRecord): string =>
     url: entry.url,
   })
 
-const cleanJSONCompletion = (content: string): string => {
+export const cleanJSONCompletion = (content: string): string => {
   const trimmed = content.trim()
   if (!trimmed.startsWith("```")) return trimmed
   return trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")

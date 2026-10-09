@@ -424,3 +424,98 @@ export const syncFloors = pgTable("sync_floors", {
   userId: text("user_id").primaryKey(),
   floorId: bigint("floor_id", { mode: "number" }).notNull(),
 })
+
+/** Scheduled AI tasks (ADR-0036); the schedule and options keep the Folo client's JSON shape. */
+export const aiTasks = pgTable(
+  "ai_tasks",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    name: text("name").notNull(),
+    prompt: text("prompt").notNull(),
+    isEnabled: boolean("is_enabled").notNull(),
+    schedule: jsonb("schedule").$type<Record<string, unknown>>().notNull(),
+    options: jsonb("options").$type<Record<string, unknown>>().notNull(),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    runCount: integer("run_count").notNull(),
+    lastResult: text("last_result"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("ai_tasks_user_idx").on(table.userId, table.createdAt),
+    index("ai_tasks_due_idx").on(table.isEnabled, table.nextRunAt),
+  ],
+)
+
+/**
+ * One row per task run. A scheduled slot is recorded once (`scheduled_for` unique per task), so a
+ * restart or a second worker cannot produce the same report twice; test runs are not unique.
+ */
+export const aiTaskRuns = pgTable(
+  "ai_task_runs",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => aiTasks.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    kind: text("kind").notNull(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    windowEnd: timestamp("window_end", { withTimezone: true }).notNull(),
+    status: text("status").notNull(),
+    attemptCount: integer("attempt_count").notNull(),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    candidateCount: integer("candidate_count"),
+    selectedCount: integer("selected_count"),
+    unevaluatedCount: integer("unevaluated_count"),
+    errorCode: text("error_code"),
+    errorSummary: text("error_summary"),
+    usage: jsonb("usage").$type<Record<string, unknown>>(),
+    sessionId: text("session_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("ai_task_runs_scheduled_slot_unique")
+      .on(table.taskId, table.scheduledFor)
+      .where(sql`${table.kind} = 'scheduled'`),
+    index("ai_task_runs_queue_idx").on(table.status, table.nextAttemptAt),
+    index("ai_task_runs_task_idx").on(table.taskId, table.scheduledFor),
+  ],
+)
+
+/** Report sessions shown through the client's AI chat session API; only task runs create them. */
+export const aiChatSessions = pgTable(
+  "ai_chat_sessions",
+  {
+    chatId: text("chat_id").primaryKey(),
+    userId: text("user_id").notNull(),
+    title: text("title").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("ai_chat_sessions_user_idx").on(table.userId, table.updatedAt)],
+)
+
+export const aiChatMessages = pgTable(
+  "ai_chat_messages",
+  {
+    id: text("id").primaryKey(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => aiChatSessions.chatId, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    messageParts: jsonb("message_parts").$type<Array<Record<string, unknown>>>().notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    status: text("status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (table) => [index("ai_chat_messages_chat_idx").on(table.chatId, table.createdAt)],
+)

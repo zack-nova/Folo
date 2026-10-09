@@ -33,6 +33,8 @@ import type { AIProvider } from "./ai/provider"
 import { OpenAICompatibleProvider } from "./ai/provider"
 import type { CodexScope } from "./ai/router"
 import { AIProviderRouter } from "./ai/router"
+import { registerAITaskRoutes } from "./ai-tasks/routes"
+import { AITaskService } from "./ai-tasks/service"
 import { apiFeed, apiList, apiListSubscription, apiSubscription } from "./api-shapes"
 import type { AppAuth } from "./auth"
 import { MemoryDataStore } from "./data/memory-store"
@@ -45,7 +47,6 @@ import type {
   ListRecord,
   MaintenanceCleanupReport,
   ProcessingJobRecord,
-  ProcessingTaxonomySnapshotRecord,
   SettingsTab,
   SubscriptionPatch,
   SubscriptionRecord,
@@ -59,6 +60,7 @@ import type { WebListManagementClient } from "./feeds/web-list-management"
 import { WebListManagementError } from "./feeds/web-list-management"
 import { exportOpml, parseOpml } from "./opml"
 import { entryExcerpt } from "./processing/entry-text"
+import { FEATURED_SCORE_THRESHOLD, featuredRankingScore } from "./processing/featured"
 import { entryContentFingerprint, ProcessingError, ProcessingService } from "./processing/service"
 import { saveProfileSnapshot, saveTaxonomySnapshot } from "./processing/snapshots"
 
@@ -78,6 +80,12 @@ export interface BuildServerOptions {
   }
   /** Replaces the Codex provider in tests */
   aiCodexProvider?: AIProvider
+  /** How often due AI tasks are checked; 0 disables the scheduler (tests drive it directly) */
+  aiTaskPollIntervalMs?: number
+  /** Delays before retrying a failed scheduled task run */
+  aiTaskRetryDelaysMs?: number[]
+  /** IANA zone in which task schedules are read; the client builds them from local time */
+  aiTaskTimeZone?: string
   aiProviderFetch?: typeof globalThis.fetch
   aiProviderConfig?: {
     apiKey: string
@@ -211,45 +219,6 @@ const apiEvaluation = (evaluation: EntryEvaluationRecord, configurationOutdated:
   configuration_outdated: configurationOutdated,
 })
 
-const DEFAULT_FEATURED_HALF_LIFE_DAYS = 7
-const FEATURED_SCORE_THRESHOLD = 70
-
-const positiveNumber = (value: unknown): number | null =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null
-
-const featuredHalfLifeDays = (
-  taxonomy: ProcessingTaxonomySnapshotRecord | null,
-  primaryCategory: string,
-) => {
-  if (!taxonomy) return DEFAULT_FEATURED_HALF_LIFE_DAYS
-  const defaultHalfLife =
-    positiveNumber(taxonomy.content.default_half_life_days) ?? DEFAULT_FEATURED_HALF_LIFE_DAYS
-  const categories = Array.isArray(taxonomy.content.categories) ? taxonomy.content.categories : []
-  const category = categories.find(
-    (item): item is Record<string, unknown> =>
-      !!item && typeof item === "object" && !Array.isArray(item) && item.name === primaryCategory,
-  )
-  return (
-    positiveNumber(category?.featured_half_life_days) ??
-    positiveNumber(category?.half_life_days) ??
-    defaultHalfLife
-  )
-}
-
-const featuredRankingScore = (
-  entry: EntryRecord,
-  evaluation: EntryEvaluationRecord,
-  taxonomy: ProcessingTaxonomySnapshotRecord | null,
-  now = new Date(),
-) => {
-  const latestReliablePublishedAt = new Date(now.getTime() + 24 * 60 * 60 * 1_000)
-  const ageBaseline =
-    entry.publishedAt <= latestReliablePublishedAt ? entry.publishedAt : entry.insertedAt
-  const ageDays = Math.max(0, now.getTime() - ageBaseline.getTime()) / (24 * 60 * 60 * 1_000)
-  const halfLifeDays = featuredHalfLifeDays(taxonomy, evaluation.primaryCategory)
-  return evaluation.overallScore * 2 ** (-ageDays / halfLifeDays)
-}
-
 const numberFromUnknown = (value: unknown): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) return value
   if (typeof value !== "string" || value.trim() === "") return undefined
@@ -348,6 +317,8 @@ const implementedCapabilities = new Set([
   "actions.entry_processing",
   "ai.entry_processing",
   "ai.provider_configuration",
+  "ai.scheduled_tasks",
+  "ai.task_reports",
   "auth.account_management",
   "auth.credentials",
   "collections.core",
@@ -372,6 +343,9 @@ export const buildServer = async ({
   aiProvider,
   aiCodexConfig,
   aiCodexProvider,
+  aiTaskPollIntervalMs,
+  aiTaskRetryDelaysMs,
+  aiTaskTimeZone = "UTC",
   aiProviderFetch,
   aiProviderConfig,
   apiRateLimitMax = 600,
@@ -498,6 +472,17 @@ export const buildServer = async ({
   })
   processingService.start()
   server.addHook("onClose", async () => processingService.stop())
+
+  const aiTaskService = new AITaskService({
+    dataStore,
+    onError: (error) => server.log.error(error, "AI task scheduler failed"),
+    pollIntervalMs: aiTaskPollIntervalMs,
+    resolveProvider: resolveOwnerAIProvider,
+    retryDelaysMs: aiTaskRetryDelaysMs,
+    timeZone: aiTaskTimeZone,
+  })
+  aiTaskService.start()
+  server.addHook("onClose", async () => aiTaskService.stop())
 
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     Boolean(value) && typeof value === "object" && !Array.isArray(value)
@@ -930,6 +915,7 @@ export const buildServer = async ({
     const officialProvider = sourceProviders.find((provider) => provider.id === "folo_official")
     const tokenUsage = processingService.tokenUsage()
     const callCounts = processingService.callCounts()
+    const aiTaskTokens = aiTaskService.tokenUsage()
     const lines = [
       "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
       "# TYPE folo_subscribed_feeds gauge",
@@ -955,6 +941,19 @@ export const buildServer = async ({
       `folo_ai_evaluation_calls_total{kind="single"} ${callCounts.single}`,
       `folo_ai_evaluation_calls_total{kind="batch"} ${callCounts.batch}`,
       `folo_ai_evaluation_calls_total{kind="batched"} ${callCounts.batched}`,
+      "# HELP folo_ai_task_runs_total AI task runs finished since start, by kind and outcome.",
+      "# TYPE folo_ai_task_runs_total counter",
+      ...Object.entries(aiTaskService.runCounts()).flatMap(([kind, counts]) =>
+        Object.entries(counts).map(
+          ([status, count]) =>
+            `folo_ai_task_runs_total{kind="${kind}",status="${status}"} ${count}`,
+        ),
+      ),
+      "# HELP folo_ai_task_tokens_total Provider tokens used by AI task reports since start.",
+      "# TYPE folo_ai_task_tokens_total counter",
+      `folo_ai_task_tokens_total{kind="input"} ${aiTaskTokens.input}`,
+      `folo_ai_task_tokens_total{kind="cached_input"} ${aiTaskTokens.cachedInput}`,
+      `folo_ai_task_tokens_total{kind="output"} ${aiTaskTokens.output}`,
       "# HELP folo_source_provider_ready Whether an autonomous source provider is ready.",
       "# TYPE folo_source_provider_ready gauge",
       ...sourceProviders.map(
@@ -1329,12 +1328,21 @@ export const buildServer = async ({
     if ((await dataStore.getOwnerUserId()) !== session.user.id) {
       return reply.status(403).send({ code: "forbidden", message: "Instance owner required" })
     }
-    const [stats, subscribedFeeds, failedProcessingJobs, sourceProviders] = await Promise.all([
-      dataStore.getOperationalStats(new Date()),
-      dataStore.listSubscribedFeeds(),
-      dataStore.listFailedProcessingJobs(session.user.id, 50),
-      sourceProviderStatuses(),
-    ])
+    const [stats, subscribedFeeds, failedProcessingJobs, sourceProviders, aiTasks] =
+      await Promise.all([
+        dataStore.getOperationalStats(new Date()),
+        dataStore.listSubscribedFeeds(),
+        dataStore.listFailedProcessingJobs(session.user.id, 50),
+        sourceProviderStatuses(),
+        dataStore.listAITasks(session.user.id),
+      ])
+    const aiTaskOverdueBefore = Date.now() - 60 * 60 * 1_000
+    // A final failure sets lastError and the next success clears it; an enabled task whose slot
+    // passed an hour ago without a run means the scheduler is not running.
+    const failedAITasks = aiTasks.filter((task) => task.isEnabled && task.lastError)
+    const overdueAITasks = aiTasks.filter(
+      (task) => task.isEnabled && task.nextRunAt && task.nextRunAt.getTime() < aiTaskOverdueBefore,
+    )
     const feedFailures = subscribedFeeds
       .filter((feed) => feed.consecutiveFailures > 0)
       .sort((left, right) => (right.errorAt?.getTime() ?? 0) - (left.errorAt?.getTime() ?? 0))
@@ -1380,6 +1388,18 @@ export const buildServer = async ({
                 severity: "warning" as const,
               },
         ),
+      ...(failedAITasks.length > 0
+        ? [
+            {
+              code: "ai_task_runs_failed",
+              count: failedAITasks.length,
+              severity: "warning" as const,
+            },
+          ]
+        : []),
+      ...(overdueAITasks.length > 0
+        ? [{ code: "ai_tasks_overdue", count: overdueAITasks.length, severity: "warning" as const }]
+        : []),
       ...sourceProviders
         .filter(
           (provider) => provider.id === "folo_official" && (provider.failedBindingCount ?? 0) > 0,
@@ -2097,6 +2117,8 @@ export const buildServer = async ({
       throw error
     }
   })
+
+  registerAITaskRoutes(server, { authenticatedUserId, dataStore, service: aiTaskService })
 
   server.get("/ai/summary", async (request, reply) => {
     const userId = await authenticatedUserId(request.headers)

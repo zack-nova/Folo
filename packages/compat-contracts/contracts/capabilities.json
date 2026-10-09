@@ -407,19 +407,7 @@
       "targetStage": null,
       "provider": "unavailable",
       "clientBehavior": "hidden",
-      "sdkApis": [
-        "ai.config",
-        "ai.summaryTitle",
-        "aiAnalytics.get",
-        "aiChatSessions.delete",
-        "aiChatSessions.get",
-        "aiChatSessions.list",
-        "aiChatSessions.markSeen",
-        "aiChatSessions.messages.get",
-        "aiChatSessions.unread",
-        "aiChatSessions.update",
-        "upload.uploadChatAttachment"
-      ],
+      "sdkApis": ["ai.config", "ai.summaryTitle", "aiAnalytics.get", "upload.uploadChatAttachment"],
       "nonSdkRequests": [],
       "protocolRoutes": []
     },
@@ -436,6 +424,24 @@
         "aiTask.list",
         "aiTask.testRun",
         "aiTask.update"
+      ],
+      "nonSdkRequests": [],
+      "protocolRoutes": []
+    },
+    {
+      "id": "ai.task_reports",
+      "title": "Read-only AI task report sessions",
+      "targetStage": 5,
+      "provider": "local",
+      "clientBehavior": "enabled_when_advertised",
+      "sdkApis": [
+        "aiChatSessions.delete",
+        "aiChatSessions.get",
+        "aiChatSessions.list",
+        "aiChatSessions.markSeen",
+        "aiChatSessions.messages.get",
+        "aiChatSessions.unread",
+        "aiChatSessions.update"
       ],
       "nonSdkRequests": [],
       "protocolRoutes": []
