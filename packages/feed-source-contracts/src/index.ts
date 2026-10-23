@@ -144,6 +144,10 @@ export type SourceAuditAction =
   | "web_list_source.deleted"
   | "web_list_source.tested"
   | "web_list_source.updated"
+  | "behavior_source.created"
+  | "behavior_source.deleted"
+  | "behavior_source.tested"
+  | "behavior_source.updated"
   | "public_feed_grant.created"
   | "public_feed_grant.revoked"
   | "public_feed_link.created"
@@ -171,6 +175,7 @@ export interface SourceAuditEvent {
   previousHash: string | null
   resourceId: string | null
   resourceType:
+    | "behavior_source"
     | "catalog_route"
     | "credential"
     | "official_account"
@@ -370,6 +375,99 @@ export interface WebListCheckResult {
   status: "items_published" | "unchanged"
 }
 
+/** Platforms whose personal behavior a supplier can follow (ADR-0037). */
+export type PlatformBehaviorPlatform = "bilibili"
+/** What one behavior source watches: new follows or new favorites of one account. */
+export type PlatformBehaviorScope = "favorites" | "follows"
+
+/**
+ * One platform account scope watched for new behavior (ADR-0037). The first successful check
+ * only records a baseline; later checks publish what appeared after it.
+ */
+export interface PlatformBehaviorSource {
+  /** The account on the platform, such as a Bilibili UID */
+  accountId: string
+  /** When the first snapshot was recorded; nothing before it is published */
+  baselineAt: string | null
+  consecutiveFailures: number
+  createdAt: string
+  /** Supplier credential holding the platform login, or null to read without one */
+  credentialId: string | null
+  deletedAt: string | null
+  enabled: boolean
+  entryCount: number
+  feedURL: string
+  id: string
+  intervalMinutes: number | null
+  lastAttemptAt: string | null
+  lastErrorCode: string | null
+  lastErrorSummary: string | null
+  lastSuccessAt: string | null
+  name: string
+  nextCheckAt: string | null
+  platform: PlatformBehaviorPlatform
+  scope: PlatformBehaviorScope
+  updatedAt: string
+}
+
+export interface PlatformBehaviorEntry {
+  content: string
+  discoveredAt: string
+  guid: string
+  id: string
+  /** Cover or avatar shown as the entry image */
+  imageURL: string | null
+  /** When the behavior happened on the platform, or when it was discovered */
+  occurredAt: string
+  sourceId: string
+  summary: string
+  title: string
+  url: string
+}
+
+/** Body of a create request; omitted fields take the supplier defaults. */
+export interface PlatformBehaviorSourceInput {
+  accountId: string
+  credentialId?: string | null
+  enabled?: boolean
+  intervalMinutes?: number | null
+  name: string
+  platform: PlatformBehaviorPlatform
+  scope: PlatformBehaviorScope
+}
+
+/** The watched account and scope are fixed; changing them needs a new source and baseline. */
+export type PlatformBehaviorSourcePatch = Partial<
+  Pick<PlatformBehaviorSourceInput, "credentialId" | "enabled" | "intervalMinutes" | "name">
+>
+
+export interface PlatformBehaviorPreviewObject {
+  occurredAt: string | null
+  title: string
+  url: string
+}
+
+export interface PlatformBehaviorTestResult {
+  /** Partial reads, such as folders skipped for the time budget */
+  notes: string[]
+  objectCount: number
+  objects: PlatformBehaviorPreviewObject[]
+  requestCount: number
+}
+
+export interface PlatformBehaviorCheckResult {
+  /** Objects seen for the first time, including ones older than the baseline */
+  newObjectCount: number
+  publishedCount: number
+  source: PlatformBehaviorSource
+  status: "baseline_recorded" | "entries_published" | "unchanged"
+}
+
+export interface ParsedBehaviorSource {
+  logicalURL: string
+  sourceId: string
+}
+
 export interface ParsedWebListSource {
   logicalURL: string
   sourceId: string
@@ -395,6 +493,35 @@ export const webListFeedURL = (sourceId: string): string => {
     throw new Error("Web list source ID must be a UUID")
   }
   return `weblist://${sourceId.toLowerCase()}`
+}
+
+export const behaviorFeedURL = (sourceId: string): string => {
+  if (!sourceIdPattern.test(sourceId)) {
+    throw new Error("Behavior source ID must be a UUID")
+  }
+  return `behavior://${sourceId.toLowerCase()}`
+}
+
+export const parseBehaviorSource = (input: string): ParsedBehaviorSource => {
+  let sourceURL: URL
+  try {
+    sourceURL = new URL(input)
+  } catch {
+    throw new Error("Behavior source URL is invalid")
+  }
+  if (sourceURL.protocol !== "behavior:") {
+    throw new Error("Behavior source URL must use the behavior:// scheme")
+  }
+  if (sourceURL.username || sourceURL.password || sourceURL.port || sourceURL.pathname !== "") {
+    throw new Error("Behavior source URL must contain only a source ID")
+  }
+  if (sourceURL.search || sourceURL.hash) {
+    throw new Error("Behavior source URL must not contain a query or fragment")
+  }
+  return {
+    logicalURL: behaviorFeedURL(sourceURL.hostname),
+    sourceId: sourceURL.hostname.toLowerCase(),
+  }
 }
 
 export const parseWebListSource = (input: string): ParsedWebListSource => {
@@ -493,7 +620,7 @@ export interface PublicFeedGrant {
 export interface PublicFeedLink {
   id: string
   grantId: string
-  /** Logical source address: rsshub://, pagechange:// or weblist:// */
+  /** Logical source address: rsshub://, pagechange://, weblist:// or behavior:// */
   sourceURL: string
   /** Reader-facing title and category, usually taken from the subscription preset */
   title: string | null

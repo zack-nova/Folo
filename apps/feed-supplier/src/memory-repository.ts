@@ -1,6 +1,8 @@
 import type {
   OfficialAcquisitionBinding,
   PageChangeEvent,
+  PlatformBehaviorEntry,
+  PlatformBehaviorSource,
   SourceAuditEvent,
   SourceAuditVerification,
   SourceCatalogRouteAdministration,
@@ -16,6 +18,7 @@ import type {
 } from "./official-account-repository"
 import type { OfficialBindingPatch } from "./official-binding-repository"
 import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
+import type { StoredBehaviorObject } from "./platform-behavior-repository"
 import type {
   PublicFeedAccess,
   StoredPublicFeedGrant,
@@ -87,6 +90,9 @@ export class MemorySupplierRepository implements SupplierRepository {
   private readonly publicFeedLinks = new Map<string, StoredPublicFeedLink>()
   private readonly webListSources = new Map<string, StoredWebListSource>()
   private readonly webListItems = new Map<string, StoredWebListItem[]>()
+  private readonly behaviorSources = new Map<string, PlatformBehaviorSource>()
+  private readonly behaviorObjects = new Map<string, StoredBehaviorObject[]>()
+  private readonly behaviorEntries = new Map<string, PlatformBehaviorEntry[]>()
   private readonly auditEvents: SourceAuditEvent[] = []
   private readonly catalogRoutes = new Map<string, SourceCatalogRouteAdministration>()
   private readonly credentials = new Map<string, StoredCredential>()
@@ -226,6 +232,134 @@ export class MemorySupplierRepository implements SupplierRepository {
     )
       throw new RepositoryConflictError("An active web list source already uses this name")
   }
+  async countBehaviorSources(
+    now: string,
+  ): Promise<{ due: number; enabled: number; total: number }> {
+    const sources = [...this.behaviorSources.values()].filter((source) => !source.deletedAt)
+    return {
+      due: sources.filter(
+        (source) => source.enabled && source.nextCheckAt && source.nextCheckAt <= now,
+      ).length,
+      enabled: sources.filter((source) => source.enabled).length,
+      total: sources.length,
+    }
+  }
+
+  async listBehaviorSources(): Promise<PlatformBehaviorSource[]> {
+    return [...this.behaviorSources.values()]
+      .filter((source) => !source.deletedAt)
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((value) => structuredClone(value))
+  }
+
+  async findBehaviorSource(id: string): Promise<PlatformBehaviorSource | null> {
+    const source = this.behaviorSources.get(id)
+    return source && !source.deletedAt ? structuredClone(source) : null
+  }
+
+  async createBehaviorSource(
+    source: PlatformBehaviorSource,
+    audit: AuditEventDraft,
+  ): Promise<PlatformBehaviorSource> {
+    this.assertUniqueBehaviorSourceName(source.name, source.id)
+    this.behaviorSources.set(source.id, structuredClone(source))
+    this.appendAudit(audit)
+    return structuredClone(source)
+  }
+
+  async updateBehaviorSource(
+    source: PlatformBehaviorSource,
+    audit: AuditEventDraft,
+  ): Promise<PlatformBehaviorSource | null> {
+    const current = this.behaviorSources.get(source.id)
+    if (!current || current.deletedAt) return null
+    this.assertUniqueBehaviorSourceName(source.name, source.id)
+    this.behaviorSources.set(source.id, structuredClone(source))
+    this.appendAudit(audit)
+    return structuredClone(source)
+  }
+
+  async softDeleteBehaviorSource(
+    id: string,
+    deletedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<PlatformBehaviorSource | null> {
+    const source = this.behaviorSources.get(id)
+    if (!source || source.deletedAt) return null
+    const updated = {
+      ...source,
+      deletedAt,
+      enabled: false,
+      nextCheckAt: null,
+      updatedAt: deletedAt,
+    }
+    this.behaviorSources.set(id, structuredClone(updated))
+    this.appendAudit(audit)
+    return structuredClone(updated)
+  }
+
+  async listDueBehaviorSources(now: string, limit: number): Promise<PlatformBehaviorSource[]> {
+    return [...this.behaviorSources.values()]
+      .filter(
+        (source) =>
+          !source.deletedAt && source.enabled && source.nextCheckAt && source.nextCheckAt <= now,
+      )
+      .sort((left, right) => left.nextCheckAt!.localeCompare(right.nextCheckAt!))
+      .slice(0, limit)
+      .map((value) => structuredClone(value))
+  }
+
+  async findBehaviorObjectKeys(sourceId: string, keys: string[]): Promise<string[]> {
+    return (this.behaviorObjects.get(sourceId) ?? [])
+      .filter((object) => keys.includes(object.objectKey))
+      .map((object) => object.objectKey)
+  }
+
+  async saveBehaviorObservation(
+    source: PlatformBehaviorSource,
+    objects: StoredBehaviorObject[],
+    entries: PlatformBehaviorEntry[],
+  ): Promise<PlatformBehaviorSource> {
+    const current = this.behaviorSources.get(source.id)
+    if (!current || current.deletedAt) throw new Error("Behavior source was not found")
+    const storedObjects = this.behaviorObjects.get(source.id) ?? []
+    for (const object of objects) {
+      if (!storedObjects.some((existing) => existing.objectKey === object.objectKey))
+        storedObjects.push(structuredClone(object))
+    }
+    this.behaviorObjects.set(source.id, storedObjects)
+    const storedEntries = this.behaviorEntries.get(source.id) ?? []
+    for (const entry of entries) {
+      if (!storedEntries.some((existing) => existing.guid === entry.guid))
+        storedEntries.push(structuredClone(entry))
+    }
+    this.behaviorEntries.set(source.id, storedEntries)
+    const updated = { ...source, entryCount: storedEntries.length }
+    this.behaviorSources.set(source.id, structuredClone(updated))
+    return structuredClone(updated)
+  }
+
+  async listBehaviorEntries(sourceId: string, limit: number): Promise<PlatformBehaviorEntry[]> {
+    return [...(this.behaviorEntries.get(sourceId) ?? [])]
+      .sort(
+        (left, right) =>
+          right.occurredAt.localeCompare(left.occurredAt) ||
+          right.discoveredAt.localeCompare(left.discoveredAt),
+      )
+      .slice(0, limit)
+      .map((value) => structuredClone(value))
+  }
+
+  private assertUniqueBehaviorSourceName(name: string, id: string): void {
+    if (
+      [...this.behaviorSources.values()].some(
+        (source) =>
+          !source.deletedAt && source.id !== id && source.name.toLowerCase() === name.toLowerCase(),
+      )
+    )
+      throw new RepositoryConflictError("An active behavior source already uses this name")
+  }
+
   async countPageChangeSources(now: string): Promise<PageChangeProviderCounts> {
     const sources = [...this.pageSources.values()].filter((source) => !source.deletedAt)
     return {

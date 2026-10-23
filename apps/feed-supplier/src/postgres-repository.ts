@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises"
 import type {
   OfficialAcquisitionBinding,
   PageChangeEvent,
+  PlatformBehaviorEntry,
+  PlatformBehaviorSource,
   RssHubCredentialRequirement,
   SourceAuditAction,
   SourceAuditEvent,
@@ -23,6 +25,20 @@ import type {
 } from "./official-account-repository"
 import type { OfficialBindingPatch } from "./official-binding-repository"
 import type { PageChangeProviderCounts, StoredPageChangeSource } from "./page-change-repository"
+import type { BehaviorSourceRow } from "./platform-behavior-postgres"
+import {
+  behaviorEntryColumns,
+  behaviorEntryFromRow,
+  behaviorEntrySelect,
+  behaviorEntryValues,
+  behaviorObjectColumns,
+  behaviorObjectValues,
+  behaviorSourceColumns,
+  behaviorSourceFromRow,
+  behaviorSourceSelect,
+  behaviorSourceValues,
+} from "./platform-behavior-postgres"
+import type { StoredBehaviorObject } from "./platform-behavior-repository"
 import type {
   PublicFeedAccess,
   StoredPublicFeedGrant,
@@ -451,6 +467,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
         "006_link_metadata_and_credentials.sql",
         "007_official_accounts.sql",
         "008_official_bindings.sql",
+        "009_platform_behavior_sources.sql",
       ].map(async (filename, index) => ({
         sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
         version: index + 1,
@@ -637,6 +654,154 @@ export class PostgresSupplierRepository implements SupplierRepository {
         [source.id],
       )
       return webListSourceFromRow(saved.rows[0]!)
+    })
+  }
+
+  async countBehaviorSources(
+    now: string,
+  ): Promise<{ due: number; enabled: number; total: number }> {
+    const result = await this.pool.query<{ due: number; enabled: number; total: number }>(
+      `select count(*) filter (where enabled and next_check_at <= $1)::integer as due, count(*) filter (where enabled)::integer as enabled, count(*)::integer as total from behavior_sources where deleted_at is null`,
+      [now],
+    )
+    return result.rows[0] ?? { due: 0, enabled: 0, total: 0 }
+  }
+  async listBehaviorSources(): Promise<PlatformBehaviorSource[]> {
+    const result = await this.pool.query<BehaviorSourceRow>(
+      `${behaviorSourceSelect} where source.deleted_at is null order by lower(source.name), source.created_at`,
+    )
+    return result.rows.map(behaviorSourceFromRow)
+  }
+  async findBehaviorSource(id: string): Promise<PlatformBehaviorSource | null> {
+    const result = await this.pool.query<BehaviorSourceRow>(
+      `${behaviorSourceSelect} where source.id = $1 and source.deleted_at is null`,
+      [id],
+    )
+    return result.rows[0] ? behaviorSourceFromRow(result.rows[0]) : null
+  }
+  async listDueBehaviorSources(now: string, limit: number): Promise<PlatformBehaviorSource[]> {
+    const result = await this.pool.query<BehaviorSourceRow>(
+      `${behaviorSourceSelect} where source.deleted_at is null and source.enabled and source.next_check_at <= $1 order by source.next_check_at limit $2`,
+      [now, limit],
+    )
+    return result.rows.map(behaviorSourceFromRow)
+  }
+  async createBehaviorSource(
+    source: PlatformBehaviorSource,
+    audit: AuditEventDraft,
+  ): Promise<PlatformBehaviorSource> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        const values = behaviorSourceValues(source)
+        await client.query(
+          `insert into behavior_sources (${Object.values(behaviorSourceColumns).join(",")}) values (${values.map((_value, index) => `$${index + 1}`).join(",")})`,
+          values,
+        )
+        return source
+      })
+    } catch (error) {
+      if (isUniqueViolation(error))
+        throw new RepositoryConflictError("An active behavior source already uses this name")
+      throw error
+    }
+  }
+  async updateBehaviorSource(
+    source: PlatformBehaviorSource,
+    audit: AuditEventDraft,
+  ): Promise<PlatformBehaviorSource | null> {
+    try {
+      return await this.withMutation(audit, async (client) => {
+        const columns = Object.values(behaviorSourceColumns).slice(1)
+        const result = await client.query(
+          `update behavior_sources set ${columns.map((column, index) => `${column} = $${index + 2}`).join(",")} where id = $1 and deleted_at is null`,
+          behaviorSourceValues(source),
+        )
+        return result.rowCount ? source : null
+      })
+    } catch (error) {
+      if (isUniqueViolation(error))
+        throw new RepositoryConflictError("An active behavior source already uses this name")
+      throw error
+    }
+  }
+  async softDeleteBehaviorSource(
+    id: string,
+    deletedAt: string,
+    audit: AuditEventDraft,
+  ): Promise<PlatformBehaviorSource | null> {
+    return this.withMutation(audit, async (client) => {
+      const result = await client.query<BehaviorSourceRow>(
+        `${behaviorSourceSelect} where source.id = $1 and source.deleted_at is null`,
+        [id],
+      )
+      if (!result.rows[0]) return null
+      await client.query(
+        "update behavior_sources set enabled = false, next_check_at = null, deleted_at = $2, updated_at = $2 where id = $1",
+        [id, deletedAt],
+      )
+      return {
+        ...behaviorSourceFromRow(result.rows[0]),
+        enabled: false,
+        nextCheckAt: null,
+        deletedAt,
+        updatedAt: deletedAt,
+      }
+    })
+  }
+  async listBehaviorEntries(sourceId: string, limit: number): Promise<PlatformBehaviorEntry[]> {
+    const result = await this.pool.query<PlatformBehaviorEntry>(
+      `${behaviorEntrySelect} where source_id = $1 order by occurred_at desc, discovered_at desc, id desc limit $2`,
+      [sourceId, limit],
+    )
+    return result.rows.map(behaviorEntryFromRow)
+  }
+  async findBehaviorObjectKeys(sourceId: string, keys: string[]): Promise<string[]> {
+    const result = await this.pool.query<{ object_key: string }>(
+      "select object_key from behavior_objects where source_id = $1 and object_key = ANY($2::text[])",
+      [sourceId, keys],
+    )
+    return result.rows.map((row) => row.object_key)
+  }
+  async saveBehaviorObservation(
+    source: PlatformBehaviorSource,
+    objects: StoredBehaviorObject[],
+    entries: PlatformBehaviorEntry[],
+  ): Promise<PlatformBehaviorSource> {
+    return this.withTransaction(async (client) => {
+      const result = await client.query(
+        `update behavior_sources set baseline_at=$2, next_check_at=$3, last_attempt_at=$4, last_success_at=$5, last_error_code=$6, last_error_summary=$7, consecutive_failures=$8, updated_at=$9 where id=$1 and deleted_at is null`,
+        [
+          source.id,
+          source.baselineAt,
+          source.nextCheckAt,
+          source.lastAttemptAt,
+          source.lastSuccessAt,
+          source.lastErrorCode,
+          source.lastErrorSummary,
+          source.consecutiveFailures,
+          source.updatedAt,
+        ],
+      )
+      if (!result.rowCount) throw new Error("Behavior source was not found")
+      for (const entry of entries) {
+        const values = behaviorEntryValues(entry)
+        await client.query(
+          `insert into behavior_entries (${Object.values(behaviorEntryColumns).join(",")}) values (${values.map((_value, index) => `$${index + 1}`).join(",")}) on conflict (guid) do nothing`,
+          values,
+        )
+      }
+      for (const object of objects) {
+        const values = behaviorObjectValues(object)
+        await client.query(
+          `insert into behavior_objects (${Object.values(behaviorObjectColumns).join(",")}) values (${values.map((_value, index) => `$${index + 1}`).join(",")}) on conflict (source_id, object_key) do nothing`,
+          values,
+        )
+      }
+      const saved = await client.query<BehaviorSourceRow>(
+        `${behaviorSourceSelect} where source.id = $1`,
+        [source.id],
+      )
+      return behaviorSourceFromRow(saved.rows[0]!)
     })
   }
 
