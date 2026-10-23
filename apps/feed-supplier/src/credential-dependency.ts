@@ -1,5 +1,5 @@
 import type { SourceCredentialDependency } from "@follow/feed-source-contracts"
-import { parseRssHubSource } from "@follow/feed-source-contracts"
+import { parseBehaviorSource, parseRssHubSource } from "@follow/feed-source-contracts"
 
 import type { SupplierRepository } from "./repository"
 import { secretQueryParameter } from "./secret-parameters"
@@ -18,11 +18,15 @@ const unknownCredentials: SourceCredentialDependency = { ...noCredentials, statu
  * Which personal credentials a logical source depends on (ADR-0033). Web list and page change
  * sources cannot carry credentials yet. RSSHub sources combine the supplier credentials bound to
  * the route or its catalog template with the RSSHub deployment credentials the template declares;
+ * behavior sources use the platform login they are bound to;
  * an address no template describes is unknown rather than credential-free.
  */
 export const resolveCredentialDependency = async (
   sourceURL: string,
-  repository: Pick<SupplierRepository, "findCredential" | "findRouteBySourceURL">,
+  repository: Pick<
+    SupplierRepository,
+    "findBehaviorSource" | "findCredential" | "findRouteBySourceURL"
+  >,
   catalog: Pick<SourceCatalogService, "matchTemplate">,
 ): Promise<SourceCredentialDependency> => {
   let protocol: string
@@ -32,6 +36,23 @@ export const resolveCredentialDependency = async (
     return unknownCredentials
   }
   if (protocol === "weblist:" || protocol === "pagechange:") return noCredentials
+  if (protocol === "behavior:") {
+    let sourceId: string
+    try {
+      sourceId = parseBehaviorSource(sourceURL).sourceId
+    } catch {
+      return unknownCredentials
+    }
+    const source = await repository.findBehaviorSource(sourceId)
+    if (!source) return unknownCredentials
+    if (!source.credentialId) return noCredentials
+    const credential = await repository.findCredential(source.credentialId)
+    return {
+      ...noCredentials,
+      status: "uses",
+      boundCredentials: [credential?.name ?? `missing credential ${source.credentialId}`],
+    }
+  }
   if (protocol !== "rsshub:") return unknownCredentials
   // A secret pasted into the address is a personal credential nobody declared.
   if (secretQueryParameter(new URL(sourceURL))) return unknownCredentials

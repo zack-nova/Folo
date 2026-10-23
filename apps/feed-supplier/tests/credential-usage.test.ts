@@ -327,6 +327,7 @@ describe.each(rotationRepositories)("public link key rotation (%s)", (_name, cre
 
 describe("credential dependency", () => {
   const repository = {
+    findBehaviorSource: vi.fn().mockResolvedValue(null),
     findCredential: vi.fn(),
     findRouteBySourceURL: vi.fn().mockResolvedValue(null),
   }
@@ -355,6 +356,21 @@ describe("credential dependency", () => {
       (await resolveCredentialDependency("rsshub://example/feed?token=abc", repository, catalog))
         .status,
     ).toBe("unknown")
+  })
+
+  it("reports the login a behavior source is bound to", async () => {
+    const sourceURL = "behavior://00000000-0000-4000-8000-000000000000"
+    expect((await resolveCredentialDependency(sourceURL, repository, catalog)).status).toBe(
+      "unknown",
+    )
+    repository.findBehaviorSource.mockResolvedValueOnce({ credentialId: null })
+    expect((await resolveCredentialDependency(sourceURL, repository, catalog)).status).toBe("none")
+    repository.findBehaviorSource.mockResolvedValueOnce({ credentialId: "login" })
+    repository.findCredential.mockResolvedValueOnce({ name: "Bilibili login" })
+    expect(await resolveCredentialDependency(sourceURL, repository, catalog)).toMatchObject({
+      status: "uses",
+      boundCredentials: ["Bilibili login"],
+    })
   })
 
   it("names a bound credential that no longer exists instead of hiding it", async () => {

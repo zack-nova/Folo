@@ -458,6 +458,8 @@ export interface PlatformBehaviorTestResult {
 export interface PlatformBehaviorCheckResult {
   /** Objects seen for the first time, including ones older than the baseline */
   newObjectCount: number
+  /** Partial reads, such as folders skipped for the time budget */
+  notes: string[]
   publishedCount: number
   source: PlatformBehaviorSource
   status: "baseline_recorded" | "entries_published" | "unchanged"
