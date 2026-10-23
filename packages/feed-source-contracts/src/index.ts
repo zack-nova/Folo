@@ -376,7 +376,7 @@ export interface WebListCheckResult {
 }
 
 /** Platforms whose personal behavior a supplier can follow (ADR-0037). */
-export type PlatformBehaviorPlatform = "bilibili" | "zhihu"
+export type PlatformBehaviorPlatform = "bilibili" | "douyin" | "zhihu"
 /** What one behavior source watches: new follows or new favorites of one account. */
 export type PlatformBehaviorScope = "favorites" | "follows"
 

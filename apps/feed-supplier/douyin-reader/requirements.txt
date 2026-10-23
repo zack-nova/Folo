@@ -1,0 +1,4 @@
+# F2 (Apache-2.0) pinned to a commit verified against the owner's account on 2026-10-23. It is
+# newer than the 0.0.1.7 release: since 2026-08 Douyin's gateway refuses favorites requests
+# without the x-tt-argus header that F2 added in 9b759fc. Its own dependency pins follow.
+f2 @ https://github.com/Johnserf-Seed/f2/archive/f6be8c0ffba9a127075bbeafe4838716650b6325.tar.gz

@@ -176,7 +176,7 @@ FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
 `request.query` 直接写入目标 URL，`metadata_paths` 对应带显示名的 `json.metadataPaths`；站点改版后需要按当前
 页面结构修正选择器，并先用 `test` 预览确认。
 
-## 平台行为源（B 站、知乎）
+## 平台行为源（B 站、知乎、抖音）
 
 平台行为源（ADR-0037）把你自己在平台上的新动作发布成 Feed：第一版支持 B 站的**新关注 UP 主**和**新收藏视频**。
 一个来源只看一个账号的一种动作，所以通常建两个：`follows`（新关注）和 `favorites`（新收藏）。
@@ -226,7 +226,7 @@ curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" -H "Content-Type
 登录凭据。按节点分工，这类个人信息来源放在 Mac mini 节点。
 
 相关配置：`BEHAVIOR_FETCH_TIMEOUT_MS`、`BEHAVIOR_FETCH_MAX_BYTES`、`BEHAVIOR_REQUEST_DELAY_MS`、
-`BEHAVIOR_SCHEDULER_POLL_INTERVAL_MS`。
+`BEHAVIOR_SCHEDULER_POLL_INTERVAL_MS`；抖音另需 `DOUYIN_READER_URL`、`DOUYIN_READER_TOKEN`（见下文）。
 
 接下一个平台时，在 `src/platforms/` 下新增一个实现 `PlatformBehaviorAdapter` 的文件（读取当前列表、把新对象写成
 条目），在 `server.ts` 注册，并把平台名加进契约、校验和迁移的约束；基线、差分、调度、存储和 Feed 输出都是共用的，
@@ -244,6 +244,23 @@ curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" -H "Content-Type
   之后每次只读最新几页，遇到已见过的账号就停；新关注以发现时间发布，一次检查里的新关注合成一条。
 - 知乎请求之间至少间隔 2 秒。知乎偶尔对单页回 403（错误 10003，要求客户端签名），几秒后又正常：同一页最多在 5 秒、10 秒后各重试一次；
   仍被拒时，基线保留已读部分、1 小时后接着读，平时的检查记为 `behavior_rate_limited`。未登录回 401，记为 `behavior_auth_invalid`；两者都至少 6 小时后再试。
+
+### 抖音
+
+抖音的网页接口要求请求签名（a_bogus 等），由旁边的 `douyin-reader` 小容器用 [F2](https://github.com/Johnserf-Seed/f2)
+（Apache-2.0，`douyin-reader/requirements.txt` 按提交固定）完成；供给端经内部网络把登录 Cookie 随每个请求交给它，它不保存、
+不记录 Cookie，并且只在 Cookie 所属账号与来源的 `accountId` 一致时才读取，所以只能读你自己的列表。
+
+- 只在读抖音的节点启用：`.env.production` 里设 `COMPOSE_PROFILES=douyin`、`DOUYIN_READER_URL=http://douyin-reader:3011`
+  和独立的 32 位以上 `DOUYIN_READER_TOKEN`（两个服务共用）。大陆网络构建镜像时可设 `DOUYIN_READER_PIP_INDEX_URL` 为镜像源。
+- `platform` 写 `douyin`，`accountId` 是主页地址 `douyin.com/user/<sec_uid>` 里的 `sec_uid`（`MS4wLjABAAAA…`）。凭据要填浏览器里
+  **完整的一行 Cookie**（含 `sessionid`、`ttwid`、`UIFID` 等），只填 `sessionid` 不够。`sessionid` 约两个月过期。
+- 新关注（`follows`）和新收藏（`favorites`，即“收藏 → 作品”）都**没有时间**，按“没有平台时间的列表”处理：基线读完整个列表
+  （每页 20 个、页间至少 3 秒，约 2000 个要几次检查），之后只读最新几页、遇到见过的就停，以发现时间发布。新关注每次合成一条；
+  新收藏每个作品一条（图文作品链接到 `/note/`）。
+- 抖音拒绝请求时记为 `behavior_rate_limited`，基线保留已读部分、1 小时后接着读；Cookie 与账号不符记为 `behavior_account_mismatch`。
+- 抖音改签名后，把 `requirements.txt` 里的 F2 提交换成修复后的版本重新构建即可。2026-08 起抖音网关要求 `x-tt-argus` 请求头，
+  F2 0.0.1.7 正式版没有这个修复，所以固定的是之后的提交。
 
 ## 平台源目录与订阅迁移
 

@@ -469,6 +469,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
         "008_official_bindings.sql",
         "009_platform_behavior_sources.sql",
         "010_behavior_baseline_cursor.sql",
+        "011_douyin_behavior_platform.sql",
       ].map(async (filename, index) => ({
         sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
         version: index + 1,
