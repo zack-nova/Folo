@@ -98,6 +98,11 @@ export const bilibiliCookieHeader = (credential: string): string => {
   return value.includes("=") ? value : `SESSDATA=${value}`
 }
 
+/** Uploaders often repeat the title or write "-" as the description; neither adds anything. */
+const meaningfulIntro = (intro: string, title: string): string => {
+  const trimmed = intro.trim()
+  return trimmed === title.trim() || /^[-—\s.。]*$/.test(trimmed) ? "" : trimmed
+}
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai",
   year: "numeric",
@@ -368,7 +373,7 @@ export class BilibiliBehaviorAdapter implements PlatformBehaviorAdapter {
       snapshot: {
         bvid,
         title,
-        intro: text(media.intro).slice(0, 1000),
+        intro: meaningfulIntro(text(media.intro), title).slice(0, 1000),
         upperMid: media.upper?.mid ? String(media.upper.mid) : null,
         upperName: text(media.upper?.name),
         cover: httpsURL(media.cover),

@@ -21,6 +21,7 @@ const seconds = (iso: string) => Date.parse(iso) / 1000
 
 interface FakeMedia {
   bvid: string
+  intro?: string
   fav_time: number
   title: string
   type?: number
@@ -247,7 +248,13 @@ describe("platform behavior sources", () => {
       )
     state.medias.set(11, [
       { bvid: "BV1new", title: "New video", fav_time: seconds("2026-10-02T04:00:00Z") },
-      { bvid: "BV1two", title: "Second", fav_time: seconds("2026-10-02T03:00:00Z") },
+      // A description that only repeats the title is left out.
+      {
+        bvid: "BV1two",
+        title: "Second",
+        intro: "Second",
+        fav_time: seconds("2026-10-02T03:00:00Z"),
+      },
     ])
     const checked = await service.checkSource(source.id, new Date("2026-10-03T00:00:00Z"))
     expect(checked).toMatchObject({ status: "entries_published", publishedCount: 2 })
@@ -260,6 +267,7 @@ describe("platform behavior sources", () => {
       occurredAt: "2026-10-02T04:00:00.000Z",
       summary: "UP 主：Uploader｜收藏夹：默认收藏夹、学习｜About New video",
     })
+    expect(entries[1]!.summary).toBe("UP 主：Uploader｜收藏夹：学习")
     expect(entries[0]!.content).toContain("收藏夹：默认收藏夹、学习")
     expect(entries[0]!.content).toContain("时长：2:05")
     expect(entries[0]!.content).toContain("播放 10 · 收藏 2 · 弹幕 1")
