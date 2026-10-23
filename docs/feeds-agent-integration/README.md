@@ -33,6 +33,7 @@
 - [adr/0034-acquire-selected-sources-through-the-official-folo-account.md](./adr/0034-acquire-selected-sources-through-the-official-folo-account.md)：（提议中）官方获取适配器放在供给端，逻辑地址不变、按地址绑定提供方，影子订阅只增删自己创建的，失败时不自动切换。
 - [adr/0035-evaluate-automatic-entries-in-batches.md](./adr/0035-evaluate-automatic-entries-in-batches.md)：自动评估按所有者和配置分组，一次模型调用评估一批条目；手动重评和重试保持单条，回复按 `entry_id` 对应、缺失的条目单独失败。
 - [adr/0036-deliver-daily-briefings-as-folo-task-reports.md](./adr/0036-deliver-daily-briefings-as-folo-task-reports.md)：每日简报复用 Folo 的 AI 任务和任务报告；自有服务实现任务与只读报告会话，候选取窗口内已评估的精选条目，模型输出结构化要点、服务端校验条目引用后渲染为带条目链接的 Markdown。
+- [adr/0037-publish-platform-behavior-through-the-supplier.md](./adr/0037-publish-platform-behavior-through-the-supplier.md)：B 站新关注和新收藏作为供给端的平台行为源；首次检查只记基线，之后只发布基线后出现的新对象，新关注每次合成一条、新收藏每个视频一条，登录态放在加密凭据库。
 
 ## 推荐开发阶段
 

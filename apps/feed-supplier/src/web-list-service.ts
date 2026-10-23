@@ -357,7 +357,7 @@ export const startWebListScheduler = ({
   pollIntervalMs,
   onCycle,
 }: {
-  service: WebListService
+  service: Pick<WebListService, "runDueCycle">
   pollIntervalMs: number
   onCycle?: (result: { checked: number; failed: number }) => void
 }) => {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  behaviorFeedURL,
   pageChangeFeedURL,
+  parseBehaviorSource,
   parsePageChangeSource,
   parseRssHubSource,
   parseWebListSource,
@@ -64,5 +66,24 @@ describe("web list source contract", () => {
     )
     expect(() => parseWebListSource(`pagechange://${sourceId}`)).toThrow("weblist://")
     expect(() => parseWebListSource("weblist://not-a-uuid")).toThrow("UUID")
+  })
+})
+
+describe("behavior source contract", () => {
+  const sourceId = "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+
+  it("uses a stable UUID-only logical URL", () => {
+    expect(behaviorFeedURL(sourceId.toUpperCase())).toBe(`behavior://${sourceId}`)
+    expect(parseBehaviorSource(`behavior://${sourceId}`)).toEqual({
+      logicalURL: `behavior://${sourceId}`,
+      sourceId,
+    })
+  })
+
+  it("rejects account details, queries and other schemes", () => {
+    expect(() => parseBehaviorSource(`behavior://${sourceId}/12345678`)).toThrow("only a source ID")
+    expect(() => parseBehaviorSource(`behavior://${sourceId}?uid=1`)).toThrow("query or fragment")
+    expect(() => parseBehaviorSource(`weblist://${sourceId}`)).toThrow("behavior://")
+    expect(() => parseBehaviorSource("behavior://not-a-uuid")).toThrow("UUID")
   })
 })

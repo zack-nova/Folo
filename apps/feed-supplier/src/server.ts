@@ -6,7 +6,11 @@ import type { FastifyReply, FastifyRequest } from "fastify"
 import Fastify from "fastify"
 import { z } from "zod"
 
-import { registerSourceAdminRoutes, registerWebListRoutes } from "./admin-routes"
+import {
+  registerBehaviorRoutes,
+  registerSourceAdminRoutes,
+  registerWebListRoutes,
+} from "./admin-routes"
 import type { FeedSupplierConfig } from "./config"
 import { CredentialCipher } from "./credential-cipher"
 import { resolveCredentialDependency } from "./credential-dependency"
@@ -23,6 +27,14 @@ import { registerOfficialBindingRoutes } from "./official-binding-routes"
 import { OfficialBindingService } from "./official-binding-service"
 import { PageChangeError, PageChangeService, startPageChangeScheduler } from "./page-change-service"
 import { PageFetcher } from "./page-fetcher"
+import type { PlatformBehaviorAdapter } from "./platform-behavior-adapter"
+import {
+  BEHAVIOR_CHECK_BUDGET_MS,
+  PlatformBehaviorError,
+  PlatformBehaviorService,
+  startBehaviorScheduler,
+} from "./platform-behavior-service"
+import { BilibiliBehaviorAdapter } from "./platforms/bilibili"
 import { PostgresSupplierRepository } from "./postgres-repository"
 import {
   PUBLIC_FEED_ROUTE,
@@ -37,6 +49,7 @@ import {
 } from "./public-feed-service"
 import { RedisSourceResponseCache } from "./redis-source-response-cache"
 import type { SupplierRepository } from "./repository"
+import { SafeHTTPClient } from "./safe-http"
 import { secretQueryParameter } from "./secret-parameters"
 import { SourceCatalogService } from "./source-catalog"
 import type { ResolvedRssHubSource } from "./source-registry"
@@ -57,6 +70,8 @@ import {
 } from "./web-list-service"
 
 export interface BuildFeedSupplierOptions {
+  /** Replaces the platform adapters of behavior sources in tests */
+  behaviorAdapters?: PlatformBehaviorAdapter[]
   config: FeedSupplierConfig
   fetchImplementation?: typeof fetch
   logger?: boolean
@@ -115,6 +130,7 @@ const safeUpstreamErrorMessage = (error: unknown): string => {
 }
 
 export const buildFeedSupplier = async ({
+  behaviorAdapters: providedBehaviorAdapters,
   config,
   fetchImplementation: providedFetchImplementation,
   logger = false,
@@ -169,6 +185,29 @@ export const buildFeedSupplier = async ({
       }),
   )
   const pageChanges = new PageChangeService(repository, pageFetcher)
+  const behaviorCipher = new CredentialCipher(config.credentialActiveKeyId, config.credentialKeys)
+  const behaviors = new PlatformBehaviorService(repository, {
+    adapters: providedBehaviorAdapters ?? [
+      new BilibiliBehaviorAdapter({
+        client: new SafeHTTPClient({
+          fetchImplementation: providedFetchImplementation,
+          maxBytes: config.behaviorFetchMaxBytes,
+          timeoutMs: config.behaviorFetchTimeoutMs,
+        }),
+        requestDelayMs: config.behaviorRequestDelayMs,
+      }),
+    ],
+    resolveCredential: async (credentialId) => {
+      const credential = await repository.findCredential(credentialId)
+      if (!credential || credential.disabledAt)
+        throw new PlatformBehaviorError(
+          "behavior_credential_unavailable",
+          "The bound credential is missing or disabled",
+          503,
+        )
+      return behaviorCipher.decrypt(credential.id, credential)
+    },
+  })
   const officialConfig = config.officialAcquisition
   const officialClient = officialConfig
     ? new FoloOfficialClient({
@@ -221,6 +260,7 @@ export const buildFeedSupplier = async ({
         config.rssHubFetchTimeoutMs,
         config.pageFetchTimeoutMs,
         13 * config.webListFetchTimeoutMs + WEB_LIST_DETAIL_BUDGET_MS,
+        BEHAVIOR_CHECK_BUDGET_MS + 2 * config.behaviorFetchTimeoutMs,
       ) + 5_000,
   })
   const responseCache =
@@ -254,7 +294,15 @@ export const buildFeedSupplier = async ({
     pollIntervalMs: config.pageSchedulerPollIntervalMs,
     service: pageChanges,
   })
+  const stopBehaviorScheduler = startBehaviorScheduler({
+    service: behaviors,
+    pollIntervalMs: config.behaviorSchedulerPollIntervalMs,
+    onCycle: (result) => {
+      if (result.checked > 0) server.log.info(result, "Behavior cycle completed")
+    },
+  })
   server.addHook("onClose", async () => {
+    await stopBehaviorScheduler()
     await stopPageChangeScheduler()
     await stopWebListScheduler()
     await responseCache.close()
@@ -897,9 +945,32 @@ export const buildFeedSupplier = async ({
     }
   })
 
+  server.get("/v1/feeds/behavior", async (request, reply) => {
+    const query = request.query as Record<string, unknown>
+    if (typeof query.url !== "string") {
+      return reply.status(400).send({ code: "invalid_source", message: "url is required" })
+    }
+    try {
+      const feed = await behaviors.materializeFeed(query.url)
+      reply
+        .header("content-type", "application/rss+xml; charset=utf-8")
+        .header("etag", feed.etag)
+        .header("last-modified", new Date(feed.source.updatedAt).toUTCString())
+        .header("x-folo-upstream-url", feed.upstreamURL)
+      if (request.headers["if-none-match"] === feed.etag) return reply.status(304).send()
+      return reply.status(200).send(feed.body)
+    } catch (error) {
+      if (error instanceof PlatformBehaviorError) {
+        return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+      }
+      return reply.status(400).send({ code: "invalid_source", message: "Invalid behavior source" })
+    }
+  })
+
   if (config.managementToken) {
     registerWebListRoutes(server, webLists, "/v1/manage/web-list-sources")
   }
+  registerBehaviorRoutes(server, behaviors)
 
   const publicFeedCipher = new CredentialCipher(config.credentialActiveKeyId, config.credentialKeys)
   registerSourceAdminRoutes({
@@ -920,6 +991,7 @@ export const buildFeedSupplier = async ({
 
   if (config.publicFeedBaseURL) {
     const internalFeedPaths: Record<string, string> = {
+      "behavior:": "/v1/feeds/behavior",
       "pagechange:": "/v1/feeds/page-change",
       "rsshub:": "/v1/feeds/rsshub",
       "weblist:": "/v1/feeds/web-list",
@@ -944,6 +1016,7 @@ export const buildFeedSupplier = async ({
             }
           } else if (protocol === "pagechange:") await pageChanges.materializeFeed(sourceURL)
           else if (protocol === "weblist:") await webLists.materializeFeed(sourceURL)
+          else if (protocol === "behavior:") await behaviors.materializeFeed(sourceURL)
           else throw new Error("Unsupported source address")
         } catch (error) {
           throw new PublicFeedError(

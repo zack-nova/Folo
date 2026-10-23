@@ -11,6 +11,7 @@ import type { EncryptedCredentialValue } from "./credential-cipher"
 import type { OfficialAccountRepository } from "./official-account-repository"
 import type { OfficialBindingRepository } from "./official-binding-repository"
 import type { PageChangeRepository } from "./page-change-repository"
+import type { BehaviorRepository } from "./platform-behavior-repository"
 import type { PublicFeedRepository } from "./public-feed-repository"
 import type { WebListRepository } from "./web-list-repository"
 
@@ -20,6 +21,7 @@ export class RepositoryConflictError extends Error {}
 
 export interface SupplierRepository
   extends
+    BehaviorRepository,
     OfficialAccountRepository,
     OfficialBindingRepository,
     PageChangeRepository,

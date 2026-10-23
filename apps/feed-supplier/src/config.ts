@@ -202,6 +202,11 @@ const supplierEnvironment = z
     FOLO_OFFICIAL_PROXY_URL: optionalServiceURL("FOLO_OFFICIAL_PROXY_URL", true),
     FOLO_OFFICIAL_RATE_LIMIT_MAX: integer(30, 1).pipe(z.number().max(1_000)),
     FOLO_OFFICIAL_RATE_LIMIT_WINDOW_SECONDS: integer(60, 1).pipe(z.number().max(3_600)),
+    // Platform behavior sources (ADR-0037) read one personal account at a time, slowly.
+    BEHAVIOR_FETCH_MAX_BYTES: integer(2 * 1024 * 1024, 1_024),
+    BEHAVIOR_FETCH_TIMEOUT_MS: integer(15_000, 1_000).pipe(z.number().max(60_000)),
+    BEHAVIOR_REQUEST_DELAY_MS: integer(1_000, 200).pipe(z.number().max(30_000)),
+    BEHAVIOR_SCHEDULER_POLL_INTERVAL_MS: integer(60_000, 1_000),
     HOST: z.string().default("0.0.0.0"),
     INTERNAL_TOKEN: z.string().min(32),
     // Optional third token held by the Folo core to manage web list sources for the owner.
@@ -383,6 +388,10 @@ export const loadFeedSupplierConfig = (environment: NodeJS.ProcessEnv) => {
           rateLimitWindowSeconds: parsed.FOLO_OFFICIAL_RATE_LIMIT_WINDOW_SECONDS,
         }
       : null,
+    behaviorFetchMaxBytes: parsed.BEHAVIOR_FETCH_MAX_BYTES,
+    behaviorFetchTimeoutMs: parsed.BEHAVIOR_FETCH_TIMEOUT_MS,
+    behaviorRequestDelayMs: parsed.BEHAVIOR_REQUEST_DELAY_MS,
+    behaviorSchedulerPollIntervalMs: parsed.BEHAVIOR_SCHEDULER_POLL_INTERVAL_MS,
     host: parsed.HOST,
     internalToken: parsed.INTERNAL_TOKEN,
     managementToken: parsed.MANAGEMENT_TOKEN ?? null,

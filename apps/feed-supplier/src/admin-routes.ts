@@ -7,6 +7,13 @@ import type {
   UpdatePageChangeSourceInput,
 } from "./page-change-service"
 import { PageChangeError } from "./page-change-service"
+import type { PlatformBehaviorService } from "./platform-behavior-service"
+import { PlatformBehaviorError } from "./platform-behavior-service"
+import {
+  behaviorCreateSchema,
+  behaviorEntryQuery,
+  behaviorUpdateSchema,
+} from "./platform-behavior-validation"
 import { RepositoryConflictError } from "./repository"
 import type {
   CreateCatalogRouteInput,
@@ -224,7 +231,11 @@ const handleAdminError = (error: unknown, reply: FastifyReply) => {
   if (error instanceof SourceRegistryError) {
     return reply.status(error.statusCode).send({ code: error.code, message: error.message })
   }
-  if (error instanceof PageChangeError || error instanceof WebListError) {
+  if (
+    error instanceof PageChangeError ||
+    error instanceof WebListError ||
+    error instanceof PlatformBehaviorError
+  ) {
     return reply.status(error.statusCode).send({ code: error.code, message: error.message })
   }
   if (error instanceof RepositoryConflictError) {
@@ -713,6 +724,98 @@ export const registerWebListRoutes = (
           .send({ code: "web_list_source_not_found", message: "Web list source was not found" })
       }
       return { items }
+    },
+  )
+}
+
+const behaviorNotFound = (reply: FastifyReply) =>
+  reply
+    .status(404)
+    .send({ code: "behavior_source_not_found", message: "Behavior source was not found" })
+
+/**
+ * Behavior source routes (ADR-0037), admin token only: sources can be bound to a personal
+ * platform login, so the management token the Folo core holds does not reach them.
+ */
+export const registerBehaviorRoutes = (
+  server: FastifyInstance,
+  behaviors: PlatformBehaviorService,
+): void => {
+  const base = "/v1/admin/behavior-sources"
+  server.get(base, async () => ({ sources: await behaviors.listSources() }))
+
+  server.post(base, async (request, reply) => {
+    const parsed = behaviorCreateSchema.safeParse(request.body)
+    if (!parsed.success) return invalidBody(reply, parsed.error)
+    try {
+      const source = await behaviors.createSource(parsed.data, actorFor(request))
+      return reply.status(201).send({ source })
+    } catch (error) {
+      return handleAdminError(error, reply)
+    }
+  })
+
+  server.get<{ Params: { sourceId: string } }>(`${base}/:sourceId`, async (request, reply) => {
+    const source = await behaviors.getSource(request.params.sourceId)
+    return source ? { source } : behaviorNotFound(reply)
+  })
+
+  server.patch<{ Params: { sourceId: string } }>(`${base}/:sourceId`, async (request, reply) => {
+    const parsed = behaviorUpdateSchema.safeParse(request.body)
+    if (!parsed.success) return invalidBody(reply, parsed.error)
+    try {
+      const source = await behaviors.updateSource(
+        request.params.sourceId,
+        parsed.data,
+        actorFor(request),
+      )
+      return source ? { source } : behaviorNotFound(reply)
+    } catch (error) {
+      return handleAdminError(error, reply)
+    }
+  })
+
+  server.delete<{ Params: { sourceId: string } }>(`${base}/:sourceId`, async (request, reply) => {
+    try {
+      if (!(await behaviors.deleteSource(request.params.sourceId, actorFor(request))))
+        return behaviorNotFound(reply)
+      return reply.status(204).send()
+    } catch (error) {
+      return handleAdminError(error, reply)
+    }
+  })
+
+  server.post<{ Params: { sourceId: string } }>(
+    `${base}/:sourceId/test`,
+    async (request, reply) => {
+      try {
+        const result = await behaviors.testSource(request.params.sourceId, actorFor(request))
+        return result ?? behaviorNotFound(reply)
+      } catch (error) {
+        return handleAdminError(error, reply)
+      }
+    },
+  )
+
+  server.post<{ Params: { sourceId: string } }>(
+    `${base}/:sourceId/check`,
+    async (request, reply) => {
+      try {
+        const result = await behaviors.checkSource(request.params.sourceId)
+        return result ?? behaviorNotFound(reply)
+      } catch (error) {
+        return handleAdminError(error, reply)
+      }
+    },
+  )
+
+  server.get<{ Params: { sourceId: string } }>(
+    `${base}/:sourceId/entries`,
+    async (request, reply) => {
+      const parsed = behaviorEntryQuery.safeParse(request.query)
+      if (!parsed.success) return invalidBody(reply, parsed.error)
+      const entries = await behaviors.listEntries(request.params.sourceId, parsed.data.limit)
+      return entries ? { entries } : behaviorNotFound(reply)
     },
   )
 }
