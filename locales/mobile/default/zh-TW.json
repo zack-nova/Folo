@@ -1,4 +1,5 @@
 {
+  "ai.summary_generate": "產生 AI 摘要",
   "ai.summary_generating": "正在產生 AI 摘要...",
   "ai.summary_not_available": "暫無摘要",
   "ai.summary_render_error": "無法產生摘要：顯示時發生錯誤。",

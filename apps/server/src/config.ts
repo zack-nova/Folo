@@ -128,6 +128,14 @@ const serverEnvironment = z
     PROCESSING_MAX_ATTEMPTS: integer(3, 1).pipe(z.number().max(10)),
     PROCESSING_MAX_CONTENT_CHARS: integer(12_000, 1_000).pipe(z.number().max(200_000)),
     PROCESSING_RETRY_BASE_DELAY_MS: integer(1_000, 1),
+    // Evaluations also write summaries: full ones for long entries, one sentence for short ones.
+    PROCESSING_SUMMARIES: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
+    PROCESSING_SUMMARY_FULL_MIN_CHARS: integer(500, 0).pipe(z.number().max(200_000)),
+    // Used when the owner's synced client settings name no language.
+    PROCESSING_SUMMARY_LANGUAGE: z.string().min(2).max(20).default("zh-CN"),
     PROCESSING_WORKER_POLL_INTERVAL_MS: integer(1_000, 10),
     SERVER_URL: z.url().default("http://localhost:3000"),
     TRUST_PROXY: trustedProxies,
@@ -325,6 +333,9 @@ export const loadServerConfig = (environment: NodeJS.ProcessEnv) => {
     processingMaxAttempts: parsed.PROCESSING_MAX_ATTEMPTS,
     processingMaxContentCharacters: parsed.PROCESSING_MAX_CONTENT_CHARS,
     processingRetryBaseDelayMs: parsed.PROCESSING_RETRY_BASE_DELAY_MS,
+    processingSummaries: parsed.PROCESSING_SUMMARIES,
+    processingSummaryFullMinCharacters: parsed.PROCESSING_SUMMARY_FULL_MIN_CHARS,
+    processingSummaryLanguage: parsed.PROCESSING_SUMMARY_LANGUAGE,
     processingWorkerPollIntervalMs: parsed.PROCESSING_WORKER_POLL_INTERVAL_MS,
     serverURL: parsed.SERVER_URL,
     trustProxy: parsed.TRUST_PROXY,

@@ -125,9 +125,9 @@ docker compose ... exec -T api ./node_modules/.bin/tsx src/ai-preset-cli.ts /tmp
 
 ## Follow 兼容 AI
 
-- `GET /ai/summary`：按 Entry、语言、`content/readabilityContent` 缓存。
+- `GET /ai/summary`：按 Entry、语言、`content/readabilityContent` 缓存；带 `cached_only=1` 时只读缓存（ADR-0038）。
 - `POST /ai/translation/batch`：返回 Follow Client SDK 需要的 NDJSON，按 Entry 和语言缓存字段。
-- AI 评估附带摘要时写入独立摘要表，不把摘要塞进评估历史。
+- AI 评估附带摘要时写入独立摘要表，不把摘要塞进评估历史；按所有者语言存储，长文完整、短文一句（ADR-0038）。
 
 ## 数据表
 

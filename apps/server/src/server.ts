@@ -59,9 +59,14 @@ import { startFeedScheduler } from "./feeds/scheduler"
 import type { WebListManagementClient } from "./feeds/web-list-management"
 import { WebListManagementError } from "./feeds/web-list-management"
 import { exportOpml, parseOpml } from "./opml"
-import { entryExcerpt } from "./processing/entry-text"
+import { entryExcerpt, entryPromptText } from "./processing/entry-text"
 import { FEATURED_SCORE_THRESHOLD, featuredRankingScore } from "./processing/featured"
-import { entryContentFingerprint, ProcessingError, ProcessingService } from "./processing/service"
+import {
+  DEFAULT_SUMMARY_FULL_MIN_CHARACTERS,
+  entryContentFingerprint,
+  ProcessingError,
+  ProcessingService,
+} from "./processing/service"
 import { saveProfileSnapshot, saveTaxonomySnapshot } from "./processing/snapshots"
 
 export interface BuildServerOptions {
@@ -111,6 +116,10 @@ export interface BuildServerOptions {
   processingMaxAttempts?: number
   processingMaxContentCharacters?: number
   processingRetryBaseDelayMs?: number
+  /** Evaluations also write summaries; see ProcessingServiceOptions.summaries. */
+  processingSummaries?: boolean
+  processingSummaryFullMinCharacters?: number
+  processingSummaryLanguage?: string
   processingWorkerPollIntervalMs?: number
   serverURL?: string
   sourceCatalogClient?: SourceCatalogClient
@@ -139,6 +148,21 @@ const bodyForAuthRequest = (body: unknown): BodyInit | undefined => {
   if (body === undefined || body === null) return undefined
   if (typeof body === "string") return body
   return JSON.stringify(body)
+}
+
+/**
+ * Whether a summary of unknown language is written in the requested one, judged by script:
+ * Chinese has Han characters and no kana, Japanese has kana, English has neither. Other languages
+ * cannot be told apart this way and never match.
+ */
+const summaryMatchesLanguage = (summary: string, language: string): boolean => {
+  const han = /\p{Script=Han}/u.test(summary)
+  const kana = /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(summary)
+  const prefix = language.toLowerCase().split("-", 1)[0]
+  if (prefix === "zh") return han && !kana
+  if (prefix === "ja") return kana
+  if (prefix === "en") return !han && !kana && !/\p{Script=Hangul}/u.test(summary)
+  return false
 }
 
 const apiEntry = (entry: EntryRecord) => ({
@@ -366,6 +390,9 @@ export const buildServer = async ({
   processingMaxAttempts,
   processingMaxContentCharacters,
   processingRetryBaseDelayMs,
+  processingSummaries,
+  processingSummaryFullMinCharacters,
+  processingSummaryLanguage,
   processingWorkerPollIntervalMs,
   serverURL = "http://localhost:3000",
   sourceCatalogClient,
@@ -396,6 +423,9 @@ export const buildServer = async ({
   })
   const pendingReadability = new Map<string, Promise<string | null>>()
   const pendingSummaries = new Map<string, Promise<string>>()
+  // How summary requests were answered since start: from the cache, by reusing an older
+  // evaluation summary, by generating one, or not at all because only the cache was asked.
+  const summaryRequests = { cache_miss: 0, cached: 0, legacy: 0, on_demand: 0 }
   const pendingTranslations = new Map<string, Promise<Record<string, string>>>()
   let registrationTail = Promise.resolve()
   let lastCleanup: { at: Date; report: MaintenanceCleanupReport } | null = null
@@ -469,6 +499,9 @@ export const buildServer = async ({
     pollIntervalMs: processingWorkerPollIntervalMs,
     resolveProvider: resolveAIProvider,
     retryBaseDelayMs: processingRetryBaseDelayMs,
+    summaries: processingSummaries,
+    summaryDefaultLanguage: processingSummaryLanguage,
+    summaryFullMinCharacters: processingSummaryFullMinCharacters,
   })
   processingService.start()
   server.addHook("onClose", async () => processingService.stop())
@@ -915,6 +948,7 @@ export const buildServer = async ({
     const officialProvider = sourceProviders.find((provider) => provider.id === "folo_official")
     const tokenUsage = processingService.tokenUsage()
     const callCounts = processingService.callCounts()
+    const summaryCounts = processingService.summaryCounts()
     const aiTaskTokens = aiTaskService.tokenUsage()
     const lines = [
       "# HELP folo_subscribed_feeds Number of distinct subscribed feeds.",
@@ -941,6 +975,13 @@ export const buildServer = async ({
       `folo_ai_evaluation_calls_total{kind="single"} ${callCounts.single}`,
       `folo_ai_evaluation_calls_total{kind="batch"} ${callCounts.batch}`,
       `folo_ai_evaluation_calls_total{kind="batched"} ${callCounts.batched}`,
+      "# HELP folo_ai_summaries_total Entry summaries since start: written by evaluations (full or brief), and summary requests answered from the cache, from an older evaluation summary, by generating one, or left empty because only the cache was asked.",
+      "# TYPE folo_ai_summaries_total counter",
+      `folo_ai_summaries_total{source="evaluation_full"} ${summaryCounts.full}`,
+      `folo_ai_summaries_total{source="evaluation_brief"} ${summaryCounts.brief}`,
+      ...Object.entries(summaryRequests).map(
+        ([source, count]) => `folo_ai_summaries_total{source="${source}"} ${count}`,
+      ),
       "# HELP folo_ai_task_runs_total AI task runs finished since start, by kind and outcome.",
       "# TYPE folo_ai_task_runs_total counter",
       ...Object.entries(aiTaskService.runCounts()).flatMap(([kind, counts]) =>
@@ -2120,6 +2161,29 @@ export const buildServer = async ({
 
   registerAITaskRoutes(server, { authenticatedUserId, dataStore, service: aiTaskService })
 
+  const summaryFullMinCharacters =
+    processingSummaryFullMinCharacters ?? DEFAULT_SUMMARY_FULL_MIN_CHARACTERS
+  /**
+   * Evaluations used to store their one-sentence summaries without a language ("auto"). For a short
+   * entry such a sentence is all the summary it needs, so reuse it when its script matches the
+   * requested language, and keep it under that language from then on. Long entries get a full
+   * summary instead.
+   */
+  const legacyEvaluationSummary = async (
+    userId: string,
+    entry: EntryRecord,
+    language: string,
+    target: "content" | "readabilityContent",
+  ): Promise<string | null> => {
+    if (target !== "content" || language === "auto") return null
+    const text = entryPromptText(entry.content ?? entry.description, summaryFullMinCharacters)
+    if ((text?.length ?? 0) >= summaryFullMinCharacters) return null
+    const stored = await dataStore.getEntrySummary(userId, entry.id, "auto", "content")
+    if (!stored || !summaryMatchesLanguage(stored.summary, language)) return null
+    await dataStore.insertEntrySummaryIfAbsent(userId, { ...stored, language })
+    return stored.summary
+  }
+
   server.get("/ai/summary", async (request, reply) => {
     const userId = await authenticatedUserId(request.headers)
     if (!userId) {
@@ -2132,10 +2196,23 @@ export const buildServer = async ({
     const language = typeof query.language === "string" ? query.language : "auto"
     const target = query.target === "readabilityContent" ? "readabilityContent" : "content"
     const cached = await dataStore.getEntrySummary(userId, query.id, language, target)
-    if (cached) return { code: 0, data: cached.summary }
+    if (cached) {
+      summaryRequests.cached += 1
+      return { code: 0, data: cached.summary }
+    }
     const entry = await dataStore.getEntry(userId, query.id)
     if (!entry) {
       return reply.status(404).send({ code: "entry_not_found", message: "Entry not found" })
+    }
+    const legacy = await legacyEvaluationSummary(userId, entry, language, target)
+    if (legacy) {
+      summaryRequests.legacy += 1
+      return { code: 0, data: legacy }
+    }
+    // Clients ask for the cache alone while the owner browses; generating needs a deliberate request.
+    if (query.cached_only === "1" || query.cached_only === "true") {
+      summaryRequests.cache_miss += 1
+      return { code: 0, data: null }
     }
 
     const cacheKey = `${userId}:${entry.id}:${language}:${target}`
@@ -2161,6 +2238,7 @@ export const buildServer = async ({
           }),
         })
         const summary = completion.content.trim()
+        summaryRequests.on_demand += 1
         await dataStore.setEntrySummary(userId, {
           createdAt: new Date(),
           entryId: entry.id,

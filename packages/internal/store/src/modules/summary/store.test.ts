@@ -96,4 +96,29 @@ describe("summarySyncService", () => {
       ],
     ).toBe(SummaryGeneratingStatus.Error)
   })
+
+  test("asks the server for its cache alone and leaves the generating status untouched", async () => {
+    summaryApiMock.mockResolvedValueOnce({ data: null })
+
+    await expect(
+      summarySyncService.generateSummary({ entryId, target, actionLanguage, cachedOnly: true }),
+    ).resolves.toBeNull()
+
+    expect(summaryApiMock).toHaveBeenCalledWith({
+      cached_only: "1",
+      id: entryId,
+      language: actionLanguage,
+      target,
+    })
+    expect(useSummaryStore.getState().generatingStatus).toEqual({})
+
+    summaryApiMock.mockResolvedValueOnce({ data: "A cached summary." })
+    await expect(
+      summarySyncService.generateSummary({ entryId, target, actionLanguage, cachedOnly: true }),
+    ).resolves.toBe("A cached summary.")
+    expect(useSummaryStore.getState().data[entryId]?.[actionLanguage]?.summary).toBe(
+      "A cached summary.",
+    )
+    expect(insertSummaryMock).toHaveBeenCalledTimes(1)
+  })
 })

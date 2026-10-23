@@ -682,6 +682,14 @@ export class MemoryDataStore implements DataStore {
     )
   }
 
+  async insertEntrySummaryIfAbsent(userId: string, summary: EntrySummaryRecord): Promise<boolean> {
+    if (!(await this.getEntry(userId, summary.entryId))) return false
+    const key = `${summary.entryId}:${summary.language}:${summary.target}`
+    if (this.entrySummaries.has(key)) return false
+    this.entrySummaries.set(key, structuredClone(summary))
+    return true
+  }
+
   async getEntryTranslation(
     userId: string,
     entryId: string,

@@ -1,4 +1,5 @@
 {
+  "ai.summary_generate": "Générer un résumé IA",
   "ai.summary_generating": "Génération du résumé IA...",
   "ai.summary_not_available": "Résumé non disponible",
   "ai.summary_render_error": "Échec de la génération du résumé. Erreur de rendu.",

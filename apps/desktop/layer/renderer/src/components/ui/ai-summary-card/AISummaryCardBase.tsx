@@ -35,6 +35,8 @@ interface AISummaryCardBaseProps {
   onAskAI?: () => void
 
   error?: Error | null
+  /** Rendered in place of the "not available" message when there is no summary yet */
+  emptyContent?: ReactNode
 }
 
 const DefaultLoadingState = () => (
@@ -107,6 +109,7 @@ export const AISummaryCardBase: React.FC<AISummaryCardBaseProps> = ({
   showAskAIButton = false,
   onAskAI,
   error,
+  emptyContent,
 }) => {
   const { t } = useTranslation("app")
   const aiEnabled = useFeature("ai")
@@ -229,7 +232,7 @@ export const AISummaryCardBase: React.FC<AISummaryCardBaseProps> = ({
             shouldSuggestUpgrade
           />
         ) : (
-          <DefaultEmptyState message={t("ai.summary_not_available")} />
+          (emptyContent ?? <DefaultEmptyState message={t("ai.summary_not_available")} />)
         )}
       </AutoResizeHeight>
 

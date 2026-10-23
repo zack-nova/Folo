@@ -149,6 +149,11 @@ authorization:
 ADR-0035），所以 `AI_CODEX_SCOPE=all` 时每天的调用次数是条目数的十分之一左右；每日上限按调用计数。
 把订阅额度用于服务端自动化是否符合 OpenAI 的使用政策，由所有者自行判断。
 
+评估时顺带写总结（ADR-0038）：正文不少于 `PROCESSING_SUMMARY_FULL_MIN_CHARS`（默认 500）字符的条目写 2–4 句，
+其余写一句，语言取所有者同步的客户端设置，取不到时用 `PROCESSING_SUMMARY_LANGUAGE`（默认 `zh-CN`）；
+`PROCESSING_SUMMARIES=false` 关闭。客户端阅读时只读缓存（`GET /ai/summary?cached_only=1`），没有总结时由所有者
+点按钮生成。`/metrics` 的 `folo_ai_summaries_total` 按来源计数。
+
 ## 每日简报（AI 任务）
 
 所有者在设置的“AI 任务”里建一个按计划运行的任务，每期生成一份任务报告（ADR-0036）。报告只从这段时间内

@@ -1,4 +1,5 @@
 {
+  "ai.summary_generate": "生成 AI 摘要",
   "ai.summary_generating": "正在生成 AI 摘要...",
   "ai.summary_not_available": "摘要不可用",
   "ai.summary_render_error": "无法生成摘要：渲染出错。",

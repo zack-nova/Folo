@@ -1,14 +1,22 @@
 import { useEntry } from "@follow/store/entry/hooks"
 import { SummaryGeneratingStatus } from "@follow/store/summary/enum"
-import { usePrefetchSummary, useSummary, useSummaryStatus } from "@follow/store/summary/hooks"
+import {
+  useGenerateSummary,
+  usePrefetchSummary,
+  useSummary,
+  useSummaryStatus,
+} from "@follow/store/summary/hooks"
 import { useAtomValue } from "jotai"
 import type { FC } from "react"
 import { useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
+import { Pressable } from "react-native"
+import { useColor } from "react-native-uikit-colors"
 
 import { useActionLanguage, useGeneralSettingKey } from "@/src/atoms/settings/general"
 import { ErrorBoundary } from "@/src/components/common/ErrorBoundary"
 import { Text } from "@/src/components/ui/typography/Text"
+import { AiCuteReIcon } from "@/src/icons/ai_cute_re"
 import { renderMarkdown } from "@/src/lib/markdown"
 
 import { AISummary } from "../ai/summary"
@@ -78,13 +86,23 @@ export const EntryAISummary: FC<{
     ),
   )
   const actionLanguage = useActionLanguage()
+  const target = entry?.target || "content"
   const summary = useSummary(entryId, actionLanguage)
-  const { error: summaryError, refetch: refetchSummary } = usePrefetchSummary({
+  // The auto-summary setting only shows summaries that already exist, so browsing spends no AI
+  // calls; the one-off command or the generate button asks for a new one.
+  const {
+    error: summaryError,
+    isSuccess: lookupFinished,
+    refetch: refetchSummary,
+  } = usePrefetchSummary({
     entryId,
-    target: entry?.target || "content",
+    target,
     actionLanguage,
+    cachedOnly: !showAISummaryOnce,
     enabled: showAISummary,
   })
+  const generate = useGenerateSummary({ entryId, target, actionLanguage })
+  const purpleColor = useColor("purple")
   const maybeMarkdown = showReadability
     ? summary?.readabilitySummary || summary?.summary
     : summary?.summary
@@ -97,12 +115,26 @@ export const EntryAISummary: FC<{
   const status = useSummaryStatus({
     entryId,
     actionLanguage,
-    target: entry?.target || "content",
+    target,
   })
   const handleRetry = useCallback(() => {
-    refetchSummary()
-  }, [refetchSummary])
+    if (generate.isError) generate.mutate()
+    else refetchSummary()
+  }, [generate, refetchSummary])
   if (!showAISummary) return null
+  const pending = status === SummaryGeneratingStatus.Pending
+  const error = summaryError ?? generate.error
+  if (!showAISummaryOnce && lookupFinished && !summaryToShow && !pending && !error) {
+    return (
+      <Pressable
+        onPress={() => generate.mutate()}
+        className="my-3 flex-row items-center justify-center gap-2 rounded-xl bg-secondary-system-background p-3 active:opacity-70"
+      >
+        <AiCuteReIcon height={16} width={16} color={purpleColor} />
+        <Text className="text-[15px] font-medium text-label">{t("ai.summary_generate")}</Text>
+      </Pressable>
+    )
+  }
   return (
     <ErrorBoundary
       fallbackRender={() => (
@@ -115,8 +147,8 @@ export const EntryAISummary: FC<{
         className="my-3"
         rawSummaryForCopy={normalizedSummary || undefined}
         summary={summaryToShow}
-        pending={status === SummaryGeneratingStatus.Pending}
-        error={summaryError}
+        pending={pending}
+        error={error}
         onRetry={status === SummaryGeneratingStatus.Error ? handleRetry : undefined}
       />
     </ErrorBoundary>
