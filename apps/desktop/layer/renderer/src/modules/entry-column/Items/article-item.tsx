@@ -20,13 +20,13 @@ export function ArticleItemStateLess({ entry, feed }: EntryItemStatelessProps) {
   return (
     <div className="group relative flex py-4">
       <FeedIcon target={feed} fallback className="mr-2 size-5" />
-      <div className="-mt-0.5 min-w-0 flex-1 text-sm leading-tight">
-        <div className="flex gap-1 text-[10px] font-bold text-text-secondary">
+      <div className="-mt-0.5 min-w-0 flex-1 text-sm leading-normal">
+        <div className="flex gap-1 text-[11px] font-normal text-text-tertiary">
           <FeedTitle feed={feed} />
           <span>·</span>
           <span>{!!entry.publishedAt && <RelativeTime date={entry.publishedAt} />}</span>
         </div>
-        <div className="relative my-0.5 truncate break-words font-medium text-text">
+        <div className="relative my-0.5 truncate break-words font-medium leading-snug text-text">
           {entry.title}
         </div>
         <div className="truncate text-[13px] text-text-secondary">{entry.description}</div>
@@ -54,21 +54,21 @@ export function ArticleItemStateLess({ entry, feed }: EntryItemStatelessProps) {
 }
 
 export const ArticleItemSkeleton = (
-  <div className={`relative h-[120px] rounded-md ${readableContentMaxWidth}`}>
+  // Keep in sync with `ListItem`: py-3.5 + 80px media = 108px
+  <div className={`relative h-[108px] rounded-md ${readableContentMaxWidth}`}>
     <div className="relative">
-      <div className="group relative flex py-4">
+      <div className="group relative flex py-3.5">
         <Skeleton className="mr-2 size-5 rounded-sm" />
-        <div className="-mt-0.5 flex-1 text-sm leading-tight">
-          <div className="flex gap-1 text-[10px] font-bold text-material-opaque">
+        <div className="-mt-0.5 flex-1 text-sm leading-normal">
+          <div className="flex items-center gap-1 text-[11px] font-normal text-material-opaque">
             <Skeleton className="h-3 w-24" />
             <span>·</span>
             <Skeleton className="h-3 w-12 shrink-0" />
           </div>
-          <div className="relative my-1 break-words font-medium">
+          <div className="relative my-1 break-words font-medium leading-snug">
             <Skeleton className="h-3.5 w-full" />
-            <Skeleton className="mt-1 h-3.5 w-3/4" />
           </div>
-          <div className="mt-1.5 text-[13px] text-material-opaque">
+          <div className="mt-1 text-[13px] text-material-opaque">
             <Skeleton className="h-3 w-full" />
             <Skeleton className="mt-1 h-3 w-4/5" />
           </div>

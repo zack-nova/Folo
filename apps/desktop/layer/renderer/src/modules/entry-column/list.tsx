@@ -120,6 +120,13 @@ export const EntryList: FC<EntryListProps> = memo(
           : [],
       [groupCounts],
     )
+    const groupCountByStickyIndex = useMemo(() => {
+      const map = new Map<number, number>()
+      groupCounts?.forEach((count, index) => {
+        map.set(stickyIndexes[index]!, count)
+      })
+      return map
+    }, [groupCounts, stickyIndexes])
 
     const cacheKey = `${view}-${feedId}`
     const isResetScrollPending = shouldApplyScrollResetSignal({
@@ -285,6 +292,7 @@ export const EntryList: FC<EntryListProps> = memo(
                 view={view}
                 transform={transform}
                 isStickyItem={isStickyItem}
+                groupEntryCount={groupCountByStickyIndex.get(virtualRow.index)}
                 isActiveStickyItem={isActiveStickyItem}
                 measureElement={rowVirtualizer.measureElement}
                 currentFeedTitle={currentFeedTitle}

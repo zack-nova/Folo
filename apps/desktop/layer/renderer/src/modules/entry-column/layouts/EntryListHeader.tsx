@@ -46,6 +46,7 @@ import { useIsPreviewFeed } from "../hooks/useIsPreviewFeed"
 import { useEntryRootState } from "../store/EntryColumnContext"
 import { AppendTaildingDivider } from "./AppendTaildingDivider"
 import { SwitchToMasonryButton } from "./buttons/SwitchToMasonryButton"
+import { CategoryChips, useSortedCategoriesByView } from "./CategoryChips"
 
 export const EntryListHeader: FC<{
   entryIds: string[]
@@ -62,7 +63,8 @@ export const EntryListHeader: FC<{
   const aiEnabled = useFeature("ai")
   const aiProcessingEnabled = useAdvertisedCapability("entries.ai_fusion")
 
-  const { feedId, entryId, view, inboxId, isCollection } = routerParams
+  const { feedId, entryId, view, inboxId, isCollection, isAllFeeds, folderName, listId } =
+    routerParams
   const isPreview = useIsPreviewFeed()
   const isTimelineSource = isTimelineEntrySortScope({
     feedId,
@@ -86,13 +88,22 @@ export const EntryListHeader: FC<{
   const showCompactToggle =
     view === FeedViewType.Articles || view === FeedViewType.All || view === FeedViewType.Audios
 
+  const sortedCategories = useSortedCategoriesByView(view)
+  const showCategoryChips =
+    !isPreview &&
+    !isCollection &&
+    !inboxId &&
+    !listId &&
+    (isAllFeeds || !!folderName) &&
+    sortedCategories.length > 0
+
   const headerTitle = useFeedHeaderTitle()
   const feedIcon = useFeedHeaderIcon()
 
   const titleInfo = !!headerTitle && (
     <div
       className={clsx(
-        "flex min-w-0 items-center break-all text-lg font-bold leading-tight",
+        "flex min-w-0 items-center break-all text-lg font-bold leading-snug",
         "-ml-3",
       )}
     >
@@ -195,7 +206,9 @@ export const EntryListHeader: FC<{
         titleStyleBasedView[view],
         isPreview
           ? "h-top-header-in-preview-with-border-b px-2.5 @[700px]:px-3 @[1024px]:px-4"
-          : "h-top-header-with-border-b",
+          : showCategoryChips
+            ? "h-top-header-with-chips-border-b"
+            : "h-top-header-with-border-b",
         view === FeedViewType.All &&
           "border-b border-transparent data-[scrolled-beyond-threshold=true]:border-b-border",
       )}
@@ -320,6 +333,9 @@ export const EntryListHeader: FC<{
           </div>
         )}
       </div>
+      {showCategoryChips && (
+        <CategoryChips view={view} categories={sortedCategories} activeCategory={folderName} />
+      )}
     </div>
   )
 }

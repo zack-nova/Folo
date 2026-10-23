@@ -41,6 +41,12 @@ export class LocaleCache {
 }
 
 export const fallbackLanguage = "en"
+
+const syncDocumentLang = (lang: string) => {
+  if (typeof document === "undefined") return
+  document.documentElement.lang = lang
+}
+
 export const initI18n = async () => {
   const i18next = jotaiStore.get(i18nAtom)
 
@@ -77,6 +83,9 @@ export const initI18n = async () => {
 
     resources: mergedResources,
   })
+
+  syncDocumentLang(i18next.language)
+  i18next.on("languageChanged", syncDocumentLang)
 }
 
 if (import.meta.hot) {

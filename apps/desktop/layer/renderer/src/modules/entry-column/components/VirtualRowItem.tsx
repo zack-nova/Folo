@@ -16,6 +16,8 @@ interface VirtualRowItemProps {
   view: any
   transform: string
   isStickyItem: boolean
+  /** Number of entries in the date group that starts at this row, if any */
+  groupEntryCount?: number
   isActiveStickyItem: boolean
   measureElement: (element: Element | null) => void
   currentFeedTitle?: string
@@ -23,8 +25,9 @@ interface VirtualRowItemProps {
 
 const EntryHeadDateItem: FC<{
   entryId: string
+  groupEntryIds: string[]
   isSticky?: boolean
-}> = ({ entryId, isSticky }) => {
+}> = ({ entryId, groupEntryIds, isSticky }) => {
   const entry = useEntry(entryId, (state) => {
     const { insertedAt, publishedAt } = state
 
@@ -38,7 +41,7 @@ const EntryHeadDateItem: FC<{
   if (!entry) return null
   const date = new Date(isList ? entry.insertedAt : entry.publishedAt).toDateString()
 
-  return <DateItem isSticky={isSticky} date={date} view={view} />
+  return <DateItem isSticky={isSticky} date={date} view={view} entryIds={groupEntryIds} />
 }
 
 export const VirtualRowItem: FC<VirtualRowItemProps> = memo(
@@ -49,10 +52,18 @@ export const VirtualRowItem: FC<VirtualRowItemProps> = memo(
     view,
     transform,
     isStickyItem,
+    groupEntryCount,
     isActiveStickyItem,
     measureElement,
     currentFeedTitle,
   }) => {
+    const groupEntryIds = useMemo(
+      () =>
+        isStickyItem
+          ? entriesIds.slice(virtualRowIndex, virtualRowIndex + (groupEntryCount ?? 1))
+          : [],
+      [entriesIds, groupEntryCount, isStickyItem, virtualRowIndex],
+    )
     return (
       <Fragment key={virtualRowKey}>
         {isStickyItem && (
@@ -72,6 +83,7 @@ export const VirtualRowItem: FC<VirtualRowItemProps> = memo(
           >
             <EntryHeadDateItem
               entryId={entriesIds[virtualRowIndex]!}
+              groupEntryIds={groupEntryIds}
               isSticky={isActiveStickyItem}
             />
           </div>
@@ -85,7 +97,7 @@ export const VirtualRowItem: FC<VirtualRowItemProps> = memo(
           style={useMemo(
             () => ({
               transform,
-              paddingTop: isStickyItem ? "2rem" : undefined,
+              paddingTop: isStickyItem ? "2.25rem" : undefined,
             }),
             [transform, isStickyItem],
           )}

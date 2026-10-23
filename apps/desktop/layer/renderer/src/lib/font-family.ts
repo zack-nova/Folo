@@ -17,11 +17,12 @@ const GENERIC_FONT_FAMILIES = new Set([
 const CJK_FONT_FALLBACKS = [
   "PingFang SC",
   "Hiragino Sans GB",
+  "HarmonyOS Sans SC",
   "Microsoft YaHei",
   "Noto Sans CJK SC",
 ]
 
-const APP_FONT_FALLBACKS = ["SN Pro", ...CJK_FONT_FALLBACKS, "system-ui", "sans-serif"]
+const APP_FONT_FALLBACKS = [...CJK_FONT_FALLBACKS, "system-ui", "sans-serif"]
 
 const normalizeFontFamily = (value: string) => {
   return value.trim().replaceAll(/^['"]|['"]$/g, "")
