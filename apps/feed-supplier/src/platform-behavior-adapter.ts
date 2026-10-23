@@ -39,6 +39,12 @@ export interface BehaviorReadRequest {
   knownUntil: string | null
   /** No request starts after this `Date.now()` value; what was read until then still counts. */
   deadline: number
+  /** Where an unfinished baseline read stopped, as returned in `nextCursor` */
+  cursor: string | null
+  /** A dry run for the owner: adapters may read only the first page of each list */
+  preview: boolean
+  /** Which of these keys the source has seen, so lists without times can stop paging */
+  known: (keys: string[]) => Promise<Set<string>>
 }
 
 export interface BehaviorReadResult {
@@ -46,6 +52,13 @@ export interface BehaviorReadResult {
   requestCount: number
   /** Parts that were not read, in words the owner can act on */
   notes: string[]
+  /**
+   * Set when a baseline read of a list without platform times ran out of time: the next check
+   * continues here and nothing is published until a read completes.
+   */
+  nextCursor: string | null
+  /** The platform pushed back during an unfinished baseline; it continues later than usual. */
+  pushedBack?: boolean
 }
 
 export interface RenderedBehaviorEntry {
@@ -57,7 +70,8 @@ export interface RenderedBehaviorEntry {
   /** HTML body */
   content: string
   imageURL: string | null
-  occurredAt: string
+  /** When it happened on the platform; null publishes it at the time it was discovered */
+  occurredAt: string | null
 }
 
 /**

@@ -376,7 +376,7 @@ export interface WebListCheckResult {
 }
 
 /** Platforms whose personal behavior a supplier can follow (ADR-0037). */
-export type PlatformBehaviorPlatform = "bilibili"
+export type PlatformBehaviorPlatform = "bilibili" | "zhihu"
 /** What one behavior source watches: new follows or new favorites of one account. */
 export type PlatformBehaviorScope = "favorites" | "follows"
 
@@ -389,6 +389,11 @@ export interface PlatformBehaviorSource {
   accountId: string
   /** When the first snapshot was recorded; nothing before it is published */
   baselineAt: string | null
+  /**
+   * Where an unfinished baseline read continues. Lists without platform times are read in full
+   * before anything is published, which can take several checks.
+   */
+  baselineCursor: string | null
   consecutiveFailures: number
   createdAt: string
   /** Supplier credential holding the platform login, or null to read without one */
@@ -462,7 +467,7 @@ export interface PlatformBehaviorCheckResult {
   notes: string[]
   publishedCount: number
   source: PlatformBehaviorSource
-  status: "baseline_recorded" | "entries_published" | "unchanged"
+  status: "baseline_in_progress" | "baseline_recorded" | "entries_published" | "unchanged"
 }
 
 export interface ParsedBehaviorSource {

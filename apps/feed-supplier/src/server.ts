@@ -35,6 +35,7 @@ import {
   startBehaviorScheduler,
 } from "./platform-behavior-service"
 import { BilibiliBehaviorAdapter } from "./platforms/bilibili"
+import { ZhihuBehaviorAdapter } from "./platforms/zhihu"
 import { PostgresSupplierRepository } from "./postgres-repository"
 import {
   PUBLIC_FEED_ROUTE,
@@ -186,16 +187,18 @@ export const buildFeedSupplier = async ({
   )
   const pageChanges = new PageChangeService(repository, pageFetcher)
   const behaviorCipher = new CredentialCipher(config.credentialActiveKeyId, config.credentialKeys)
+  const behaviorAdapterOptions = {
+    client: new SafeHTTPClient({
+      fetchImplementation: providedFetchImplementation,
+      maxBytes: config.behaviorFetchMaxBytes,
+      timeoutMs: config.behaviorFetchTimeoutMs,
+    }),
+    requestDelayMs: config.behaviorRequestDelayMs,
+  }
   const behaviors = new PlatformBehaviorService(repository, {
     adapters: providedBehaviorAdapters ?? [
-      new BilibiliBehaviorAdapter({
-        client: new SafeHTTPClient({
-          fetchImplementation: providedFetchImplementation,
-          maxBytes: config.behaviorFetchMaxBytes,
-          timeoutMs: config.behaviorFetchTimeoutMs,
-        }),
-        requestDelayMs: config.behaviorRequestDelayMs,
-      }),
+      new BilibiliBehaviorAdapter(behaviorAdapterOptions),
+      new ZhihuBehaviorAdapter(behaviorAdapterOptions),
     ],
     resolveCredential: async (credentialId) => {
       const credential = await repository.findCredential(credentialId)

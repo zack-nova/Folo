@@ -27,6 +27,8 @@ export { startWebListScheduler as startBehaviorScheduler } from "./web-list-serv
 const fingerprint = (text: string) => createHash("sha256").update(text).digest("hex")
 /** One check stops starting platform requests after this long. */
 export const BEHAVIOR_CHECK_BUDGET_MS = 120_000
+const BASELINE_CONTINUE_MS = 15 * 60_000
+const BASELINE_PUSHED_BACK_MS = 60 * 60_000
 // Pages already read overlap the next check by this much, in case platform clocks drift.
 const KNOWN_OVERLAP_MS = 60 * 60_000
 const nextCheck = (
@@ -131,6 +133,7 @@ export class PlatformBehaviorService {
       id,
       feedURL: behaviorFeedURL(id),
       baselineAt: null,
+      baselineCursor: null,
       entryCount: 0,
       createdAt: now,
       updatedAt: now,
@@ -197,7 +200,10 @@ export class PlatformBehaviorService {
       ),
     )
   }
-  private async read(source: PlatformBehaviorSource, knownUntil: string | null) {
+  private async read(
+    source: PlatformBehaviorSource,
+    options: { knownUntil: string | null; cursor: string | null; preview: boolean },
+  ) {
     const credential = source.credentialId
       ? await this.options.resolveCredential(source.credentialId)
       : null
@@ -205,8 +211,9 @@ export class PlatformBehaviorService {
       accountId: source.accountId,
       scope: source.scope,
       credential,
-      knownUntil,
+      ...options,
       deadline: Date.now() + this.checkBudgetMs,
+      known: async (keys) => new Set(await this.repository.findBehaviorObjectKeys(source.id, keys)),
     })
   }
   /** Reads the platform without saving anything, to confirm the account and credential. */
@@ -216,7 +223,7 @@ export class PlatformBehaviorService {
     if (!source) return null
     this.activeChecks.add(id)
     try {
-      const result = await this.read(source, null)
+      const result = await this.read(source, { knownUntil: null, cursor: null, preview: true })
       await this.repository.recordAudit(
         createAuditDraft(actor, "behavior_source.tested", "behavior_source", id, {
           succeeded: true,
@@ -273,7 +280,12 @@ export class PlatformBehaviorService {
         baseline && source.lastSuccessAt
           ? new Date(Date.parse(source.lastSuccessAt) - KNOWN_OVERLAP_MS).toISOString()
           : null
-      const read = await this.read(source, baseline ? knownUntil : null)
+      const read = await this.read(source, {
+        knownUntil: baseline ? knownUntil : null,
+        cursor: baseline ? null : source.baselineCursor,
+        preview: false,
+      })
+      const baselineContinues = !baseline && read.nextCursor !== null
       const seen = new Set(
         await this.repository.findBehaviorObjectKeys(
           source.id,
@@ -299,7 +311,7 @@ export class PlatformBehaviorService {
           summary: boundedUTF8(entry.summary, 4096),
           content: boundedUTF8(entry.content, 128 * 1024),
           imageURL: entry.imageURL,
-          occurredAt: entry.occurredAt,
+          occurredAt: entry.occurredAt ?? now,
           discoveredAt: now,
         }
       })
@@ -314,14 +326,24 @@ export class PlatformBehaviorService {
       const saved = await this.repository.saveBehaviorObservation(
         {
           ...source,
-          baselineAt: baseline ?? now,
+          baselineAt: baseline ?? (baselineContinues ? null : now),
+          baselineCursor: baselineContinues ? read.nextCursor : null,
           consecutiveFailures: 0,
           lastAttemptAt: now,
           lastSuccessAt: now,
           lastErrorCode: null,
           lastErrorSummary: null,
           updatedAt: now,
-          nextCheckAt: nextCheck(source, now),
+          // An unfinished baseline continues soon instead of after the full interval.
+          nextCheckAt: nextCheck(
+            source,
+            now,
+            baselineContinues
+              ? read.pushedBack
+                ? BASELINE_PUSHED_BACK_MS
+                : BASELINE_CONTINUE_MS
+              : undefined,
+          ),
         },
         objects,
         entries,
@@ -329,7 +351,9 @@ export class PlatformBehaviorService {
       return {
         source: saved,
         status: !baseline
-          ? "baseline_recorded"
+          ? baselineContinues
+            ? "baseline_in_progress"
+            : "baseline_recorded"
           : entries.length
             ? "entries_published"
             : "unchanged",

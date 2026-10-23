@@ -14,6 +14,7 @@ export const behaviorSourceColumns = {
   enabled: "enabled",
   intervalMinutes: "interval_minutes",
   baselineAt: "baseline_at",
+  baselineCursor: "baseline_cursor",
   nextCheckAt: "next_check_at",
   lastAttemptAt: "last_attempt_at",
   lastSuccessAt: "last_success_at",
