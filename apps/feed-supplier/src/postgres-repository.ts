@@ -468,6 +468,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
         "007_official_accounts.sql",
         "008_official_bindings.sql",
         "009_platform_behavior_sources.sql",
+        "010_behavior_baseline_cursor.sql",
       ].map(async (filename, index) => ({
         sql: await readFile(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
         version: index + 1,
@@ -769,7 +770,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
   ): Promise<PlatformBehaviorSource> {
     return this.withTransaction(async (client) => {
       const result = await client.query(
-        `update behavior_sources set baseline_at=$2, next_check_at=$3, last_attempt_at=$4, last_success_at=$5, last_error_code=$6, last_error_summary=$7, consecutive_failures=$8, updated_at=$9 where id=$1 and deleted_at is null`,
+        `update behavior_sources set baseline_at=$2, baseline_cursor=$10, next_check_at=$3, last_attempt_at=$4, last_success_at=$5, last_error_code=$6, last_error_summary=$7, consecutive_failures=$8, updated_at=$9 where id=$1 and deleted_at is null`,
         [
           source.id,
           source.baselineAt,
@@ -780,6 +781,7 @@ export class PostgresSupplierRepository implements SupplierRepository {
           source.lastErrorSummary,
           source.consecutiveFailures,
           source.updatedAt,
+          source.baselineCursor,
         ],
       )
       if (!result.rowCount) throw new Error("Behavior source was not found")

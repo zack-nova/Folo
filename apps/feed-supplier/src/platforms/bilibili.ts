@@ -1,5 +1,3 @@
-import { setTimeout as delay } from "node:timers/promises"
-
 import type { PlatformBehaviorSource } from "@follow/feed-source-contracts"
 
 import type {
@@ -10,14 +8,23 @@ import type {
   RenderedBehaviorEntry,
 } from "../platform-behavior-adapter"
 import { PlatformBehaviorError } from "../platform-behavior-adapter"
-import type { SafeHTTPClient } from "../safe-http"
-import { decodeBody, SafeHTTPError } from "../safe-http"
 import { escapeXML } from "../web-list-extraction"
+import type { PlatformAdapterOptions } from "./shared"
+import {
+  beijingTime,
+  BROWSER_USER_AGENT,
+  cookieHeader,
+  count,
+  failedStatus,
+  httpsURL,
+  isoFromSeconds,
+  PacedRequests,
+  requestFailure,
+  text,
+  titleWithin,
+} from "./shared"
 
 const API_ORIGIN = "https://api.bilibili.com"
-// The web API answers browser requests; the collector scripts in PersonalOS used the same agent.
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 const FOLLOW_PAGE_SIZE = 50
 const FAVORITE_PAGE_SIZE = 20
 /** Pages read per list when many new objects appeared since the last check. */
@@ -57,10 +64,6 @@ interface BilibiliMedia {
   upper?: { face?: string; mid?: number; name?: string }
 }
 
-const isoFromSeconds = (value: number | undefined): string | null =>
-  value && value > 0 ? new Date(value * 1000).toISOString() : null
-const httpsURL = (value: string | undefined): string =>
-  value ? value.replace(/^http:\/\//, "https://").replace(/^\/\//, "https://") : ""
 const spaceURL = (mid: number | string) => `https://space.bilibili.com/${mid}`
 
 /** Bilibili error codes as owner-facing failures; messages never repeat the response body. */
@@ -87,37 +90,13 @@ export const bilibiliFailure = (code: number): PlatformBehaviorError => {
 }
 
 /** A full cookie header is used as given; a bare value is taken to be SESSDATA. */
-export const bilibiliCookieHeader = (credential: string): string => {
-  const value = credential.trim()
-  if (/[\r\n]/.test(value))
-    throw new PlatformBehaviorError(
-      "behavior_credential_invalid",
-      "The bound credential must be a single-line cookie",
-      400,
-    )
-  return value.includes("=") ? value : `SESSDATA=${value}`
-}
+export const bilibiliCookieHeader = (credential: string): string =>
+  cookieHeader(credential, "SESSDATA")
 
 /** Uploaders often repeat the title or write "-" as the description; neither adds anything. */
 const meaningfulIntro = (intro: string, title: string): string => {
   const trimmed = intro.trim()
   return trimmed === title.trim() || /^[-—\s.。]*$/.test(trimmed) ? "" : trimmed
-}
-const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: "Asia/Shanghai",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-})
-const beijingTime = (iso: string | null | undefined): string => {
-  if (!iso) return "未知"
-  const parts = Object.fromEntries(
-    timeFormatter.formatToParts(new Date(iso)).map((part) => [part.type, part.value]),
-  )
-  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`
 }
 const durationText = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600)
@@ -125,56 +104,34 @@ const durationText = (seconds: number): string => {
   const rest = String(seconds % 60).padStart(2, "0")
   return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`
 }
-const text = (value: unknown): string => (typeof value === "string" ? value : "")
-const count = (value: unknown): number => (typeof value === "number" ? value : 0)
-const titleWithin = (value: string, maximum = 300): string => {
-  const characters = [...value]
-  return characters.length <= maximum ? value : `${characters.slice(0, maximum - 1).join("")}…`
-}
-
-/** Requests of one read: spaced out, counted, and never started past the deadline. */
+/** Bilibili web API calls of one read. */
 class BilibiliSession {
-  requestCount = 0
-  private lastRequestAt = 0
   constructor(
-    private readonly client: Pick<SafeHTTPClient, "get">,
+    private readonly requests: PacedRequests,
     private readonly cookie: string | null,
-    private readonly requestDelayMs: number,
-    private readonly deadline: number,
-    private readonly wait: (milliseconds: number) => Promise<unknown>,
   ) {}
+  get requestCount(): number {
+    return this.requests.requestCount
+  }
   hasTime(): boolean {
-    return Date.now() + this.requestDelayMs < this.deadline
+    return this.requests.hasTime()
   }
   async get<T>(path: string, parameters: Record<string, number | string>, referer: string) {
     const url = new URL(path, API_ORIGIN)
     for (const [key, value] of Object.entries(parameters)) url.searchParams.set(key, String(value))
-    if (this.lastRequestAt) {
-      const remaining = this.lastRequestAt + this.requestDelayMs - Date.now()
-      if (remaining > 0) await this.wait(remaining)
-    }
     const headers = new Headers({
       accept: "application/json, text/plain, */*",
       referer,
-      "user-agent": USER_AGENT,
+      "user-agent": BROWSER_USER_AGENT,
     })
     if (this.cookie) headers.set("cookie", this.cookie)
-    this.requestCount++
     let body: string
     try {
-      const response = await this.client.get(url.toString(), headers)
-      body = decodeBody(response.bytes, response.headers.get("content-type") ?? "")
+      body = await this.requests.getText(url, headers)
     } catch (error) {
-      if (error instanceof SafeHTTPError && /HTTP (?:412|429)\b/.test(error.message))
-        throw bilibiliFailure(-412)
-      throw new PlatformBehaviorError(
-        error instanceof SafeHTTPError
-          ? error.code.replace(/^page_/, "behavior_")
-          : "behavior_request_failed",
-        "Bilibili request failed",
-      )
-    } finally {
-      this.lastRequestAt = Date.now()
+      const status = failedStatus(error)
+      if (status === 412 || status === 429) throw bilibiliFailure(-412)
+      throw requestFailure(error, "Bilibili")
     }
     let parsed: BilibiliResponse<T>
     try {
@@ -197,31 +154,20 @@ export class BilibiliBehaviorAdapter implements PlatformBehaviorAdapter {
   readonly platform = "bilibili" as const
   readonly scopes = ["favorites", "follows"] as const
   readonly accountIdPattern = /^[1-9]\d{0,19}$/
-  private readonly wait: (milliseconds: number) => Promise<unknown>
-  constructor(
-    private readonly options: {
-      client: Pick<SafeHTTPClient, "get">
-      requestDelayMs: number
-      wait?: (milliseconds: number) => Promise<unknown>
-    },
-  ) {
-    this.wait = options.wait ?? ((milliseconds) => delay(milliseconds))
-  }
+  constructor(private readonly options: PlatformAdapterOptions) {}
 
   async read(request: BehaviorReadRequest): Promise<BehaviorReadResult> {
     const session = new BilibiliSession(
-      this.options.client,
+      new PacedRequests(this.options, request.deadline),
       request.credential ? bilibiliCookieHeader(request.credential) : null,
-      this.options.requestDelayMs,
-      request.deadline,
-      this.wait,
     )
     const notes: string[] = []
     const objects =
       request.scope === "follows"
         ? await this.readFollows(session, request, notes)
         : await this.readFavorites(session, request, notes)
-    return { objects, requestCount: session.requestCount, notes }
+    // Bilibili gives follow and favorite times, so the newest page is a complete baseline.
+    return { objects, requestCount: session.requestCount, notes, nextCursor: null }
   }
 
   private async readFollows(
@@ -432,7 +378,7 @@ export class BilibiliBehaviorAdapter implements PlatformBehaviorAdapter {
       summary: `新关注：${names.join("、")}`,
       content: `<ul>${items}</ul>`,
       imageURL: only ? text(only.snapshot.face) || null : null,
-      occurredAt: objects[0]!.occurredAt ?? new Date().toISOString(),
+      occurredAt: objects[0]!.occurredAt,
     }
   }
 
@@ -466,7 +412,7 @@ export class BilibiliBehaviorAdapter implements PlatformBehaviorAdapter {
         intro ? `<p>${escapeXML(intro).replaceAll("\n", "<br>")}</p>` : "",
       ].join(""),
       imageURL: cover || null,
-      occurredAt: object.occurredAt ?? new Date().toISOString(),
+      occurredAt: object.occurredAt,
     }
   }
 

@@ -176,7 +176,7 @@ FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
 `request.query` 直接写入目标 URL，`metadata_paths` 对应带显示名的 `json.metadataPaths`；站点改版后需要按当前
 页面结构修正选择器，并先用 `test` 预览确认。
 
-## 平台行为源（B 站）
+## 平台行为源（B 站、知乎）
 
 平台行为源（ADR-0037）把你自己在平台上的新动作发布成 Feed：第一版支持 B 站的**新关注 UP 主**和**新收藏视频**。
 一个来源只看一个账号的一种动作，所以通常建两个：`follows`（新关注）和 `favorites`（新收藏）。
@@ -229,7 +229,20 @@ curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" -H "Content-Type
 `BEHAVIOR_SCHEDULER_POLL_INTERVAL_MS`。
 
 接下一个平台时，在 `src/platforms/` 下新增一个实现 `PlatformBehaviorAdapter` 的文件（读取当前列表、把新对象写成
-条目），在 `server.ts` 注册，并把平台名加进契约、校验和迁移的约束；基线、差分、调度、存储和 Feed 输出都是共用的。
+条目），在 `server.ts` 注册，并把平台名加进契约、校验和迁移的约束；基线、差分、调度、存储和 Feed 输出都是共用的，
+请求节奏、Cookie、时间格式等辅助在 `src/platforms/shared.ts`。
+
+### 知乎
+
+`platform` 写 `zhihu`，`accountId` 是个人主页地址 `zhihu.com/people/<url_token>` 里的 `url_token`。凭据填 `z_c0` 的值即可
+（或一整行 Cookie，例如 `z_c0=…; d_c0=…`）。
+
+- 新收藏（`favorites`）：回答、文章、想法、视频各一条，正文写作者、类型、收藏夹、收藏时间、发布时间、赞同和评论数与摘要。
+  知乎的收藏夹列表带更新时间，之后的检查只读上次检查后变过的收藏夹，平时一次检查约 3 个请求；基线读全部收藏夹的最新一页。
+- 新关注（`follows`）：知乎**不提供关注时间**，所以基线要先把整个关注列表读完（约 20 人一页、每页 1 秒），读不完会在
+  15 分钟后接着读，读完之前不发布任何条目（检查结果为 `baseline_in_progress`，来源的 `baselineCursor` 记着读到哪）。
+  之后每次只读最新几页，遇到已见过的账号就停；新关注以发现时间发布，一次检查里的新关注合成一条。
+- 知乎对可疑请求回 403、对未登录回 401，分别记为 `behavior_rate_limited` 和 `behavior_auth_invalid`，至少 6 小时后再试。
 
 ## 平台源目录与订阅迁移
 
