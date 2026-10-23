@@ -36,6 +36,7 @@
 - [adr/0036-deliver-daily-briefings-as-folo-task-reports.md](./adr/0036-deliver-daily-briefings-as-folo-task-reports.md)：每日简报复用 Folo 的 AI 任务和任务报告；自有服务实现任务与只读报告会话，候选取窗口内已评估的精选条目，模型输出结构化要点、服务端校验条目引用后渲染为带条目链接的 Markdown。
 - [adr/0037-publish-platform-behavior-through-the-supplier.md](./adr/0037-publish-platform-behavior-through-the-supplier.md)：B 站新关注和新收藏作为供给端的平台行为源；首次检查只记基线，之后只发布基线后出现的新对象，新关注每次合成一条、新收藏每个视频一条，登录态放在加密凭据库。
 - [adr/0038-write-summaries-during-evaluation.md](./adr/0038-write-summaries-during-evaluation.md)：评估时按所有者语言顺带写总结（长文完整、短文一句，只写不存在的）；阅读时只读缓存，没有总结时由所有者点按钮生成。
+- [adr/0039-separate-source-folders-from-ai-topics.md](./adr/0039-separate-source-folders-from-ai-topics.md)：（提议中）侧栏只管来源（文件夹），条目列表的 Chips 改为 Taxonomy 的 AI 主题并支持子分类，两者取交集；`POST /entries` 与 `POST /reads/all` 按主题在服务端筛选，能力 `entries.ai_topics` 门控。
 
 ## 推荐开发阶段
 
