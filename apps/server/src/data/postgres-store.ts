@@ -1175,6 +1175,18 @@ export class PostgresDataStore implements DataStore {
       })
   }
 
+  async insertEntrySummaryIfAbsent(userId: string, summary: EntrySummaryRecord): Promise<boolean> {
+    if (!(await this.getEntry(userId, summary.entryId))) return false
+    const inserted = await this.database
+      .insert(entrySummaries)
+      .values(summary)
+      .onConflictDoNothing({
+        target: [entrySummaries.entryId, entrySummaries.language, entrySummaries.target],
+      })
+      .returning({ entryId: entrySummaries.entryId })
+    return inserted.length > 0
+  }
+
   async getEntryTranslation(
     userId: string,
     entryId: string,

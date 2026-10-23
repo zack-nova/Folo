@@ -287,4 +287,91 @@ describe.runIf(databaseURL)("PostgreSQL authority", { timeout: POSTGRES_TEST_TIM
     ])
     expect(await dataStore.getSubscription(userId, "feed_missing")).toBeNull()
   })
+
+  it("keeps an existing summary when an evaluation offers another", async () => {
+    const auth = createAuth({
+      baseURL: "http://localhost:3000",
+      database: database.pool,
+      secret: "phase-one-test-secret-that-is-at-least-32-characters",
+      trustedOrigins: ["http://localhost:2233"],
+    })
+    await migrateDatabase({ auth, database: database.db })
+    const dataStore = new PostgresDataStore(database.db)
+    const userId = `summary-${randomUUID()}`
+    const feedId = `feed_${randomUUID().replaceAll("-", "")}`
+    const entryId = `entry_${randomUUID().replaceAll("-", "")}`
+    const now = new Date()
+    await dataStore.saveFeed(
+      {
+        consecutiveFailures: 0,
+        description: null,
+        errorAt: null,
+        errorMessage: null,
+        etag: null,
+        fetchedAt: now,
+        id: feedId,
+        image: null,
+        lastModified: null,
+        lastSuccessAt: now,
+        nextFetchAt: now,
+        ownerUserId: null,
+        siteUrl: null,
+        title: "Summaries",
+        url: `https://feeds.example.com/${feedId}.xml`,
+      },
+      [
+        {
+          attachments: null,
+          author: null,
+          authorAvatar: null,
+          authorUrl: null,
+          categories: null,
+          content: "<p>Entry</p>",
+          description: null,
+          extra: null,
+          feedId,
+          guid: entryId,
+          id: entryId,
+          insertedAt: now,
+          language: null,
+          media: null,
+          publishedAt: now,
+          title: "Entry",
+          url: null,
+        },
+      ],
+    )
+    await dataStore.createSubscription({
+      category: null,
+      createdAt: now,
+      feedId,
+      hideFromTimeline: false,
+      isPrivate: false,
+      title: null,
+      userId,
+      view: 0,
+    })
+    const summary = {
+      createdAt: now,
+      entryId,
+      language: "zh-CN",
+      model: "on-demand",
+      summary: "完整总结。",
+      target: "content" as const,
+    }
+
+    expect(await dataStore.insertEntrySummaryIfAbsent(userId, summary)).toBe(true)
+    expect(
+      await dataStore.insertEntrySummaryIfAbsent(userId, {
+        ...summary,
+        model: "evaluation",
+        summary: "一句话。",
+      }),
+    ).toBe(false)
+    expect(await dataStore.getEntrySummary(userId, entryId, "zh-CN", "content")).toMatchObject({
+      model: "on-demand",
+      summary: "完整总结。",
+    })
+    expect(await dataStore.insertEntrySummaryIfAbsent("someone-else", summary)).toBe(false)
+  })
 })

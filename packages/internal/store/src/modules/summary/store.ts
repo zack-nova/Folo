@@ -140,14 +140,21 @@ export const summaryActions = new SummaryActions()
 class SummarySyncService {
   private pendingPromises: Record<StatusID, Promise<string | null>> = {}
 
+  /**
+   * Resolves the summary of an entry, generating it unless `cachedOnly` is set. A cached-only
+   * lookup returns what the server already has and never starts a model call, so browsing does
+   * not spend AI calls; the owner generates the rest on request.
+   */
   async generateSummary({
     entryId,
     target,
     actionLanguage,
+    cachedOnly = false,
   }: {
     entryId: string
     target: "content" | "readabilityContent"
     actionLanguage: SupportedActionLanguage
+    cachedOnly?: boolean
   }): Promise<string | null> {
     const entry = getEntry(entryId)
     if (!entry) return null
@@ -159,6 +166,29 @@ class SummarySyncService {
       ]
     if (existing) {
       return existing
+    }
+
+    if (cachedOnly) {
+      // The SDK sends extra GET fields as query parameters; only the self-hosted server reads it.
+      const cachedOnlyQuery = { cached_only: "1" }
+      const cached = await api().ai.summary({
+        id: entryId,
+        language: toApiSupportedActionLanguage(actionLanguage),
+        target,
+        ...cachedOnlyQuery,
+      })
+      const cachedSummary = cached.data?.trim() ? cached.data : null
+      if (cachedSummary) {
+        summaryActions.upsertMany([
+          {
+            entryId,
+            summary: target === "content" ? cachedSummary : "",
+            language: actionLanguage ?? null,
+            readabilitySummary: target === "readabilityContent" ? cachedSummary : null,
+          },
+        ])
+      }
+      return cachedSummary
     }
 
     const statusID = getGenerateSummaryStatusId(entryId, actionLanguage, target)

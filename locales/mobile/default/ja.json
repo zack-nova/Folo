@@ -1,4 +1,5 @@
 {
+  "ai.summary_generate": "AI 要約を生成",
   "ai.summary_generating": "AI サマリーを生成中...",
   "ai.summary_not_available": "サマリーは利用できません",
   "ai.summary_render_error": "要約を生成できませんでした。レンダリングエラーです。",

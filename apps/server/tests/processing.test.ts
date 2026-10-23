@@ -22,6 +22,13 @@ class SummaryFailingDataStore extends MemoryDataStore {
   override async setEntrySummary(_userId: string, _summary: EntrySummaryRecord): Promise<void> {
     throw new Error("summary storage unavailable")
   }
+
+  override async insertEntrySummaryIfAbsent(
+    _userId: string,
+    _summary: EntrySummaryRecord,
+  ): Promise<boolean> {
+    throw new Error("summary storage unavailable")
+  }
 }
 
 describe("entry evaluation processing", () => {

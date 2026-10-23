@@ -531,6 +531,8 @@ export interface DataStore {
     target: EntrySummaryRecord["target"],
   ): Promise<EntrySummaryRecord | null>
   setEntrySummary(userId: string, summary: EntrySummaryRecord): Promise<void>
+  /** Writes the summary unless one exists for its entry, language and target; true when written. */
+  insertEntrySummaryIfAbsent(userId: string, summary: EntrySummaryRecord): Promise<boolean>
   getEntryTranslation(
     userId: string,
     entryId: string,

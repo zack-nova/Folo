@@ -1,5 +1,5 @@
 import type { SupportedActionLanguage } from "@follow/shared"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 
 import type { GeneralQueryOptions } from "../../types"
 import { summarySyncService, useSummaryStore } from "./store"
@@ -29,18 +29,37 @@ export function usePrefetchSummary({
   entryId,
   target,
   actionLanguage,
+  cachedOnly = false,
   ...options
 }: {
   entryId: string
   target: "content" | "readabilityContent"
   actionLanguage: SupportedActionLanguage
+  /** Only read summaries that already exist; see summarySyncService.generateSummary. */
+  cachedOnly?: boolean
 } & GeneralQueryOptions) {
   return useQuery({
-    queryKey: ["summary", entryId, target, actionLanguage],
+    queryKey: ["summary", entryId, target, actionLanguage, cachedOnly],
     queryFn: () => {
-      return summarySyncService.generateSummary({ entryId, target, actionLanguage })
+      return summarySyncService.generateSummary({ entryId, target, actionLanguage, cachedOnly })
     },
     enabled: options?.enabled,
     staleTime: 1000 * 60 * 60 * 24,
+  })
+}
+
+/** Generates a summary the owner asked for explicitly. */
+export function useGenerateSummary({
+  entryId,
+  target,
+  actionLanguage,
+}: {
+  entryId: string
+  target: "content" | "readabilityContent"
+  actionLanguage: SupportedActionLanguage
+}) {
+  return useMutation({
+    mutationKey: ["summary", "generate", entryId, target, actionLanguage],
+    mutationFn: () => summarySyncService.generateSummary({ entryId, target, actionLanguage }),
   })
 }

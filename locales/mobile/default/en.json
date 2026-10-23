@@ -1,4 +1,5 @@
 {
+  "ai.summary_generate": "Generate AI summary",
   "ai.summary_generating": "Generating AI summary...",
   "ai.summary_not_available": "Summary not available",
   "ai.summary_render_error": "Failed to generate summary. Rendering error.",

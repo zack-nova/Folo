@@ -17,7 +17,7 @@
 - [stage-4-3-incremental-sync.md](./stage-4-3-incremental-sync.md)：上游 SDK 0.3.96 兼容修复（位置性分页游标、收藏分页、契约扫描）与服务端增量同步变更日志。
 - [stage-5a-autonomous-sources.md](./stage-5a-autonomous-sources.md)：自主数据源契约、自建 RSSHub、独立配置库、加密凭据、审计、页面变化、网页列表源与后续切片。
 - [stage-5b-official-acquisition.md](./stage-5b-official-acquisition.md)：阶段 5B 第一刀的实施计划：经供给端用官方 Folo 账号获取指定 `rsshub://` 来源，尚未开始实现。
-- [ai-evaluation-and-summary-analysis.md](./ai-evaluation-and-summary-analysis.md)：（分析，已选方案乙）评估调用里已带总结但因语言标记 `auto` 用不上；比较一律顺带、长文顺带、只修语言、彻底分开四种方案；所有者选定长文顺带，并要求无缓存时手动生成，附改动清单。
+- [ai-evaluation-and-summary-analysis.md](./ai-evaluation-and-summary-analysis.md)：（分析，已决定见 ADR-0038）评估调用里已带总结但因语言标记 `auto` 用不上；比较一律顺带、长文顺带、只修语言、彻底分开四种方案；所有者选定长文顺带，并要求无缓存时手动生成，附改动清单。
 - [feeds-agent-CONTEXT.md](./feeds-agent-CONTEXT.md)：Feeds Agent 当前领域语言和已解决歧义快照。
 - [adr/0012-store-processing-results-by-content-version.md](./adr/0012-store-processing-results-by-content-version.md)：旧处理结果版本化 ADR，已被后续设计取代。
 - [adr/0023-split-feed-core-and-supplier-services.md](./adr/0023-split-feed-core-and-supplier-services.md)：feed_core 与 feed_supplier 拆分边界。
@@ -35,6 +35,7 @@
 - [adr/0035-evaluate-automatic-entries-in-batches.md](./adr/0035-evaluate-automatic-entries-in-batches.md)：自动评估按所有者和配置分组，一次模型调用评估一批条目；手动重评和重试保持单条，回复按 `entry_id` 对应、缺失的条目单独失败。
 - [adr/0036-deliver-daily-briefings-as-folo-task-reports.md](./adr/0036-deliver-daily-briefings-as-folo-task-reports.md)：每日简报复用 Folo 的 AI 任务和任务报告；自有服务实现任务与只读报告会话，候选取窗口内已评估的精选条目，模型输出结构化要点、服务端校验条目引用后渲染为带条目链接的 Markdown。
 - [adr/0037-publish-platform-behavior-through-the-supplier.md](./adr/0037-publish-platform-behavior-through-the-supplier.md)：B 站新关注和新收藏作为供给端的平台行为源；首次检查只记基线，之后只发布基线后出现的新对象，新关注每次合成一条、新收藏每个视频一条，登录态放在加密凭据库。
+- [adr/0038-write-summaries-during-evaluation.md](./adr/0038-write-summaries-during-evaluation.md)：评估时按所有者语言顺带写总结（长文完整、短文一句，只写不存在的）；阅读时只读缓存，没有总结时由所有者点按钮生成。
 
 ## 推荐开发阶段
 

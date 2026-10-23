@@ -10,7 +10,7 @@ import type {
   FeedRecord,
   ProcessingJobRecord,
 } from "../src/data/types"
-import { ProcessingService } from "../src/processing/service"
+import { ownerSummaryLanguage, ProcessingService } from "../src/processing/service"
 import { saveProfileSnapshot, saveTaxonomySnapshot } from "../src/processing/snapshots"
 
 const userId = "owner"
@@ -292,5 +292,115 @@ describe("batched entry evaluation", () => {
     } finally {
       await service.stop()
     }
+  })
+})
+
+describe("summaries written by evaluations", () => {
+  const longText = "A long article about evaluation and summaries. ".repeat(20)
+
+  it("asks for full summaries of long entries and brief ones of short entries", async () => {
+    const dataStore = new MemoryDataStore()
+    await seed(dataStore, [entry("long", longText), entry("short", "A two-line post.")])
+    await dataStore.setSettings(userId, "general", { actionLanguage: "default", language: "ja" })
+    // The owner already generated a summary for the short entry; the evaluation keeps it.
+    await dataStore.setEntrySummary(userId, {
+      createdAt: now,
+      entryId: "short",
+      language: "ja",
+      model: "on-demand-model",
+      summary: "手動で生成した要約。",
+      target: "content",
+    })
+    const complete = vi.fn<AIProvider["complete"]>().mockImplementation(async (request) => {
+      const { entries } = JSON.parse(request.user) as { entries: { entry_id: string }[] }
+      return {
+        content: JSON.stringify({
+          evaluations: entries.map((item) => ({
+            ...evaluationFor(item.entry_id),
+            summary: `${item.entry_id} の要約。`,
+          })),
+        }),
+        model: "batch-model",
+        usage: { inputTokens: 100, outputTokens: 50 },
+      }
+    })
+    const service = new ProcessingService({
+      batchSize: 10,
+      dataStore,
+      pollIntervalMs: 5,
+      resolveProvider: async () => ({ complete }),
+    })
+    service.start()
+    try {
+      const results = await Promise.all(
+        ["long", "short"].map((id) => service.enqueueEvaluation(userId, id, { automatic: true })),
+      )
+      await settle(dataStore, results.map(jobIdOf))
+      const request = complete.mock.calls[0]![0]
+      expect(request.system).toContain('"summary_language":"ja"')
+      expect(request.system).toContain('summary_length: for "full"')
+      const payload = JSON.parse(request.user) as {
+        entries: { entry_id: string; summary_length: string }[]
+      }
+      expect(payload.entries.map((item) => [item.entry_id, item.summary_length])).toEqual([
+        ["long", "full"],
+        ["short", "brief"],
+      ])
+      expect(await dataStore.getEntrySummary(userId, "long", "ja", "content")).toMatchObject({
+        model: "batch-model",
+        summary: "long の要約。",
+      })
+      expect(await dataStore.getEntrySummary(userId, "short", "ja", "content")).toMatchObject({
+        model: "on-demand-model",
+        summary: "手動で生成した要約。",
+      })
+      expect(await dataStore.getEntrySummary(userId, "long", "auto", "content")).toBeNull()
+      expect(service.summaryCounts()).toEqual({ brief: 0, full: 1 })
+      expect(await dataStore.getCurrentEntryEvaluation(userId, "long")).toMatchObject({
+        details: { summary: { language: "ja", length: "full" } },
+      })
+    } finally {
+      await service.stop()
+    }
+  })
+
+  it("leaves summaries out of the prompt and the store when they are turned off", async () => {
+    const dataStore = new MemoryDataStore()
+    await seed(dataStore, [entry("e1", longText)])
+    const complete = vi.fn<AIProvider["complete"]>().mockImplementation(async () => {
+      const { entry_id, ...single } = evaluationFor("e1")
+      void entry_id
+      return {
+        content: JSON.stringify({ ...single, summary: "An unrequested summary." }),
+        model: "single-model",
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }
+    })
+    const service = new ProcessingService({
+      dataStore,
+      pollIntervalMs: 5,
+      resolveProvider: async () => ({ complete }),
+      summaries: false,
+    })
+    service.start()
+    try {
+      await settle(dataStore, [jobIdOf(await service.enqueueEvaluation(userId, "e1"))])
+      const request = complete.mock.calls[0]![0]
+      expect(request.system).not.toContain("summary")
+      expect(request.user).not.toContain("summary_length")
+      expect(await dataStore.getEntrySummary(userId, "e1", "zh-CN", "content")).toBeNull()
+      expect(service.summaryCounts()).toEqual({ brief: 0, full: 0 })
+    } finally {
+      await service.stop()
+    }
+  })
+
+  it("resolves the summary language the way the client does", async () => {
+    const dataStore = new MemoryDataStore()
+    expect(await ownerSummaryLanguage(dataStore, userId, "zh-CN")).toBe("zh-CN")
+    await dataStore.setSettings(userId, "general", { language: "en" })
+    expect(await ownerSummaryLanguage(dataStore, userId, "zh-CN")).toBe("en")
+    await dataStore.setSettings(userId, "general", { actionLanguage: "zh-TW" })
+    expect(await ownerSummaryLanguage(dataStore, userId, "zh-CN")).toBe("zh-TW")
   })
 })
