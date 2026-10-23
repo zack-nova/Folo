@@ -153,7 +153,7 @@ export function AllItem({ entryId, translation, currentFeedTitle }: UniversalIte
       {currentFeedTitle !== thisFeedTitle && (
         <FeedIcon target={related} fallback entry={iconEntry} size={16} />
       )}
-      <div className={cn("flex h-fit min-w-0 flex-1 items-center truncate text-sm leading-tight")}>
+      <div className={cn("flex h-fit min-w-0 flex-1 items-center truncate text-sm leading-snug")}>
         {entry.firstAudio && <AudioIcon entryId={entryId} src={entry.firstAudio.url} />}
         {entry.video && <VideoIcon src={entry.video} />}
         <div
@@ -215,13 +215,13 @@ export function AllItemStateLess({ entry, feed }: EntryItemStatelessProps) {
   return (
     <div className="group relative flex cursor-menu py-4">
       <FeedIcon target={feed} fallback className="mr-2 size-5" />
-      <div className="-mt-0.5 min-w-0 flex-1 text-sm leading-tight">
-        <div className="flex gap-1 text-[10px] font-bold text-text-secondary">
+      <div className="-mt-0.5 min-w-0 flex-1 text-sm leading-normal">
+        <div className="flex gap-1 text-[11px] font-normal text-text-tertiary">
           <FeedTitle feed={feed} />
           <span>·</span>
           <span>{!!entry.publishedAt && <RelativeTime date={entry.publishedAt} />}</span>
         </div>
-        <div className="relative my-0.5 truncate break-words font-medium text-text">
+        <div className="relative my-0.5 truncate break-words font-medium leading-snug text-text">
           <HighlightedText rules={spotlightRules} text={entry.title} />
         </div>
       </div>
@@ -233,8 +233,8 @@ export const AllItemSkeleton = (
   <div className={`relative w-full select-none ${readableContentMaxWidth}`}>
     <div className="group relative flex py-4">
       <Skeleton className="mr-2 size-5 shrink-0 overflow-hidden" />
-      <div className="-mt-0.5 line-clamp-4 flex-1 text-sm leading-tight">
-        <div className="flex gap-1 text-[10px] font-bold text-material-opaque">
+      <div className="-mt-0.5 line-clamp-4 flex-1 text-sm leading-normal">
+        <div className="flex gap-1 text-[11px] font-normal text-material-opaque">
           <Skeleton className="h-3 w-32 truncate" />
           <span>·</span>
           <Skeleton className="h-3 w-12 shrink-0" />

@@ -83,7 +83,7 @@ export const EntryListHeader: FC<{
   const titleInfo = !!headerTitle && (
     <div
       className={clsx(
-        "flex min-w-0 items-center break-all text-lg font-bold leading-tight",
+        "flex min-w-0 items-center break-all text-lg font-bold leading-snug",
         "-ml-3",
       )}
     >
