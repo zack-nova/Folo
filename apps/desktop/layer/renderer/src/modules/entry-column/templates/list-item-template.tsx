@@ -192,16 +192,15 @@ export function ListItem({
     >
       <FeedIcon target={related} fallback entry={iconEntry} size={24} />
       <div
-        className={cn("-mt-0.5 ml-1 h-fit flex-1 text-sm leading-tight", lineClamp.global)}
+        className={cn("-mt-0.5 ml-1 h-fit flex-1 text-sm leading-normal", lineClamp.global)}
         style={{
           maxWidth: `calc(100% - ${savedWidth}px)`,
         }}
       >
         <div
           className={cn(
-            "flex min-w-0 items-center gap-1 text-[10px] font-bold",
-            "text-text-secondary",
-            isInCollection && "text-text-secondary",
+            "flex min-w-0 items-center gap-1 text-[11px] font-normal",
+            "text-text-tertiary",
             isRead && dimRead && "text-text-tertiary",
           )}
         >
@@ -220,7 +219,7 @@ export function ListItem({
             "relative my-0.5 break-words",
             "text-text",
             !!isInCollection && "pr-5",
-            entry?.title ? "font-medium" : "text-[13px]",
+            entry?.title ? "font-medium leading-snug" : "text-[13px]",
             isRead && dimRead && "text-text-secondary",
           )}
         >

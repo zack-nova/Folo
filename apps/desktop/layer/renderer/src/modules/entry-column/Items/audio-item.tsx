@@ -15,8 +15,8 @@ export const AudioItemSkeleton = (
   <div className={`relative mx-auto w-full select-none rounded-md ${readableContentMaxWidth}`}>
     <div className="relative">
       <div className="group relative flex py-4">
-        <div className="-mt-0.5 line-clamp-4 flex-1 text-sm leading-tight">
-          <div className="flex gap-1 text-[10px] font-bold text-material-opaque">
+        <div className="-mt-0.5 line-clamp-4 flex-1 text-sm leading-normal">
+          <div className="flex gap-1 text-[11px] font-normal text-material-opaque">
             <Skeleton className="h-3 w-20" />
             <span>·</span>
             <Skeleton className="h-3 w-10" />
