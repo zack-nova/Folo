@@ -19,6 +19,7 @@ import {
   httpsURL,
   isoFromSeconds,
   PacedRequests,
+  parseJSON,
   requestFailure,
   text,
   titleWithin,
@@ -135,7 +136,7 @@ class BilibiliSession {
     }
     let parsed: BilibiliResponse<T>
     try {
-      parsed = JSON.parse(body) as BilibiliResponse<T>
+      parsed = parseJSON(body) as BilibiliResponse<T>
     } catch {
       throw new PlatformBehaviorError("behavior_response_invalid", "Bilibili returned invalid JSON")
     }

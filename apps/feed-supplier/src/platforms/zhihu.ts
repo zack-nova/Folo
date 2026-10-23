@@ -19,6 +19,7 @@ import {
   httpsURL,
   isoFromSeconds,
   PacedRequests,
+  parseJSON,
   plainText,
   requestFailure,
   text,
@@ -158,7 +159,7 @@ class ZhihuSession {
     }
     let parsed: ZhihuPage<T> & { error?: unknown }
     try {
-      parsed = JSON.parse(body) as ZhihuPage<T> & { error?: unknown }
+      parsed = parseJSON(body) as ZhihuPage<T> & { error?: unknown }
     } catch {
       throw new PlatformBehaviorError("behavior_response_invalid", "Zhihu returned invalid JSON")
     }

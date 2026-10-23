@@ -10,7 +10,7 @@ const LOGIN = "personal-z_c0-value"
 const seconds = (iso: string) => Date.parse(iso) / 1000
 
 interface FakeContent {
-  id: number
+  id: number | string
   type: string
   title: string
   collect_time: number
@@ -70,12 +70,22 @@ const fakeZhihu = () => {
                 ...content,
                 excerpt: `<p>About <b>${content.title}</b></p>`,
                 author: { name: "Writer", url_token: "writer", headline: "Explains things" },
-                question: content.type === "answer" ? { id: 99, title: content.title } : undefined,
+                question:
+                  content.type === "answer"
+                    ? { id: "2093281358667956789", title: content.title }
+                    : undefined,
                 voteup_count: 12,
                 comment_count: 3,
               },
         )
-      return page(contents)
+      // The live API writes 19-digit IDs as bare JSON numbers.
+      return new Response(
+        JSON.stringify({
+          data: contents.slice(offset, offset + limit),
+          paging: { is_end: offset + limit >= contents.length },
+        }).replace(/"id":"(\d{17,})"/g, '"id":$1'),
+        { headers: { "content-type": "application/json" } },
+      )
     }
     return new Response("not found", { status: 404 })
   })
@@ -273,7 +283,7 @@ describe("Zhihu behavior sources", () => {
     state.folders[0]!.updated_time = seconds("2026-10-01T05:00:00Z")
     state.contents.get(1)!.push(
       {
-        id: 11,
+        id: "2096922844882015123",
         type: "answer",
         title: "New answer",
         collect_time: seconds("2026-10-01T05:00:00Z"),
@@ -310,7 +320,7 @@ describe("Zhihu behavior sources", () => {
     })
     expect(entry).toMatchObject({
       title: "New answer",
-      url: "https://www.zhihu.com/question/99/answer/11",
+      url: "https://www.zhihu.com/question/2093281358667956789/answer/2096922844882015123",
       occurredAt: "2026-10-01T05:00:00.000Z",
       summary: "回答·Writer｜收藏夹：读书｜About New answer",
     })

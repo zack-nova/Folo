@@ -63,6 +63,16 @@ export const cookieHeader = (credential: string, loginCookie: string): string =>
   return value.includes("=") ? value : `${loginCookie}=${value}`
 }
 
+/**
+ * Parses JSON, keeping integers too large for a double as their digits. Zhihu IDs have 19 digits
+ * and would otherwise round, which breaks the links built from them.
+ */
+export const parseJSON = (body: string): unknown =>
+  JSON.parse(body, ((_key: string, value: unknown, context?: { source?: string }) =>
+    typeof value === "number" && !Number.isSafeInteger(value) && context?.source
+      ? context.source
+      : value) as (key: string, value: unknown) => unknown)
+
 /** The HTTP status a safe request failed with, if it failed on one. */
 export const failedStatus = (error: unknown): number | null => {
   const match = error instanceof SafeHTTPError ? /HTTP (\d{3})\b/.exec(error.message) : null
