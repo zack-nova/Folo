@@ -48,6 +48,8 @@ PROFILE_TTL_SECONDS = 10 * 60
 BarkClientConfManager.client_conf["enable_bark"] = False
 # F2 logs signed request URLs, including at error level; the reader reports outcomes itself.
 logging.getLogger("f2").setLevel(logging.CRITICAL + 1)
+# httpx logs every request URL, signed query and msToken included.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("douyin-reader")
 
 _lock = threading.Lock()
