@@ -17,7 +17,7 @@
 - [stage-4-3-incremental-sync.md](./stage-4-3-incremental-sync.md)：上游 SDK 0.3.96 兼容修复（位置性分页游标、收藏分页、契约扫描）与服务端增量同步变更日志。
 - [stage-5a-autonomous-sources.md](./stage-5a-autonomous-sources.md)：自主数据源契约、自建 RSSHub、独立配置库、加密凭据、审计、页面变化、网页列表源与后续切片。
 - [stage-5b-official-acquisition.md](./stage-5b-official-acquisition.md)：阶段 5B 第一刀的实施计划：经供给端用官方 Folo 账号获取指定 `rsshub://` 来源，尚未开始实现。
-- [ai-evaluation-and-summary-analysis.md](./ai-evaluation-and-summary-analysis.md)：（分析，未决定）评估调用里已带总结但因语言标记 `auto` 用不上；比较一律顺带、长文顺带、只修语言、彻底分开四种方案，推荐长文顺带。
+- [ai-evaluation-and-summary-analysis.md](./ai-evaluation-and-summary-analysis.md)：（分析，已选方案乙）评估调用里已带总结但因语言标记 `auto` 用不上；比较一律顺带、长文顺带、只修语言、彻底分开四种方案；所有者选定长文顺带，并要求无缓存时手动生成，附改动清单。
 - [feeds-agent-CONTEXT.md](./feeds-agent-CONTEXT.md)：Feeds Agent 当前领域语言和已解决歧义快照。
 - [adr/0012-store-processing-results-by-content-version.md](./adr/0012-store-processing-results-by-content-version.md)：旧处理结果版本化 ADR，已被后续设计取代。
 - [adr/0023-split-feed-core-and-supplier-services.md](./adr/0023-split-feed-core-and-supplier-services.md)：feed_core 与 feed_supplier 拆分边界。
