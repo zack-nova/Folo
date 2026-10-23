@@ -40,6 +40,8 @@ export default extendConfig({
         // 2 + 0.625 * 2 = 3.25
         "top-header": "3.25rem",
         "top-header-with-border-b": "calc(3.25rem + 1px)",
+        // top header + category chips row (h-7 + mt-1.5 + 0.375rem bottom gap = 2.5rem)
+        "top-header-with-chips-border-b": "calc(3.25rem + 2.5rem + 1px)",
         "top-header-in-preview-with-border-b": "calc(3.25rem + 41px)",
       },
       colors: {

@@ -43,6 +43,7 @@ import { useIsPreviewFeed } from "../hooks/useIsPreviewFeed"
 import { useEntryRootState } from "../store/EntryColumnContext"
 import { AppendTaildingDivider } from "./AppendTaildingDivider"
 import { SwitchToMasonryButton } from "./buttons/SwitchToMasonryButton"
+import { CategoryChips, useSortedCategoriesByView } from "./CategoryChips"
 
 export const EntryListHeader: FC<{
   refetch: () => void
@@ -57,7 +58,8 @@ export const EntryListHeader: FC<{
   const [aiTimelineEnabled, setAiTimelineEnabled] = useAtom(aiTimelineEnabledAtom)
   const aiEnabled = useFeature("ai")
 
-  const { feedId, entryId, view, inboxId, isCollection } = routerParams
+  const { feedId, entryId, view, inboxId, isCollection, isAllFeeds, folderName, listId } =
+    routerParams
   const isPreview = useIsPreviewFeed()
   const isTimelineSource = isTimelineEntrySortScope({
     feedId,
@@ -76,6 +78,15 @@ export const EntryListHeader: FC<{
   const effectiveAiTimelineEnabled = aiTimelineEnabled && effectiveSortOrder === "desc"
   const showSortOrderButton = unreadOnly && isTimelineSource
   const isWideMode = !!getView(view)?.wideMode
+
+  const sortedCategories = useSortedCategoriesByView(view)
+  const showCategoryChips =
+    !isPreview &&
+    !isCollection &&
+    !inboxId &&
+    !listId &&
+    (isAllFeeds || !!folderName) &&
+    sortedCategories.length > 0
 
   const headerTitle = useFeedHeaderTitle()
   const feedIcon = useFeedHeaderIcon()
@@ -182,7 +193,9 @@ export const EntryListHeader: FC<{
         titleStyleBasedView[view],
         isPreview
           ? "h-top-header-in-preview-with-border-b px-2.5 @[700px]:px-3 @[1024px]:px-4"
-          : "h-top-header-with-border-b",
+          : showCategoryChips
+            ? "h-top-header-with-chips-border-b"
+            : "h-top-header-with-border-b",
         view === FeedViewType.All &&
           "border-b border-transparent data-[scrolled-beyond-threshold=true]:border-b-border",
       )}
@@ -287,6 +300,9 @@ export const EntryListHeader: FC<{
           </div>
         )}
       </div>
+      {showCategoryChips && (
+        <CategoryChips view={view} categories={sortedCategories} activeCategory={folderName} />
+      )}
     </div>
   )
 }
