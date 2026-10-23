@@ -80,8 +80,12 @@ export class PacedRequests {
   ) {
     this.wait = options.wait ?? ((milliseconds) => delay(milliseconds))
   }
-  hasTime(): boolean {
-    return Date.now() + this.options.requestDelayMs < this.deadline
+  hasTime(extraMs = 0): boolean {
+    return Date.now() + this.options.requestDelayMs + extraMs < this.deadline
+  }
+  /** Waits before retrying a refused request; the regular spacing still applies after it. */
+  async pause(milliseconds: number): Promise<void> {
+    await this.wait(milliseconds)
   }
   /** Returns the decoded body; failures are the client's `SafeHTTPError`s. */
   async getText(url: URL, headers: Headers): Promise<string> {

@@ -20,6 +20,10 @@ interface FakeContent {
 const fakeZhihu = () => {
   const state = {
     status: 200,
+    /** Answer 403 once this many requests were served, as Zhihu does to fast paging */
+    restrictAfter: Infinity,
+    /** Request numbers answered with a single 403, as Zhihu now and then does */
+    refuseOnce: new Set<number>(),
     followees: [] as { id: string; url_token: string; name: string; headline?: string }[],
     folders: [] as { id: number; title: string; updated_time: number }[],
     contents: new Map<number, FakeContent[]>(),
@@ -34,7 +38,11 @@ const fakeZhihu = () => {
       offset: url.searchParams.get("offset"),
       cookie: new Headers(init?.headers).get("cookie"),
     })
-    if (state.status !== 200) return new Response('{"error":{}}', { status: state.status })
+    if (state.refuseOnce.has(calls.length)) return new Response('{"error":{}}', { status: 403 })
+    if (state.status !== 200 || calls.length > state.restrictAfter)
+      return new Response('{"error":{}}', {
+        status: calls.length > state.restrictAfter ? 403 : state.status,
+      })
     const offset = Number(url.searchParams.get("offset") ?? 0)
     const limit = Number(url.searchParams.get("limit") ?? 20)
     const page = <T>(items: T[]) =>
@@ -185,6 +193,42 @@ describe("Zhihu behavior sources", () => {
 
     const again = await service.checkSource(source.id, new Date("2026-10-01T12:00:00Z"))
     expect(again).toMatchObject({ status: "unchanged", newObjectCount: 0 })
+  })
+
+  it("keeps baseline progress when Zhihu pushes back and resumes an hour later", async () => {
+    const { state, calls, service, source } = await setup("follows")
+    state.followees = users(50, "old")
+    state.restrictAfter = 2
+    const first = await service.checkSource(source.id, new Date("2026-10-01T00:00:00Z"))
+    expect(first).toMatchObject({ status: "baseline_in_progress", newObjectCount: 40 })
+    expect(first!.source).toMatchObject({
+      baselineCursor: "40",
+      consecutiveFailures: 0,
+      nextCheckAt: "2026-10-01T01:00:00.000Z",
+    })
+    expect(first!.notes).toEqual([
+      "Zhihu restricted the request after 40 follows; the baseline continues later",
+    ])
+    state.restrictAfter = Infinity
+    const second = await service.checkSource(source.id, new Date("2026-10-01T01:00:00Z"))
+    expect(second).toMatchObject({ status: "baseline_recorded", newObjectCount: 10 })
+    // The refused page was tried three times before the check gave up on it.
+    expect(calls.map((call) => call.offset)).toEqual(["0", "20", "40", "40", "40", "40"])
+
+    // A refusal on the very first page is a failure that waits hours, not a partial read.
+    state.restrictAfter = calls.length
+    await expect(
+      service.checkSource(source.id, new Date("2026-10-01T07:00:00Z")),
+    ).rejects.toMatchObject({ code: "behavior_rate_limited" })
+  })
+
+  it("retries a page Zhihu refuses once", async () => {
+    const { state, calls, service, source } = await setup("follows")
+    state.followees = users(50, "old")
+    state.refuseOnce = new Set([2])
+    const checked = await service.checkSource(source.id, new Date("2026-10-01T00:00:00Z"))
+    expect(checked).toMatchObject({ status: "baseline_recorded", newObjectCount: 50 })
+    expect(calls.map((call) => call.offset)).toEqual(["0", "20", "20", "40"])
   })
 
   it("previews only the first page of a long follow list", async () => {

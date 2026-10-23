@@ -57,6 +57,8 @@ export interface BehaviorReadResult {
    * continues here and nothing is published until a read completes.
    */
   nextCursor: string | null
+  /** The platform pushed back during an unfinished baseline; it continues later than usual. */
+  pushedBack?: boolean
 }
 
 export interface RenderedBehaviorEntry {

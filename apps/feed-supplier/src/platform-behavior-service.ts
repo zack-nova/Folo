@@ -28,6 +28,7 @@ const fingerprint = (text: string) => createHash("sha256").update(text).digest("
 /** One check stops starting platform requests after this long. */
 export const BEHAVIOR_CHECK_BUDGET_MS = 120_000
 const BASELINE_CONTINUE_MS = 15 * 60_000
+const BASELINE_PUSHED_BACK_MS = 60 * 60_000
 // Pages already read overlap the next check by this much, in case platform clocks drift.
 const KNOWN_OVERLAP_MS = 60 * 60_000
 const nextCheck = (
@@ -334,7 +335,15 @@ export class PlatformBehaviorService {
           lastErrorSummary: null,
           updatedAt: now,
           // An unfinished baseline continues soon instead of after the full interval.
-          nextCheckAt: nextCheck(source, now, baselineContinues ? BASELINE_CONTINUE_MS : undefined),
+          nextCheckAt: nextCheck(
+            source,
+            now,
+            baselineContinues
+              ? read.pushedBack
+                ? BASELINE_PUSHED_BACK_MS
+                : BASELINE_CONTINUE_MS
+              : undefined,
+          ),
         },
         objects,
         entries,

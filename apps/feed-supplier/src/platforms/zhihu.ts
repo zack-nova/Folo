@@ -30,6 +30,12 @@ const PAGE_SIZE = 20
 /** Pages read per list when many new objects appeared since the last check. */
 const MAX_PAGES = 3
 const MAX_FOLDERS = 100
+// Zhihu answers fast sequential paging with 403; the PersonalOS collector only got through it by
+// retrying. Two seconds between requests keeps a full follow list read within a few checks.
+const MINIMUM_REQUEST_DELAY_MS = 2_000
+// Zhihu now and then refuses a single page with 403 (error 10003, asking for its client
+// signature) and serves it again seconds later; a refused page is retried after these pauses.
+const RETRY_PAUSES_MS = [5_000, 10_000]
 // Zhihu's own web client asks for these fields; without them followees omit headline and avatar.
 const FOLLOWEE_INCLUDE =
   "data[*].id,url_token,name,headline,avatar_url,answer_count,articles_count,follower_count,is_org,user_type"
@@ -135,12 +141,20 @@ class ZhihuSession {
       "user-agent": BROWSER_USER_AGENT,
     })
     if (this.cookie) headers.set("cookie", this.cookie)
-    let body: string
-    try {
-      body = await this.requests.getText(url, headers)
-    } catch (error) {
-      const status = failedStatus(error)
-      throw status ? zhihuFailure(status) : requestFailure(error, "Zhihu")
+    let body = ""
+    for (let attempt = 0; ; attempt++) {
+      try {
+        body = await this.requests.getText(url, headers)
+        break
+      } catch (error) {
+        const status = failedStatus(error)
+        const pause = RETRY_PAUSES_MS[attempt]
+        if (status === 403 && pause !== undefined && this.requests.hasTime(pause)) {
+          await this.requests.pause(pause)
+          continue
+        }
+        throw status ? zhihuFailure(status) : requestFailure(error, "Zhihu")
+      }
     }
     let parsed: ZhihuPage<T> & { error?: unknown }
     try {
@@ -194,13 +208,19 @@ export class ZhihuBehaviorAdapter implements PlatformBehaviorAdapter {
 
   async read(request: BehaviorReadRequest): Promise<BehaviorReadResult> {
     const session = new ZhihuSession(
-      new PacedRequests(this.options, request.deadline),
+      new PacedRequests(
+        {
+          ...this.options,
+          requestDelayMs: Math.max(this.options.requestDelayMs, MINIMUM_REQUEST_DELAY_MS),
+        },
+        request.deadline,
+      ),
       request.credential ? zhihuCookieHeader(request.credential) : null,
     )
     const notes: string[] = []
     if (request.scope === "follows") {
-      const { objects, nextCursor } = await this.readFollows(session, request, notes)
-      return { objects, requestCount: session.requestCount, notes, nextCursor }
+      const { objects, nextCursor, pushedBack } = await this.readFollows(session, request, notes)
+      return { objects, requestCount: session.requestCount, notes, nextCursor, pushedBack }
     }
     const objects = await this.readFavorites(session, request, notes)
     // Favorites carry their favorite time, so the newest pages are a complete baseline.
@@ -215,16 +235,34 @@ export class ZhihuBehaviorAdapter implements PlatformBehaviorAdapter {
     session: ZhihuSession,
     request: BehaviorReadRequest,
     notes: string[],
-  ): Promise<{ objects: BehaviorObject[]; nextCursor: string | null }> {
+  ): Promise<{ objects: BehaviorObject[]; nextCursor: string | null; pushedBack?: boolean }> {
     const baseline = request.knownUntil === null && !request.preview
     const objects = new Map<string, BehaviorObject>()
     let offset = baseline ? Number(request.cursor ?? 0) || 0 : 0
     for (let page = 1; ; page++) {
-      const { items, isEnd } = await session.page<ZhihuUser>(
-        `/members/${request.accountId}/followees`,
-        { include: FOLLOWEE_INCLUDE, offset, limit: PAGE_SIZE },
-        `${peopleURL(request.accountId)}/following`,
-      )
+      let result: { items: ZhihuUser[]; isEnd: boolean }
+      try {
+        result = await session.page<ZhihuUser>(
+          `/members/${request.accountId}/followees`,
+          { include: FOLLOWEE_INCLUDE, offset, limit: PAGE_SIZE },
+          `${peopleURL(request.accountId)}/following`,
+        )
+      } catch (error) {
+        // Pages a baseline already read stay read; it continues from here after a pause.
+        if (
+          baseline &&
+          objects.size > 0 &&
+          error instanceof PlatformBehaviorError &&
+          error.code === "behavior_rate_limited"
+        ) {
+          notes.push(
+            `Zhihu restricted the request after ${offset} follows; the baseline continues later`,
+          )
+          return { objects: [...objects.values()], nextCursor: String(offset), pushedBack: true }
+        }
+        throw error
+      }
+      const { items, isEnd } = result
       const pageObjects = items
         .filter((user) => user.id)
         .map((user): BehaviorObject => {

@@ -242,7 +242,8 @@ curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" -H "Content-Type
 - 新关注（`follows`）：知乎**不提供关注时间**，所以基线要先把整个关注列表读完（约 20 人一页、每页 1 秒），读不完会在
   15 分钟后接着读，读完之前不发布任何条目（检查结果为 `baseline_in_progress`，来源的 `baselineCursor` 记着读到哪）。
   之后每次只读最新几页，遇到已见过的账号就停；新关注以发现时间发布，一次检查里的新关注合成一条。
-- 知乎对可疑请求回 403、对未登录回 401，分别记为 `behavior_rate_limited` 和 `behavior_auth_invalid`，至少 6 小时后再试。
+- 知乎请求之间至少间隔 2 秒。知乎偶尔对单页回 403（错误 10003，要求客户端签名），几秒后又正常：同一页最多在 5 秒、10 秒后各重试一次；
+  仍被拒时，基线保留已读部分、1 小时后接着读，平时的检查记为 `behavior_rate_limited`。未登录回 401，记为 `behavior_auth_invalid`；两者都至少 6 小时后再试。
 
 ## 平台源目录与订阅迁移
 
