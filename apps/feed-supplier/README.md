@@ -60,6 +60,14 @@ DELETE /v1/admin/web-list-sources/:sourceId
 POST   /v1/admin/web-list-sources/:sourceId/test
 POST   /v1/admin/web-list-sources/:sourceId/check
 GET    /v1/admin/web-list-sources/:sourceId/items
+GET    /v1/admin/behavior-sources
+POST   /v1/admin/behavior-sources
+GET    /v1/admin/behavior-sources/:sourceId
+PATCH  /v1/admin/behavior-sources/:sourceId
+DELETE /v1/admin/behavior-sources/:sourceId
+POST   /v1/admin/behavior-sources/:sourceId/test
+POST   /v1/admin/behavior-sources/:sourceId/check
+GET    /v1/admin/behavior-sources/:sourceId/entries
 GET    /v1/admin/audit
 GET    /v1/admin/audit/verify
 ```
@@ -167,6 +175,61 @@ FEED_SUPPLIER_ADMIN_URL=http://127.0.0.1:3001 FEED_SUPPLIER_ADMIN_TOKEN=... \
 从旧 Feeds Agent 转换时，旧清洗脚本的 `body_selectors` 对应 `detail.contentSelectors`，JSON 接口的
 `request.query` 直接写入目标 URL，`metadata_paths` 对应带显示名的 `json.metadataPaths`；站点改版后需要按当前
 页面结构修正选择器，并先用 `test` 预览确认。
+
+## 平台行为源（B 站）
+
+平台行为源（ADR-0037）把你自己在平台上的新动作发布成 Feed：第一版支持 B 站的**新关注 UP 主**和**新收藏视频**。
+一个来源只看一个账号的一种动作，所以通常建两个：`follows`（新关注）和 `favorites`（新收藏）。
+
+- 第一次成功检查只记录基线，不发布任何条目；之后只发布“从没见过、且关注或收藏时间晚于基线”的对象。取消关注后被挤
+  到第一页的旧关注、预算内没读到的收藏夹里的旧收藏，都会安静地记下而不会冒充新动作。
+- 新关注：一次检查里所有新关注的 UP 主合成一条，标题和正文列出全部账号（昵称、认证、签名、主页、关注时间）。
+- 新收藏：每个视频一条，正文写 UP 主、收藏夹、收藏时间、发布时间、时长和播放 / 收藏 / 弹幕数，封面作为条目图片。
+  同一视频在多个收藏夹里只算一条。失效视频和音频等非视频收藏会跳过。
+- 每次检查：新关注读关注列表最新一页（50 个），收藏读收藏夹列表和每个收藏夹最新一页（20 个）；只有整页都是新动作时
+  才往后翻，最多 3 页。请求之间至少间隔 `BEHAVIOR_REQUEST_DELAY_MS`（默认 1 秒），一次检查最多 120 秒，读不完的
+  收藏夹留到下次。默认每 360 分钟检查一次，最短 60 分钟。
+- 触发 B 站风控（-412 / -352 等）或登录失效时，至少 6 小时后再试，并在来源的 `lastErrorCode` 里写明
+  `behavior_rate_limited` 或 `behavior_auth_invalid`。
+
+### 登录凭据
+
+B 站现在不登录就读不到关注列表（返回 -101），收藏夹列表也是空的，所以两个来源都需要登录态。登录态保存在供给端的
+加密凭据库里，只能写入、不能读回；检查时才解密，不会出现在日志、审计、诊断或 Feed 里。
+
+1. 在浏览器登录 B 站，从开发者工具的 Cookie 里复制 `SESSDATA` 的值（只填这一项即可；也可以填完整的一行 Cookie）。
+2. 创建凭据（在 bash 或 zsh 里运行），值从标准输入读入，不要写进命令历史：
+
+```bash
+read -rs SESSDATA && printf '{"name":"Bilibili 登录","value":"%s"}' "$SESSDATA" | \
+  curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  --data @- http://127.0.0.1:3001/v1/admin/credentials
+```
+
+`SESSDATA` 过期（通常几个月）后来源会报 `behavior_auth_invalid`：用 `PATCH /v1/admin/credentials/<id>` 换新值，
+再对来源 `PATCH {"credentialId":"<id>"}` 或手动 `check` 一次。
+
+### 创建与启用
+
+```bash
+curl -fsS -H "Authorization: Bearer $FEED_SUPPLIER_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  --data '{"name":"B 站·我的新关注","platform":"bilibili","scope":"follows","accountId":"<你的 UID>","credentialId":"<凭据 ID>"}' \
+  http://127.0.0.1:3001/v1/admin/behavior-sources
+```
+
+`scope` 换成 `favorites` 建“B 站·我的新收藏”。来源默认停用：先 `POST .../test` 试读一次（不写入，返回读到的对象数、
+请求数和前 10 个对象），再 `POST .../check` 记录基线，最后 `PATCH {"enabled":true}` 开始按 6 小时调度。账号和
+动作类型建好后不能改，要换就新建来源（重新记基线）。`GET .../entries` 查看已发布的条目。
+
+创建响应中的 `feedURL`（`behavior://<id>`）和其他来源一样：同机核心可以直接订阅；其他读者通过公开订阅链接
+（`POST /v1/admin/public-feed-grants/:grantId/links` 或订阅预设里的 `url`）读取。凭据用途报告会列出每个行为源绑定的
+登录凭据。按节点分工，这类个人信息来源放在 Mac mini 节点。
+
+相关配置：`BEHAVIOR_FETCH_TIMEOUT_MS`、`BEHAVIOR_FETCH_MAX_BYTES`、`BEHAVIOR_REQUEST_DELAY_MS`、
+`BEHAVIOR_SCHEDULER_POLL_INTERVAL_MS`。
+
+接下一个平台时，在 `src/platforms/` 下新增一个实现 `PlatformBehaviorAdapter` 的文件（读取当前列表、把新对象写成
+条目），在 `server.ts` 注册，并把平台名加进契约、校验和迁移的约束；基线、差分、调度、存储和 Feed 输出都是共用的。
 
 ## 平台源目录与订阅迁移
 
