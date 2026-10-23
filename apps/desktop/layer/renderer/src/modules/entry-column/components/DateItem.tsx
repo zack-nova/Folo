@@ -3,11 +3,12 @@ import { stopPropagation } from "@follow/utils/dom"
 import { clsx, cn } from "@follow/utils/utils"
 import type { FC, PropsWithChildren } from "react"
 import { memo, useMemo, useState } from "react"
-import { Trans } from "react-i18next"
+import { Trans, useTranslation } from "react-i18next"
 import { useDebounceCallback } from "usehooks-ts"
 
 import { SafeFragment } from "~/components/common/Fragment"
 import { RelativeDay } from "~/components/ui/datetime"
+import { useEntriesUnreadCount } from "~/hooks/biz/useAsRead"
 import { useShowEntryDetailsColumn } from "~/hooks/biz/useShowEntryDetailsColumn"
 
 import { readableContentMaxWidth } from "../styles"
@@ -17,9 +18,11 @@ interface DateItemInnerProps {
   className?: string
   Wrapper?: FC<PropsWithChildren>
   isSticky?: boolean
+  /** Entry ids in this date group, used for the count / unread summary */
+  entryIds: string[]
 }
 
-type DateItemProps = Pick<DateItemInnerProps, "isSticky"> & {
+type DateItemProps = Pick<DateItemInnerProps, "isSticky" | "entryIds"> & {
   view: FeedViewType
   date: string
   className?: string
@@ -34,16 +37,35 @@ const useParseDate = (date: string) =>
     }
   }, [date])
 
-const dateItemclassName = tw`relative flex items-center text-sm lg:text-base gap-1 px-3 font-bold text-text h-9`
-export const DateItem = memo(({ date, view, isSticky }: DateItemProps) => {
+const dateItemclassName = tw`relative flex items-center text-sm lg:text-base gap-1 px-3 font-bold text-text h-10`
+export const DateItem = memo(({ date, view, isSticky, entryIds }: DateItemProps) => {
   const showEntryDetailsColumn = useShowEntryDetailsColumn()
 
   if (view === FeedViewType.SocialMedia || !showEntryDetailsColumn) {
-    return <SocialMediaDateItem date={date} className={dateItemclassName} isSticky={isSticky} />
+    return (
+      <SocialMediaDateItem
+        date={date}
+        className={dateItemclassName}
+        isSticky={isSticky}
+        entryIds={entryIds}
+      />
+    )
   }
-  return <UniversalDateItem date={date} className={dateItemclassName} isSticky={isSticky} />
+  return (
+    <UniversalDateItem
+      date={date}
+      className={dateItemclassName}
+      isSticky={isSticky}
+      entryIds={entryIds}
+    />
+  )
 })
-const UniversalDateItem = ({ date, className, isSticky }: Omit<DateItemProps, "view">) => {
+const UniversalDateItem = ({
+  date,
+  className,
+  isSticky,
+  entryIds,
+}: Omit<DateItemProps, "view">) => {
   const { dateObj } = useParseDate(date)
 
   return (
@@ -51,11 +73,50 @@ const UniversalDateItem = ({ date, className, isSticky }: Omit<DateItemProps, "v
       className={clsx(className, readableContentMaxWidth)}
       date={dateObj}
       isSticky={isSticky}
+      entryIds={entryIds}
     />
   )
 }
 
-const DateItemInner: FC<DateItemInnerProps> = ({ date, className, Wrapper, isSticky }) => {
+const useWeekday = (date: Date) => {
+  const { i18n } = useTranslation()
+  const { language } = i18n
+
+  return useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat(language, { weekday: "short" }).format(date)
+    } catch {
+      return new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(date)
+    }
+  }, [date, language])
+}
+
+const DateGroupSummary: FC<{ entryIds: string[] }> = ({ entryIds }) => {
+  const { t } = useTranslation()
+  const unreadCount = useEntriesUnreadCount(entryIds)
+
+  if (entryIds.length === 0) return null
+
+  return (
+    <span className="ml-auto shrink-0 text-xs font-normal tabular-nums text-text-tertiary">
+      {t("entry_column.date_group_count", { count: entryIds.length })}
+      {unreadCount > 0 && (
+        <>
+          <span className="mx-1">·</span>
+          {t("entry_column.date_group_unread", { count: unreadCount })}
+        </>
+      )}
+    </span>
+  )
+}
+
+const DateItemInner: FC<DateItemInnerProps> = ({
+  date,
+  className,
+  Wrapper,
+  isSticky,
+  entryIds,
+}) => {
   const [confirmMark, setConfirmMark] = useState(false)
   const removeConfirm = useDebounceCallback(
     () => {
@@ -68,10 +129,14 @@ const DateItemInner: FC<DateItemInnerProps> = ({ date, className, Wrapper, isSti
   )
 
   const W = Wrapper ?? SafeFragment
+  const weekday = useWeekday(date)
 
   const RelativeElement = (
-    <span key="b" className="inline-flex items-center">
-      <RelativeDay date={date} />
+    <span key="b" className="inline-flex items-center gap-1">
+      <span className="text-sm font-bold">
+        <RelativeDay date={date} />
+      </span>
+      <span className="text-sm font-normal text-text-secondary">· {weekday}</span>
     </span>
   )
   return (
@@ -79,7 +144,7 @@ const DateItemInner: FC<DateItemInnerProps> = ({ date, className, Wrapper, isSti
       className={cn(
         className,
         "border-b border-transparent bg-background pl-7",
-        isSticky && "border-border",
+        isSticky && "border-fill-tertiary bg-background/85 backdrop-blur",
       )}
       onClick={stopPropagation}
       onMouseEnter={removeConfirm.cancel}
@@ -98,6 +163,7 @@ const DateItemInner: FC<DateItemInnerProps> = ({ date, className, Wrapper, isSti
         ) : (
           RelativeElement
         )}
+        <DateGroupSummary entryIds={entryIds} />
       </W>
     </div>
   )
@@ -106,10 +172,12 @@ const SocialMediaDateItem = ({
   date,
   className,
   isSticky,
+  entryIds,
 }: {
   date: string
   className?: string
   isSticky?: boolean
+  entryIds: string[]
 }) => {
   const { dateObj } = useParseDate(date)
 
@@ -127,6 +195,7 @@ const SocialMediaDateItem = ({
       className={className}
       date={dateObj}
       isSticky={isSticky}
+      entryIds={entryIds}
     />
   )
 }
