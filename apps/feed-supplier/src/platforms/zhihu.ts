@@ -21,6 +21,7 @@ import {
   PacedRequests,
   parseJSON,
   plainText,
+  readUntimedList,
   requestFailure,
   text,
   titleWithin,
@@ -123,7 +124,7 @@ export const zhihuCookieHeader = (credential: string): string => cookieHeader(cr
 /** Zhihu API calls of one read. */
 class ZhihuSession {
   constructor(
-    private readonly requests: PacedRequests,
+    readonly requests: PacedRequests,
     private readonly cookie: string | null,
   ) {}
   get requestCount(): number {
@@ -218,90 +219,51 @@ export class ZhihuBehaviorAdapter implements PlatformBehaviorAdapter {
       ),
       request.credential ? zhihuCookieHeader(request.credential) : null,
     )
+    if (request.scope === "follows")
+      return { ...(await this.readFollows(session, request)), requestCount: session.requestCount }
     const notes: string[] = []
-    if (request.scope === "follows") {
-      const { objects, nextCursor, pushedBack } = await this.readFollows(session, request, notes)
-      return { objects, requestCount: session.requestCount, notes, nextCursor, pushedBack }
-    }
     const objects = await this.readFavorites(session, request, notes)
     // Favorites carry their favorite time, so the newest pages are a complete baseline.
     return { objects, requestCount: session.requestCount, notes, nextCursor: null }
   }
 
-  /**
-   * Zhihu does not say when an account was followed. The baseline therefore reads the whole list,
-   * across checks when needed; later checks read the newest pages until they reach known accounts.
-   */
-  private async readFollows(
-    session: ZhihuSession,
-    request: BehaviorReadRequest,
-    notes: string[],
-  ): Promise<{ objects: BehaviorObject[]; nextCursor: string | null; pushedBack?: boolean }> {
-    const baseline = request.knownUntil === null && !request.preview
-    const objects = new Map<string, BehaviorObject>()
-    let offset = baseline ? Number(request.cursor ?? 0) || 0 : 0
-    for (let page = 1; ; page++) {
-      let result: { items: ZhihuUser[]; isEnd: boolean }
-      try {
-        result = await session.page<ZhihuUser>(
+  /** Zhihu does not say when an account was followed, so follows are an untimed list. */
+  private async readFollows(session: ZhihuSession, request: BehaviorReadRequest) {
+    return readUntimedList({
+      label: "follows",
+      platform: "Zhihu",
+      request,
+      requests: session.requests,
+      fetchPage: async (cursor) => {
+        const offset = Number(cursor ?? 0) || 0
+        const { items, isEnd } = await session.page<ZhihuUser>(
           `/members/${request.accountId}/followees`,
           { include: FOLLOWEE_INCLUDE, offset, limit: PAGE_SIZE },
           `${peopleURL(request.accountId)}/following`,
         )
-      } catch (error) {
-        // Pages a baseline already read stay read; it continues from here after a pause.
-        if (
-          baseline &&
-          objects.size > 0 &&
-          error instanceof PlatformBehaviorError &&
-          error.code === "behavior_rate_limited"
-        ) {
-          notes.push(
-            `Zhihu restricted the request after ${offset} follows; the baseline continues later`,
-          )
-          return { objects: [...objects.values()], nextCursor: String(offset), pushedBack: true }
-        }
-        throw error
-      }
-      const { items, isEnd } = result
-      const pageObjects = items
-        .filter((user) => user.id)
-        .map((user): BehaviorObject => {
-          const token = text(user.url_token)
-          return {
-            key: String(user.id),
-            occurredAt: null,
-            title: text(user.name) || token,
-            url: token ? peopleURL(token) : "https://www.zhihu.com/",
-            snapshot: {
-              id: String(user.id),
-              urlToken: token,
-              name: text(user.name),
-              headline: plainText(text(user.headline)).slice(0, 500),
-              avatar: httpsURL(user.avatar_url),
-              followers: count(user.follower_count),
-              isOrg: Boolean(user.is_org),
-            },
-          }
-        })
-      for (const object of pageObjects) objects.set(object.key, object)
-      offset += items.length
-      if (isEnd || !items.length || request.preview) break
-      if (baseline) {
-        if (!session.hasTime()) {
-          notes.push(`The baseline read ${offset} follows and continues in the next check`)
-          return { objects: [...objects.values()], nextCursor: String(offset) }
-        }
-        continue
-      }
-      const known = await request.known(pageObjects.map((object) => object.key))
-      if (known.size > 0) break
-      if (page === MAX_PAGES || !session.hasTime()) {
-        notes.push(`Only the newest ${page} follow pages were read`)
-        break
-      }
-    }
-    return { objects: [...objects.values()], nextCursor: null }
+        const objects = items
+          .filter((user) => user.id)
+          .map((user): BehaviorObject => {
+            const token = text(user.url_token)
+            return {
+              key: String(user.id),
+              occurredAt: null,
+              title: text(user.name) || token,
+              url: token ? peopleURL(token) : "https://www.zhihu.com/",
+              snapshot: {
+                id: String(user.id),
+                urlToken: token,
+                name: text(user.name),
+                headline: plainText(text(user.headline)).slice(0, 500),
+                avatar: httpsURL(user.avatar_url),
+                followers: count(user.follower_count),
+                isOrg: Boolean(user.is_org),
+              },
+            }
+          })
+        return { objects, nextCursor: isEnd ? null : String(offset + items.length) }
+      },
+    })
   }
 
   private async readFavorites(

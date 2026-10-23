@@ -35,6 +35,7 @@ import {
   startBehaviorScheduler,
 } from "./platform-behavior-service"
 import { BilibiliBehaviorAdapter } from "./platforms/bilibili"
+import { DouyinBehaviorAdapter } from "./platforms/douyin"
 import { ZhihuBehaviorAdapter } from "./platforms/zhihu"
 import { PostgresSupplierRepository } from "./postgres-repository"
 import {
@@ -199,6 +200,18 @@ export const buildFeedSupplier = async ({
     adapters: providedBehaviorAdapters ?? [
       new BilibiliBehaviorAdapter(behaviorAdapterOptions),
       new ZhihuBehaviorAdapter(behaviorAdapterOptions),
+      // Douyin is read through the douyin-reader sidecar and only exists where one is configured.
+      ...(config.douyinReader
+        ? [
+            new DouyinBehaviorAdapter({
+              readerURL: config.douyinReader.url,
+              readerToken: config.douyinReader.token,
+              requestDelayMs: config.behaviorRequestDelayMs,
+              timeoutMs: config.behaviorFetchTimeoutMs + 15_000,
+              fetchImplementation: providedFetchImplementation,
+            }),
+          ]
+        : []),
     ],
     resolveCredential: async (credentialId) => {
       const credential = await repository.findCredential(credentialId)

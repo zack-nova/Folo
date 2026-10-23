@@ -207,6 +207,12 @@ const supplierEnvironment = z
     BEHAVIOR_FETCH_TIMEOUT_MS: integer(15_000, 1_000).pipe(z.number().max(60_000)),
     BEHAVIOR_REQUEST_DELAY_MS: integer(1_000, 200).pipe(z.number().max(30_000)),
     BEHAVIOR_SCHEDULER_POLL_INTERVAL_MS: integer(60_000, 1_000),
+    // Douyin behavior sources need the douyin-reader sidecar; both empty leaves Douyin off.
+    DOUYIN_READER_URL: optionalServiceURL("DOUYIN_READER_URL"),
+    DOUYIN_READER_TOKEN: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().min(32).optional(),
+    ),
     HOST: z.string().default("0.0.0.0"),
     INTERNAL_TOKEN: z.string().min(32),
     // Optional third token held by the Folo core to manage web list sources for the owner.
@@ -252,6 +258,28 @@ const supplierEnvironment = z
         code: "custom",
         message: "MANAGEMENT_TOKEN must differ from every other supplier secret",
         path: ["MANAGEMENT_TOKEN"],
+      })
+    }
+    if (Boolean(environment.DOUYIN_READER_URL) !== Boolean(environment.DOUYIN_READER_TOKEN)) {
+      context.addIssue({
+        code: "custom",
+        message: "DOUYIN_READER_URL and DOUYIN_READER_TOKEN are set together",
+        path: ["DOUYIN_READER_TOKEN"],
+      })
+    }
+    if (
+      environment.DOUYIN_READER_TOKEN &&
+      [
+        environment.ADMIN_TOKEN,
+        environment.INTERNAL_TOKEN,
+        environment.MANAGEMENT_TOKEN,
+        environment.RSSHUB_ACCESS_KEY,
+      ].includes(environment.DOUYIN_READER_TOKEN)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "DOUYIN_READER_TOKEN must differ from every other supplier secret",
+        path: ["DOUYIN_READER_TOKEN"],
       })
     }
     if (environment.NODE_ENV !== "production") return
@@ -392,6 +420,10 @@ export const loadFeedSupplierConfig = (environment: NodeJS.ProcessEnv) => {
     behaviorFetchTimeoutMs: parsed.BEHAVIOR_FETCH_TIMEOUT_MS,
     behaviorRequestDelayMs: parsed.BEHAVIOR_REQUEST_DELAY_MS,
     behaviorSchedulerPollIntervalMs: parsed.BEHAVIOR_SCHEDULER_POLL_INTERVAL_MS,
+    douyinReader:
+      parsed.DOUYIN_READER_URL && parsed.DOUYIN_READER_TOKEN
+        ? { url: parsed.DOUYIN_READER_URL, token: parsed.DOUYIN_READER_TOKEN }
+        : null,
     host: parsed.HOST,
     internalToken: parsed.INTERNAL_TOKEN,
     managementToken: parsed.MANAGEMENT_TOKEN ?? null,

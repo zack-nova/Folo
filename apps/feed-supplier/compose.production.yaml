@@ -17,6 +17,9 @@ services:
       CREDENTIAL_ENCRYPTION_KEY: ${FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY:?set FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY}
       CREDENTIAL_ENCRYPTION_KEY_ID: ${FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY_ID:?set FEED_SUPPLIER_CREDENTIAL_ENCRYPTION_KEY_ID}
       DATABASE_URL: ${FEED_SUPPLIER_DATABASE_URL:?set FEED_SUPPLIER_DATABASE_URL}
+      # Douyin behavior sources (ADR-0037); set both, and start the "douyin" profile, to enable them.
+      DOUYIN_READER_TOKEN: ${DOUYIN_READER_TOKEN:-}
+      DOUYIN_READER_URL: ${DOUYIN_READER_URL:-}
       # Official Folo acquisition (ADR-0034); empty disables it.
       FOLO_OFFICIAL_API_URL: ${FOLO_OFFICIAL_API_URL:-}
       FOLO_OFFICIAL_PROXY_URL: ${FOLO_OFFICIAL_PROXY_URL:-}
@@ -184,6 +187,35 @@ services:
     pids_limit: 256
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=128m
+    logging:
+      driver: json-file
+      options:
+        max-file: "5"
+        max-size: 10m
+    networks:
+      - sources
+
+  # Reads the owner's Douyin follows and favorites with F2 for behavior sources (ADR-0037).
+  # Only nodes that read Douyin start it: COMPOSE_PROFILES=douyin. No port leaves the network.
+  douyin-reader:
+    profiles: ["douyin"]
+    build:
+      context: douyin-reader
+      args:
+        PIP_INDEX_URL: ${DOUYIN_READER_PIP_INDEX_URL:-https://pypi.org/simple}
+    environment:
+      # Interpolated on every node, so it cannot be required here; the reader exits without one.
+      DOUYIN_READER_TOKEN: ${DOUYIN_READER_TOKEN:-}
+    init: true
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
     logging:
       driver: json-file
       options:

@@ -9,7 +9,7 @@ const intervalMinutes = z.number().int().min(60).max(525_600).nullable()
 export const behaviorCreateSchema = z
   .object({
     name,
-    platform: z.enum(["bilibili", "zhihu"]),
+    platform: z.enum(["bilibili", "douyin", "zhihu"]),
     scope: z.enum(["favorites", "follows"]),
     accountId: z.string().trim().min(1).max(64),
     credentialId: credentialId.default(null),
