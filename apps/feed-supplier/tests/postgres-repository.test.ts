@@ -53,6 +53,17 @@ describe.skipIf(!databaseURL)("PostgreSQL source registry", () => {
     })
     expect(credentialResponse.statusCode).toBe(201)
     const credentialId = credentialResponse.json<{ credential: { id: string } }>().credential.id
+    // Replacing a login in place must work against PostgreSQL, not only the memory repository.
+    const credentialUpdate = await firstServer.inject({
+      headers,
+      method: "PATCH",
+      payload: { description: "replaced login", value: "database-secret-replaced" },
+      url: `/v1/admin/credentials/${credentialId}`,
+    })
+    expect(credentialUpdate.statusCode).toBe(200)
+    expect(credentialUpdate.json()).toMatchObject({
+      credential: { description: "replaced login", id: credentialId },
+    })
     const routeResponse = await firstServer.inject({
       headers,
       method: "POST",

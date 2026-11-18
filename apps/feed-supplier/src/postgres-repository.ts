@@ -1157,9 +1157,21 @@ export class PostgresSupplierRepository implements SupplierRepository {
         const result = await client.query<CredentialRow>(
           `update source_credentials set
              name = $2, description = $3, ciphertext = $4, initialization_vector = $5,
-             authentication_tag = $6, key_id = $7, disabled_at = $8, updated_at = $10
+             authentication_tag = $6, key_id = $7, disabled_at = $8, updated_at = $9
            where id = $1 returning *`,
-          this.credentialParameters(record),
+          // Every parameter must appear in the statement, or PostgreSQL cannot infer its type
+          // (42P18), so created_at is left out rather than passed unused.
+          [
+            record.id,
+            record.name,
+            record.description,
+            record.ciphertext,
+            record.initializationVector,
+            record.authenticationTag,
+            record.keyId,
+            record.disabledAt,
+            record.updatedAt,
+          ],
         )
         return result.rows[0] ? credentialFromRow(result.rows[0]) : null
       })
